@@ -1,0 +1,223 @@
+import asyncio
+import copy
+import json
+
+import httpx
+import pytest
+
+from partly import (Client, ClientClosedError, Decision, FlagNotFoundError, InvalidContextError,
+                    InvalidPolicyError, PolicyNotReadyError, RefreshError)
+
+POLICY = {"schema_version": 1, "project": "default", "environment": "development", "revision": 1,
+          "flags": {"checkout": {"mode": "percentage", "percentage": 100}}}
+
+
+def mocked(handler, interval=60, timeout=1):
+    client = Client.builder().url("http://partly.test").secret_key("test-key").poll_interval(interval).timeout(timeout).build()
+    client._http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return client
+
+
+async def test_invalid_refresh_keeps_policy_and_etag():
+    state = {"bad": False}
+    tags = []
+    async def handler(request):
+        tags.append(request.headers.get("if-none-match"))
+        if state["bad"]:
+            return httpx.Response(200, headers={"etag": '"bad"'}, json={"schema_version": 999})
+        return httpx.Response(200, headers={"etag": '"good"'}, json=POLICY)
+    client = mocked(handler)
+    try:
+        await client.init()
+        state["bad"] = True
+        for _ in range(2):
+            with pytest.raises(InvalidPolicyError):
+                await client.refresh()
+            assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
+        assert tags == [None, '"good"', '"good"']
+        assert client._etag == '"good"'
+        assert isinstance(client.last_refresh_error, InvalidPolicyError)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.parametrize("case", ["empty", "missing_etag", "unsupported_schema", "percentage", "wrong_type", "extra_field", "too_large"])
+async def test_bad_initial_policy_is_an_error(case):
+    policy = copy.deepcopy(POLICY)
+    headers = {"etag": '"one"'}
+    if case == "unsupported_schema": policy["schema_version"] = 2
+    if case == "percentage": policy["flags"]["checkout"]["percentage"] = 101
+    if case == "wrong_type": policy["flags"]["checkout"]["percentage"] = "100"
+    if case == "extra_field": policy["flags"]["checkout"]["traits"] = {}
+    if case == "missing_etag": headers = {}
+    def handler(request):
+        if case == "empty": return httpx.Response(200, headers=headers, content=b"")
+        if case == "too_large": return httpx.Response(200, headers=headers, content=b"x" * (1024 * 1024 + 1))
+        return httpx.Response(200, headers=headers, json=policy)
+    client = mocked(handler)
+    try:
+        with pytest.raises(InvalidPolicyError): await client.init()
+        with pytest.raises(PolicyNotReadyError): client.evaluate("checkout", context={"id": "u"})
+        assert client._poll_task is None
+    finally:
+        await client.aclose()
+
+
+async def test_304_skips_parsing_and_initial_304_fails(monkeypatch):
+    calls = 0
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, headers={"etag": '"one"'}, json=POLICY) if calls == 1 else httpx.Response(304)
+    client = mocked(handler)
+    try:
+        await client.init()
+        snapshot = client._snapshot
+        def forbidden_parse(body): raise AssertionError("304 must not parse a policy")
+        monkeypatch.setattr("partly.client.Snapshot", forbidden_parse)
+        assert await client.refresh() is False
+        assert client._snapshot is snapshot
+    finally:
+        await client.aclose()
+    cold = mocked(lambda r: httpx.Response(304))
+    try:
+        with pytest.raises(InvalidPolicyError): await cold.init()
+    finally:
+        await cold.aclose()
+
+
+async def test_init_refresh_are_async_and_repeated_init_starts_one_poller():
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, headers={"etag": '"one"'}, json=POLICY)
+    client = mocked(handler)
+    try:
+        task = asyncio.create_task(client.init())
+        await asyncio.wait_for(entered.wait(), 1)
+        ticks = 0
+        for _ in range(5):
+            await asyncio.sleep(0.005)
+            ticks += 1
+        assert ticks == 5 and not task.done()
+        release.set()
+        await task
+        poller = client._poll_task
+        await asyncio.gather(client.init(), client.init())
+        assert client._poll_task is poller and calls == 1
+        entered.clear(); release.clear()
+        refresh = asyncio.create_task(client.refresh())
+        await asyncio.wait_for(entered.wait(), 1)
+        assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
+        await asyncio.sleep(0.01)
+        assert not refresh.done()
+        release.set()
+        assert await refresh
+    finally:
+        release.set()
+        await client.aclose()
+    assert poller.done()
+    with pytest.raises(ClientClosedError): await client.init()
+    with pytest.raises(ClientClosedError): await client.refresh()
+    await client.aclose()
+
+
+async def test_close_during_init_does_not_leave_a_poller():
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    async def handler(request):
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, headers={"etag": '"one"'}, json=POLICY)
+    client = mocked(handler)
+    task = asyncio.create_task(client.init())
+    await entered.wait()
+    close = asyncio.create_task(client.aclose())
+    await asyncio.sleep(0)
+    release.set()
+    with pytest.raises(ClientClosedError): await task
+    await close
+    assert client._poll_task is None and client._http.is_closed
+
+
+async def test_timeout_cancellation_retry_and_scope_validation():
+    state = {"slow": True, "scope": False}
+    async def handler(request):
+        if state["slow"]: await asyncio.sleep(1)
+        policy = {**POLICY, "environment": "production"} if state["scope"] else POLICY
+        return httpx.Response(200, headers={"etag": '"one"'}, json=policy)
+    client = mocked(handler, timeout=0.05)
+    try:
+        with pytest.raises(RefreshError): await client.init()
+        assert client._snapshot is None
+        task = asyncio.create_task(client.init())
+        await asyncio.sleep(0.005)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError): await task
+        state["slow"] = False
+        await client.init()
+        state["scope"] = True
+        with pytest.raises(InvalidPolicyError): await client.refresh()
+        assert client._snapshot.environment == "development"
+        assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
+    finally:
+        await client.aclose()
+
+
+async def test_explicit_decisions_context_and_native_hash():
+    policy = copy.deepcopy(POLICY)
+    policy["flags"]["checkout"]["percentage"] = 94
+    client = mocked(lambda r: httpx.Response(200, headers={"etag": '"one"'}, json=policy))
+    try:
+        await client.init()
+        # Fixed Rust bucket for this pair is 9426, outside 94% and inside 95%.
+        assert client.evaluate("checkout", context={"id": "user-42"}) is Decision.DISABLED
+        policy["flags"]["checkout"]["percentage"] = 95
+        await client.refresh()
+        assert client.evaluate("checkout", context={"id": "user-42"}) is Decision.ENABLED
+        for user in (None, 42, "", " ", "x" * 257):
+            with pytest.raises(InvalidContextError): client.evaluate("checkout", context={"id": user})
+        with pytest.raises(FlagNotFoundError): client.evaluate("absent", context={"id": "u"})
+        with pytest.raises(TypeError): bool(Decision.DISABLED)
+    finally:
+        await client.aclose()
+
+
+def test_builder_validation_and_no_network(monkeypatch):
+    def forbidden(*args, **kwargs): raise AssertionError("build must not create HTTP resources")
+    monkeypatch.setattr(httpx, "AsyncClient", forbidden)
+    builder = Client.builder().url("http://localhost:8080").secret_key("test")
+    assert builder.build()._http is None
+    for value in (0, -1, float("inf"), float("nan"), True):
+        with pytest.raises(ValueError): builder.poll_interval(value).build()
+    for url in ("", "ftp://localhost", "http://u:p@localhost", "http://localhost/path", "http://localhost:99999"):
+        with pytest.raises(ValueError): Client.builder().url(url).secret_key("test").build()
+
+
+async def test_response_cleanup_failure_does_not_commit_snapshot():
+    class BrokenStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield json.dumps({**POLICY, "flags": {}}).encode()
+
+        async def aclose(self):
+            raise httpx.ReadError("Connection failed during response cleanup")
+
+    state = {"broken": False}
+    def handler(request):
+        if state["broken"]:
+            return httpx.Response(200, headers={"etag": '"broken"'}, stream=BrokenStream())
+        return httpx.Response(200, headers={"etag": '"good"'}, json=POLICY)
+    client = mocked(handler)
+    try:
+        await client.init()
+        state["broken"] = True
+        with pytest.raises(RefreshError): await client.refresh()
+        assert client._etag == '"good"'
+        assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
+    finally:
+        await client.aclose()

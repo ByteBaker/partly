@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Partly · Feature flags</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Partly home"><span class="brand-mark" aria-hidden="true"><i></i><i></i></span>partly<span class="project">Default project</span></a>
+    <div id="session" class="session" hidden>
+      <label class="environment-label" for="environment">Environment<select id="environment" aria-label="Environment"><option value="development">Development</option><option value="production">Production</option></select></label>
+      <button id="logout" class="quiet">Sign out</button>
+    </div>
+  </header>
+  <nav id="screens" class="screen-tabs" role="tablist" aria-label="Workspace screens" hidden>
+    <button id="flags-tab" role="tab" aria-selected="true" aria-controls="flags-screen">Feature flags</button>
+    <button id="keys-tab" role="tab" aria-selected="false" aria-controls="keys-screen" tabindex="-1">Key Management</button>
+    <button id="docs-tab" role="tab" aria-selected="false" aria-controls="docs-screen" tabindex="-1">Docs</button>
+  </nav>
+  <main>
+    <div id="error" class="notice error" role="alert" hidden></div>
+    <p id="notice" class="notice" role="status" aria-live="polite"></p>
+    <section id="auth" class="auth-card" hidden>
+      <p class="eyebrow">YOUR CONTROL PLANE</p><h1 id="auth-title">Welcome to Partly</h1>
+      <p id="auth-description" class="muted"></p>
+      <form id="auth-form">
+        <label for="username">Username</label><input id="username" name="username" autocomplete="username" maxlength="64" required>
+        <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="1024" required>
+        <button id="auth-submit" class="primary" type="submit">Continue</button>
+      </form>
+      <p id="setup-note" class="small muted" hidden>Your database is created when you finish setup.</p>
+    </section>
+    <section id="workspace" hidden>
+      <div class="workspace-heading"><div><p id="workspace-environment" class="eyebrow">DEVELOPMENT / DEFAULT PROJECT</p><h1 id="screen-title">Feature flags</h1><p id="screen-description" class="muted">Release at your pace. Keep control of who sees what.</p></div><button id="create-flag" class="primary">+ Create flag</button></div>
+      <div id="production-note" class="production-note" hidden>You are editing production. Saved changes reach applications on their next refresh.</div>
+      <section id="flags-screen" role="tabpanel" aria-labelledby="flags-tab">
+        <div class="list-heading"><h2>Your flags <span id="flag-count" class="count">0</span></h2><span class="small muted">Local evaluation · Boolean decisions</span></div>
+        <div id="flags"></div>
+        <p class="hint">Percentage rollouts use a stable context ID. Increasing a rollout keeps already selected users included.</p>
+      </section>
+      <section id="keys-screen" role="tabpanel" aria-labelledby="keys-tab" hidden>
+        <form id="new-key" class="new-key">
+          <label for="key-name">Key name<input id="key-name" name="name" placeholder="e.g. Checkout service" maxlength="64" required></label>
+          <button id="generate-key" class="primary" type="submit">+ Generate key</button>
+        </form>
+        <div id="keys"></div>
+        <p class="hint">SDK keys can download policies for this environment. They cannot change your flags.</p>
+      </section>
+      <section id="docs-screen" role="tabpanel" aria-labelledby="docs-tab" hidden>
+        <div class="docs-grid">
+          <aside class="docs-guide">
+            <section><span class="eyebrow">01 / INSTALL</span><h2>Add the Python SDK</h2><p>Install your locally built wheel in your application's environment.</p><pre tabindex="0" aria-label="Python installation"><code>python -m pip install \
+  /path/to/partly_sdk.whl</code></pre><p class="small">Requires Python 3.10 or later.</p></section>
+            <section><span class="eyebrow">02 / CONNECT</span><h2>Supply your key</h2><p>Copy a key from Key Management in this environment. Set your control-plane address and paste the key at the prompt.</p><pre tabindex="0" aria-label="Python configuration"><code>export PARTLY_URL=http://127.0.0.1:8080
+read -r -s PARTLY_SDK_KEY
+export PARTLY_SDK_KEY</code></pre></section>
+            <section><span class="eyebrow">03 / EVALUATE</span><h2>Make your first check</h2><p>Create <code>new_checkout</code> in this environment. Save the example as <code>quickstart.py</code> and run it with Python.</p><p>Initialize once. Reuse the client. Evaluation errors let your application choose what to do.</p></section>
+          </aside>
+          <div class="code-panel"><div class="code-heading"><span>quickstart.py</span><label class="docs-language" for="docs-language">Language<select id="docs-language" aria-label="Language"><option value="python">Python</option></select></label><button id="copy-example" disabled>Copy code</button></div><pre class="code-example" tabindex="0" aria-label="Complete Python example"><code id="docs-code">Loading example…</code></pre></div>
+        </div>
+      </section>
+      <footer><span>Partly <span class="local-badge">LOCAL</span></span><span>Local policy evaluation. No external services.</span></footer>
+    </section>
+    <p id="loading" class="muted loading">Connecting to Partly…</p>
+  </main>
+  <dialog id="flag-dialog" aria-labelledby="flag-dialog-title" aria-describedby="flag-dialog-context">
+    <div class="dialog-heading"><div><p class="eyebrow">NEW FEATURE FLAG</p><h2 id="flag-dialog-title">Create a flag</h2><p id="flag-dialog-context" class="muted"></p></div><button id="close-flag" class="quiet" aria-label="Close flag dialog">✕</button></div>
+    <form id="new-flag">
+      <div class="dialog-content"><label for="flag-key">Flag key<input id="flag-key" name="key" placeholder="e.g. new_checkout" pattern="[a-z0-9_-]{1,64}" maxlength="64" autocomplete="off" required></label><p class="small muted key-help">Lowercase letters, numbers, underscores, and hyphens. The key identifies this flag in your application.</p><div id="new-flag-editor"></div><p id="flag-dialog-error" class="notice error" role="alert" hidden></p></div>
+      <div class="dialog-actions"><button id="cancel-flag" type="button">Cancel</button><button class="primary" type="submit">Create flag</button></div>
+    </form>
+  </dialog>
+  <dialog id="discard-dialog" class="confirm-dialog" aria-labelledby="discard-title" aria-describedby="discard-description">
+    <div class="dialog-content"><p class="eyebrow">UNSAVED CHANGES</p><h2 id="discard-title">Discard your changes?</h2><p id="discard-description" class="muted">Your edits have not been saved. Keep editing or discard them to continue.</p></div><div class="dialog-actions"><button id="keep-editing" autofocus>Keep editing</button><button id="discard-changes" class="primary">Discard changes</button></div>
+  </dialog>
+</body>
+</html>
