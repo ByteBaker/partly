@@ -127,4 +127,8 @@ Install the wheel before testing. From the repository root:
 python -m pytest -q sdks/python/tests tests/e2e/test_sdk.py tests/e2e/test_https.py
 ```
 
-Tests exercise both the native boundary and the real control plane. The root README includes the browser and full-workspace checks.
+Tests exercise both the native boundary and the real control plane. See [development checks](../../RELEASING.md#build-and-verify) for browser and full-workspace checks.
+
+## License
+
+The SDK and its embedded Rust evaluator are licensed under the Apache License 2.0. Applications may use them under their own license, including proprietary licenses. The package includes `LICENSE`, `NOTICE`, and third-party notices for its native dependencies. Those dependencies keep their own licenses; the server's ELv2 restrictions do not apply to this SDK.

@@ -1,0 +1,99 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
+# Prefer MIT where upstream explicitly offers a choice.
+accepted = ["MIT", "Apache-2.0", "ISC", "BSD-3-Clause", "Zlib", "Unicode-3.0", "Apache-2.0 WITH LLVM-exception"]
+ignore-dev-dependencies = true
+ignore-build-dependencies = false
+# Partly's own license files are distributed separately.
+private = { ignore = true }
+
+[ryu.clarify]
+license = "Apache-2.0"
+[[ryu.clarify.files]]
+path = "LICENSE-APACHE"
+checksum = "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+
+[sync_wrapper.clarify]
+license = "Apache-2.0"
+[[sync_wrapper.clarify.files]]
+path = "LICENSE"
+checksum = "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+
+[target-lexicon.clarify]
+license = "Apache-2.0 WITH LLVM-exception"
+[[target-lexicon.clarify.files]]
+path = "LICENSE"
+checksum = "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+
+# ring 0.17.14 splits its licenses and has distinct ISC source-header attributions.
+[ring.clarify]
+license = "Apache-2.0 AND ISC"
+
+[[ring.clarify.files]]
+path = "LICENSE-BoringSSL"
+license = "Apache-2.0"
+checksum = "005fc765ddc5115da796cca915baa9557abae13ff35e0a47c47affc56f6c414d"
+
+[[ring.clarify.files]]
+path = "src/polyfill/once_cell/LICENSE-APACHE"
+license = "Apache-2.0"
+checksum = "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+
+[[ring.clarify.files]]
+path = "third_party/fiat/LICENSE"
+license = "Apache-2.0"
+checksum = "9eacbcb81be660840c714a560a9d65ba07913db98dd4baf969f78dd499fdd60f"
+
+[[ring.clarify.files]]
+path = "LICENSE-other-bits"
+license = "ISC"
+checksum = "f025ccfb7dfb6bdfedc75ca0f67acc69e6fb4998143d834f7c2f38a29989680f"
+
+[[ring.clarify.files]]
+path = "crypto/poly1305/poly1305.c"
+license = "ISC"
+checksum = "9d3cd1e69f280a14314994684fb0f503013e1159d5168f8cbb63931bd49ed814"
+end = "CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. */"
+
+[[ring.clarify.files]]
+path = "crypto/fipsmodule/ec/ecp_nistz.h"
+license = "ISC"
+checksum = "19c779f8bbc141fa15c14e0a15aacaee2da917f7043af883c90cbef3cd6f4847"
+end = "CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. */"
+
+[[ring.clarify.files]]
+path = "crypto/fipsmodule/aes/aes_nohw.c"
+license = "ISC"
+checksum = "e01f82dc64c40e422eb046cba40fce87545c6a45bc9719e23176ef53bdb8ce8b"
+end = "CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. */"
+
+[[ring.clarify.files]]
+path = "crypto/fipsmodule/ec/ecp_nistz.c"
+license = "ISC"
+checksum = "1f6e55e48a7dc93660e034e5c72572e464353ebe46b7af6ae5c065e55277ff25"
+end = "CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. */"
+
+[[ring.clarify.files]]
+path = "src/debug.rs"
+license = "ISC"
+checksum = "8f124a95cebfb8dbd3bbfe25c9a31218c948c5c9f0865be107777823fcc545e0"
+end = "CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE."
+
+[[ring.clarify.files]]
+path = "src/limb.rs"
+license = "ISC"
+checksum = "22e2692e264302a992ec1511f78e2e29fb2eadc8df82c75364f85ab679a6af85"
+end = "CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE."
+
+[[ring.clarify.files]]
+path = "src/digest/sha1.rs"
+license = "ISC"
+checksum = "77b710d261c2c63e6cd50842955212a9b9e2b8e8d4138beab3288137d900562f"
+end = "CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE."
+
+[[ring.clarify.files]]
+path = "src/aead/chacha.rs"
+license = "ISC"
+checksum = "11aa22050eba0e953f55d501a1b49a55c6b06159c901732d781154f6574363a4"
+end = "CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE."

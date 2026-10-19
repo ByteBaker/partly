@@ -1,3 +1,6 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
 """Check installed release artifacts; needs the wheel, trustme, and packaging."""
 
 import argparse
@@ -57,7 +60,15 @@ def main():
     parser.add_argument("binary", type=Path, help="Built Partly executable")
     args = parser.parse_args()
     assert Path(partly.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()), "SDK must be installed in this environment"
-    sdk_version = Version(importlib.metadata.version("partly-sdk"))
+    distribution = importlib.metadata.distribution("partly-sdk")
+    sdk_version = Version(distribution.version)
+    expression = distribution.metadata["License-Expression"] or ""
+    assert "Apache-2.0" in expression and "Elastic-2.0" not in expression
+    for name in ("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "RUST_STDLIB_NOTICES.html"):
+        assert name in distribution.metadata.get_all("License-File", [])
+        files = [path for path in distribution.files or [] if str(path).endswith(f".dist-info/licenses/{name}")]
+        assert len(files) == 1 and files[0].locate().stat().st_size > 0, f"Missing packaged notice: {name}"
+    assert "Elastic License 2.0" not in distribution.read_text("licenses/LICENSE")
     with tempfile.TemporaryDirectory(prefix="partly-release-") as directory:
         work = Path(directory)
         binary = work / "partly"

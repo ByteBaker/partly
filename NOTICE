@@ -1,0 +1,7 @@
+Partly
+Copyright 2026 ByteBaker
+
+The control plane and dashboard are licensed under the Elastic License 2.0.
+The SDK, shared evaluator, and Python examples are licensed under Apache-2.0.
+See LICENSING.md for the scope of each license.
+Third-party components remain under their respective licenses.

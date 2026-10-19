@@ -142,4 +142,8 @@ There is no `/reveal` endpoint. All responses use `Cache-Control: no-store`, inc
 
 Admin JSON bodies are limited to 16 KiB. Invalid input returns a 4xx response; storage failures return a generic 500 and details in the terminal. Credentials are not logged. API Keys are deliberately plaintext in the database for this local POC; passwords are salted Argon2id hashes.
 
-The [root README](../../README.md) has the complete build and test commands.
+See the [root README](../../README.md) to get started and [development checks](../../RELEASING.md#build-and-verify) for the full test commands.
+
+## License
+
+The control plane and dashboard are source-available under the [Elastic License 2.0](../../LICENSE). The bundled evaluator and Python quickstart retain their Apache-2.0 license. See [licensing boundaries](../../LICENSING.md) before redistributing the executable.

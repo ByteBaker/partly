@@ -1,3 +1,6 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Apache-2.0
+
 """Check a larger population against a flag created in the Partly dashboard."""
 import asyncio
 import os

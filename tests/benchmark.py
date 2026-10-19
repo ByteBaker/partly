@@ -1,3 +1,6 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
 """Small local baseline, not a load test. Run with the release binary and wheel."""
 import asyncio
 import json

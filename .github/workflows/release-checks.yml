@@ -1,3 +1,6 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
 name: Release checks and artifacts
 
 on:
@@ -14,6 +17,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.98.1"
 
 jobs:
   checks:
@@ -38,8 +42,8 @@ jobs:
             sdks/python/pyproject.toml
       - name: Install build and test tools
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
-          rustup default stable
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
+          rustup default "$RUST_TOOLCHAIN"
           python -m pip install -r requirements-dev.txt
           python -m playwright install --with-deps chromium
       - name: Build and install the SDK and server
@@ -73,6 +77,17 @@ jobs:
           python -m pip install pip-audit
           python -m pip freeze --exclude partly-sdk > "$RUNNER_TEMP/audit-requirements.txt"
           python -m pip_audit --no-deps --disable-pip -r "$RUNNER_TEMP/audit-requirements.txt"
+      - name: Check dependency notices
+        if: matrix.python == '3.12'
+        run: |
+          cargo install cargo-about --version 0.9.2 --locked
+          cargo fetch --locked
+          cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-server/Cargo.toml --target x86_64-unknown-linux-musl --target aarch64-apple-darwin licenses/third-party.hbs --output-file THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/server-licenses.log"
+          cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path sdks/python/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdks/python/THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/sdk-licenses.log"
+          if grep -q 'failed to validate all files specified in clarification' "$RUNNER_TEMP/"*-licenses.log; then
+            exit 1
+          fi
+          git diff --exit-code -- THIRD_PARTY_NOTICES.txt sdks/python/THIRD_PARTY_NOTICES.txt
 
   artifacts:
     needs: checks
@@ -103,9 +118,10 @@ jobs:
         env:
           BINARY_TARGET: ${{ matrix.binary-target }}
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
           rustup target add "$BINARY_TARGET"
+          cmp "$(rustc --print sysroot)/share/doc/rust/COPYRIGHT-library.html" sdks/python/RUST_STDLIB_NOTICES.html
       - name: Install the Linux static linker
         if: runner.os == 'Linux'
         run: |
@@ -133,7 +149,7 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           maturin-version: v1.15.0
-          rust-toolchain: stable
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
           target: ${{ matrix.wheel-target }}
           manylinux: ${{ matrix.manylinux }}
           working-directory: target/release-source
@@ -155,7 +171,14 @@ jobs:
         env:
           BINARY_TARGET: ${{ matrix.binary-target }}
         run: |
-          tar -czf "dist/partly-$BINARY_TARGET.tar.gz" -C "target/$BINARY_TARGET/release" partly
+          mkdir -p "$RUNNER_TEMP/partly-package"
+          cp "target/$BINARY_TARGET/release/partly" LICENSE LICENSING.md NOTICE THIRD_PARTY_NOTICES.txt "$RUNNER_TEMP/partly-package/"
+          cp crates/partly-core/LICENSE "$RUNNER_TEMP/partly-package/LICENSE-APACHE"
+          cp sdks/python/RUST_STDLIB_NOTICES.html "$RUNNER_TEMP/partly-package/"
+          if [ "$RUNNER_OS" = Linux ]; then
+            cp /usr/share/doc/musl-dev/copyright "$RUNNER_TEMP/partly-package/MUSL_NOTICES.txt"
+          fi
+          tar -czf "dist/partly-$BINARY_TARGET.tar.gz" -C "$RUNNER_TEMP/partly-package" .
           python - <<'PY'
           import hashlib
           from pathlib import Path

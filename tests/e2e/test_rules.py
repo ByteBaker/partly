@@ -1,3 +1,6 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
 """Exercise saved rules through the real server and installed native SDK."""
 
 import pytest

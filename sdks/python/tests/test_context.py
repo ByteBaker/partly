@@ -1,3 +1,6 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Apache-2.0
+
 """Native boundary contracts that Python's permissive types can otherwise hide."""
 import json
 

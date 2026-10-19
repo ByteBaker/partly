@@ -1,0 +1,4 @@
+# Preserve upstream notices byte for byte, including their whitespace.
+THIRD_PARTY_NOTICES.txt -text -whitespace
+sdks/python/THIRD_PARTY_NOTICES.txt -text -whitespace
+sdks/python/RUST_STDLIB_NOTICES.html -text -whitespace

@@ -1,3 +1,6 @@
+// Copyright 2026 ByteBaker
+// SPDX-License-Identifier: Apache-2.0
+
 use regex::Regex;
 use regex_syntax::ast::{Ast, Flag as RegexFlag};
 use serde::{Deserialize, Serialize};

@@ -73,3 +73,7 @@ Percentages describe a share of possible hash buckets. Small samples do not alwa
 ```sh
 cargo test -p partly-core
 ```
+
+## License
+
+The shared evaluator is licensed under the [Apache License 2.0](LICENSE). It can be used separately from the ELv2 control plane. Preserve the included license and attribution notices when redistributing it.

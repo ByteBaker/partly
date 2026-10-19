@@ -1,3 +1,6 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
 """Prune the SDK sdist lockfile and extract its verified source (Python 3.12+)."""
 
 import argparse

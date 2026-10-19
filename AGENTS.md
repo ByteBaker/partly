@@ -9,7 +9,7 @@ Read this file and the relevant package READMEs before changing the project. The
 - SDK: Python only for now, with shared Rust evaluation through PyO3 and Maturin. No browser SDK or frontend application example.
 - Flags return boolean decisions through four rollout modes: everyone, percentage, custom rules, or nobody. Evaluate one flat `context` dictionary; percentage selection uses its stable `id`. Custom rules use plain context keys, with AND within groups and OR between groups. Keep rules inside each flag for now; no reusable audiences, stored profiles, variants, or evaluation-result LRU.
 - Keep the Rust evaluator independent of HTTP, storage, and language bindings.
-- Release preparation is authorized: versioning, package metadata, binaries, wheels, checks, and operational basics. The PyPI name is `partly-sdk`; `partly.sh` URLs are placeholders until deployed. Source license and public repository remain undecided. Do not publish or choose a license without the user's decision. Enterprise features, HA, billing, and licensing implementation are deferred. SSE is optional.
+- Release preparation is authorized: versioning, package metadata, binaries, wheels, checks, and operational basics. The PyPI name is `partly-sdk`; `partly.sh` URLs are placeholders until deployed. The user selected ELv2 for the control plane/dashboard and Apache-2.0 for the SDK, shared evaluator, and Python integration examples; see LICENSING.md. Describe the server as source-available and the SDK as open source. Preserve these boundaries and include the relevant license texts and notices in release artifacts. The public repository remains undecided; do not publish without a confirmed destination. Enterprise features, HA, billing, and premium activation are deferred. SSE is optional.
 
 ## Contracts to preserve
 
@@ -38,6 +38,8 @@ Read this file and the relevant package READMEs before changing the project. The
 - Use styled dropdowns throughout the dashboard, including their option menus. Preserve keyboard navigation, type-ahead search, accessible labels, and selected states. Opening menus must not move content. Escape and outside clicks cancel the pending choice.
 - Create flags through a modal in the current environment only. Display the environment as read-only context, never as a selectable field. Create and edit responses return the saved flag so the dashboard can update it in place without refetching the list or discarding other drafts.
 - Write READMEs in CEFR-B2 English. Explain necessary terms and provide working examples.
+- Start first-party code files with `Copyright 2026 ByteBaker` and the component's SPDX license identifier in language-appropriate comments. Preserve required shebangs and doctypes; leave generated and third-party material unchanged.
+- Keep the root README focused on what Partly does, getting started, key alpha limits, and links to package and release guides.
 - Keep `examples/python` runnable and exercise it through end-to-end tests. Start with a minimal working quickstart; keep detailed options and error types in the SDK reference. Cover all supported POC workflows, including setup, keys, async SDK lifecycle, refresh, and failures.
 - Add focused tests for native evaluation and percentage consistency. Run checks appropriate to each change; documentation-only edits do not require application tests.
 - Do not claim performance gains without measurements that include Python binding overhead.

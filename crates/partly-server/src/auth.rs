@@ -1,3 +1,6 @@
+// Copyright 2026 ByteBaker
+// SPDX-License-Identifier: Elastic-2.0
+
 use crate::ApiError;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use std::{

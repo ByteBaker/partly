@@ -30,3 +30,7 @@ python examples/python/rollout.py
 Paste the key at the `read` prompt and press Enter. This optional diagnostic uses environment variables for convenience. It uses `new_checkout` by default; `PARTLY_FLAG` can select a different existing flag. A 50% rollout selects roughly half the users, not exactly 5,000. The same flag and ID produce the same result when the policy is unchanged. Adding users does not change earlier users' decisions.
 
 The last line normally reads `Policy updated: False`, showing an unchanged manual refresh. Both examples are run by the end-to-end tests and close the client in `finally`.
+
+## License
+
+The examples use the [Apache License 2.0](LICENSE), so you can adapt them in proprietary or open-source applications. Preserve the required license and attribution notices when redistributing them.

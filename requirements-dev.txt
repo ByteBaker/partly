@@ -1,3 +1,6 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
 maturin>=1.9.4,<2
 pytest>=8,<10
 pytest-asyncio>=0.24,<2

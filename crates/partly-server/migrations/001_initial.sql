@@ -1,3 +1,6 @@
+-- Copyright 2026 ByteBaker
+-- SPDX-License-Identifier: Elastic-2.0
+
 PRAGMA user_version = 1;
 CREATE TABLE admin (
     id INTEGER PRIMARY KEY CHECK (id = 1),

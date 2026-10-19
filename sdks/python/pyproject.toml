@@ -1,3 +1,6 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Apache-2.0
+
 [build-system]
 requires = ["maturin>=1.9.4,<2"]
 build-backend = "maturin"
@@ -7,6 +10,9 @@ name = "partly-sdk"
 dynamic = ["version"]
 description = "Local feature flag evaluation with an async Python client and Rust core"
 readme = "README.md"
+# The native extension also includes MIT-licensed dependencies.
+license = "Apache-2.0 AND MIT"
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "RUST_STDLIB_NOTICES.html"]
 requires-python = ">=3.10"
 dependencies = ["httpx>=0.27,<1", "certifi"]
 classifiers = [
