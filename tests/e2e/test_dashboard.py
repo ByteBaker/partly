@@ -13,7 +13,7 @@ def login(page, server, screen="flags", environment="development"):
 
 
 def create_flag(page, key, mode="disabled", percentage=None):
-    page.get_by_role("button", name="+ Create flag", exact=True).click()
+    page.get_by_role("button", name="Create flag", exact=True).click()
     dialog = page.get_by_role("dialog", name="Create a flag")
     dialog.get_by_label("Flag key", exact=True).fill(key)
     dialog.get_by_label("Rollout mode for new flag", exact=True).select_option(mode)
@@ -22,6 +22,15 @@ def create_flag(page, key, mode="disabled", percentage=None):
     dialog.get_by_role("button", name="Create flag", exact=True).click()
     expect(dialog).to_be_hidden()
     expect(page.locator(f'.flag-row[data-key="{key}"]')).to_be_visible()
+
+
+def create_key(page, name):
+    page.locator("#generate-key").click()
+    dialog = page.get_by_role("dialog", name="Generate API Key", exact=True)
+    dialog.get_by_label("Key name", exact=True).fill(name)
+    dialog.get_by_role("button", name="Generate key", exact=True).click()
+    expect(dialog).to_be_hidden()
+    expect(page.get_by_label(f"Name for {name}", exact=True)).to_be_visible()
 
 
 def test_dashboard_setup_flags_keys_and_restart(server):
@@ -41,24 +50,28 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         create_flag(page, "new_checkout", "percentage", 25)
         page.get_by_label("Percentage for new_checkout").fill("50")
         page.get_by_role("button", name="Save new_checkout", exact=True).click()
-        expect(page.get_by_role("status")).to_contain_text("Saved new_checkout")
+        expect(page.get_by_role("status")).to_contain_text("Saved")
         expect(page.get_by_role("tab")).to_have_text(["Feature flags", "Key Management", "Docs"])
         artifacts = ROOT / "test-results"
         artifacts.mkdir(exist_ok=True)
         page.screenshot(path=str(artifacts / "dashboard-desktop.png"), full_page=True)
         page.get_by_role("tab", name="Key Management").click()
         expect(page).to_have_url(f"{server.url}/environments/development/keys")
-        page.get_by_label("Key name", exact=True).fill("Checkout service")
-        page.get_by_role("button", name="Generate key").click()
+        heading = page.locator(".workspace-heading").bounding_box()
+        create_key(page, "Checkout service")
+        expect(page.locator(".key-row").get_by_role("status")).to_have_text("Created")
+        assert page.locator(".workspace-heading").bounding_box() == heading
         field = page.locator(".key-controls input")
         expect(field).to_have_attribute("type", "password")
         expect(field).to_have_value(re.compile(r"pk_[A-Za-z0-9]{24}"))
         requests = []
         page.on("request", lambda request: requests.append(request.url))
-        copy = page.get_by_role("button", name=re.compile("^Copy SDK key "))
+        copy = page.get_by_role("button", name=re.compile("^Copy API Key "))
         copy.click()
-        expect(page.get_by_role("status")).to_have_text("SDK key copied.")
-        expect(copy).to_have_text("Copied")
+        expect(page.get_by_role("status")).to_have_text("Copied")
+        expect(page.locator(".key-row").get_by_role("status")).to_have_text("Copied")
+        assert page.locator(".workspace-heading").bounding_box() == heading
+        expect(copy).to_have_text("Copy")
         secret = page.evaluate("navigator.clipboard.readText()")
         assert re.fullmatch(r"pk_[A-Za-z0-9]{24}", secret)
         expect(field).to_have_value(secret)
@@ -72,6 +85,7 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         page.get_by_label("Name for Checkout service", exact=True).fill("Checkout worker")
         page.get_by_role("button", name="Save name for Checkout service").click()
         expect(page.get_by_label("Name for Checkout worker", exact=True)).to_have_value("Checkout worker")
+        expect(page.locator(".key-row").get_by_role("status")).to_have_text("Saved")
         server.stop()
         server.start()
         page.reload()
@@ -83,7 +97,7 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         expect(field).to_have_value(secret)
         copy.focus()
         page.keyboard.press("Enter")
-        expect(page.get_by_role("status")).to_have_text("SDK key copied.")
+        expect(page.get_by_role("status")).to_have_text("Copied")
         assert page.evaluate("navigator.clipboard.readText()") == secret
         page.screenshot(path=str(artifacts / "keys-desktop.png"), full_page=True)
         page.set_viewport_size({"width": 390, "height": 844})
@@ -99,7 +113,7 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         page.evaluate("delete navigator.clipboard.writeText")
         page.get_by_label("Environment", exact=True).select_option("production")
         expect(page).to_have_url(f"{server.url}/environments/production/keys")
-        expect(page.get_by_text("Generate a key to connect your Python application.")).to_be_visible()
+        expect(page.get_by_text("Generate a key to connect your application.")).to_be_visible()
         page.get_by_role("tab", name="Feature flags").click()
         expect(page.get_by_text("No flags in this environment")).to_be_visible()
         page.get_by_label("Environment", exact=True).select_option("development")
@@ -110,7 +124,7 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         expect(page.get_by_text("No flags in this environment")).to_be_visible()
         page.get_by_role("tab", name="Key Management").click()
         page.get_by_role("button", name="Revoke", exact=True).click()
-        expect(page.get_by_text("Generate a key to connect your Python application.")).to_be_visible()
+        expect(page.get_by_text("Generate a key to connect your application.")).to_be_visible()
         page.get_by_role("button", name="Sign out").click()
         expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
         expect(page.get_by_role("tablist")).to_be_hidden()
@@ -137,11 +151,14 @@ def test_docs_navigation_and_complete_example(server, admin):
         expect(page.get_by_label("Language", exact=True)).to_have_value("python")
         expect(page.get_by_label("Language", exact=True).locator("option")).to_have_text(["Python"])
         expect(page.get_by_role("button", name="Copy code")).to_be_enabled()
-        expect(page.locator("#docs-url")).to_have_text(f"export PARTLY_URL={server.url}")
+        expect(page.locator("#docs-code .token-keyword").first).to_be_visible()
+        expect(page.locator("#docs-code .token-string").first).to_be_visible()
+        expect(page.get_by_role("button", name="Copy code")).to_have_attribute("title", "Copy code")
         code = (ROOT / "examples/python/quickstart.py").read_text()
         assert page.locator("#docs-code").text_content() == code
         page.get_by_role("button", name="Copy code").click()
-        expect(page.get_by_role("status")).to_have_text("Python example copied.")
+        expect(page.get_by_role("status")).to_have_text("Copied")
+        expect(page.locator(".code-heading").get_by_role("status")).to_have_text("Copied")
         assert page.evaluate("navigator.clipboard.readText()") == code
         artifacts = ROOT / "test-results"
         artifacts.mkdir(exist_ok=True)
@@ -167,7 +184,7 @@ def test_flag_modal_types_rules_and_in_place_saves(server, admin):
         page.get_by_label("Percentage for other_flag").fill("75")
         requests = []
         page.on("request", lambda request: requests.append((request.method, request.url)))
-        page.get_by_role("button", name="+ Create flag", exact=True).click()
+        page.get_by_role("button", name="Create flag", exact=True).click()
         modal = page.get_by_role("dialog", name="Create a flag")
         expect(modal.get_by_text("Create flag in development.", exact=True)).to_be_visible()
         assert modal.get_by_label("Environment", exact=True).count() == 0
@@ -208,7 +225,7 @@ def test_flag_modal_types_rules_and_in_place_saves(server, admin):
         row = page.locator('.flag-row[data-key="eligible"]')
         row.get_by_label("Match action for eligible").select_option("disable")
         page.get_by_role("button", name="Save eligible", exact=True).click()
-        expect(page.get_by_role("status")).to_contain_text("Saved eligible")
+        expect(page.get_by_role("status")).to_contain_text("Saved")
         expect(page.get_by_label("Percentage for other_flag")).to_have_value("75")
         expect(page.get_by_role("button", name="Save other_flag", exact=True)).to_be_enabled()
         assert not [request for request in requests if request[0] == "GET"]
@@ -218,7 +235,7 @@ def test_flag_modal_types_rules_and_in_place_saves(server, admin):
             [{"k": "plan", "op": "matches", "v": "pro"}],
         ]}
         # Duplicate creation stays in the modal with its draft intact.
-        page.get_by_role("button", name="+ Create flag", exact=True).click()
+        page.get_by_role("button", name="Create flag", exact=True).click()
         modal.get_by_label("Flag key", exact=True).fill("eligible")
         modal.get_by_role("button", name="Create flag", exact=True).click()
         expect(modal.get_by_role("alert")).to_be_visible()
@@ -268,7 +285,7 @@ def test_unsaved_navigation_reload_and_modal_protection(server, admin):
         expect(field).to_have_value("75")
         page.remove_listener("dialog", cancel_reload)
         field.fill("50")
-        page.get_by_role("button", name="+ Create flag", exact=True).click()
+        page.get_by_role("button", name="Create flag", exact=True).click()
         modal = page.get_by_role("dialog", name="Create a flag")
         modal.get_by_label("Flag key", exact=True).fill("draft")
         page.keyboard.press("Escape")
@@ -282,8 +299,9 @@ def test_unsaved_navigation_reload_and_modal_protection(server, admin):
         expect(modal).to_be_hidden()
         expect(discard).to_be_hidden()
         page.get_by_role("tab", name="Key Management").click()
+        page.locator("#generate-key").click()
         page.get_by_label("Key name", exact=True).fill("unsaved application")
-        page.get_by_role("tab", name="Docs").click()
+        page.keyboard.press("Escape")
         expect(discard).to_be_visible()
         page.get_by_role("button", name="Keep editing").click()
         expect(page.get_by_label("Key name", exact=True)).to_have_value("unsaved application")
@@ -305,8 +323,7 @@ def test_failed_save_preserves_draft_and_key_rename_warns(server, admin):
         expect(page.get_by_role("button", name="Save checkout", exact=True)).to_be_enabled()
         page.get_by_role("tab", name="Key Management").click()
         page.get_by_role("button", name="Discard changes").click()
-        page.get_by_label("Key name", exact=True).fill("Worker")
-        page.get_by_role("button", name="Generate key").click()
+        create_key(page, "Worker")
         name = page.get_by_label("Name for Worker", exact=True)
         name.fill("Renamed worker")
         page.get_by_label("Environment", exact=True).select_option("production")
@@ -357,8 +374,7 @@ def test_key_requests_are_serialized_and_session_failure_keeps_draft(server, adm
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         login(page, server, screen="keys")
-        page.get_by_label("Key name", exact=True).fill("Worker")
-        page.get_by_role("button", name="Generate key").click()
+        create_key(page, "Worker")
         name = page.get_by_label("Name for Worker", exact=True)
         name.fill("Worker v2")
         pending = []
@@ -398,11 +414,11 @@ def test_rule_keyboard_focus_and_independent_row_errors(server, admin):
         expect(checkout.get_by_role("alert")).to_have_text("Checkout could not be saved")
         page.get_by_label("Percentage for search").fill("40")
         page.get_by_role("button", name="Save search", exact=True).click()
-        expect(page.get_by_role("status")).to_contain_text("Saved search")
+        expect(page.get_by_role("status")).to_contain_text("Saved")
         expect(page.get_by_label("Rollout mode for search", exact=True)).to_be_focused()
         expect(checkout.get_by_role("alert")).to_have_text("Checkout could not be saved")
         expect(page.get_by_label("Percentage for checkout")).to_have_value("75")
-        page.get_by_role("button", name="+ Create flag", exact=True).click()
+        page.get_by_role("button", name="Create flag", exact=True).click()
         modal = page.get_by_role("dialog", name="Create a flag")
         modal.get_by_label("Rollout mode for new flag").select_option("custom")
         first_group = modal.get_by_role("group", name="Group 1 · Match all", exact=True)
@@ -481,7 +497,7 @@ def test_pending_creation_cannot_close_or_replace_draft(server, admin):
         page = browser.new_page()
         login(page, server)
         pending = []
-        page.get_by_role("button", name="+ Create flag", exact=True).click()
+        page.get_by_role("button", name="Create flag", exact=True).click()
         modal = page.get_by_role("dialog", name="Create a flag")
         modal.get_by_label("Flag key", exact=True).fill("pending_flag")
         page.route("**/api/environments/development/flags", lambda route: pending.append(route))
@@ -496,7 +512,172 @@ def test_pending_creation_cannot_close_or_replace_draft(server, admin):
         pending.pop().continue_()
         expect(modal).to_be_hidden()
         expect(page.locator('.flag-row[data-key="pending_flag"]')).to_be_visible()
-        page.get_by_role("button", name="+ Create flag", exact=True).click()
+        page.get_by_role("button", name="Create flag", exact=True).click()
         expect(modal.get_by_role("button", name="Close flag dialog", exact=True)).to_be_enabled()
         expect(modal.get_by_label("Flag key", exact=True)).to_have_value("")
+        browser.close()
+
+
+def test_utilitarian_headers_select_clearance_and_sticky_navigation(server, admin):
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        login(page, server, environment="production")
+        for width in (1280, 390, 320):
+            page.set_viewport_size({"width": width, "height": 900})
+            flag_button = page.locator("#create-flag").bounding_box()
+            page.get_by_role("tab", name="Key Management").click()
+            key_button = page.locator("#generate-key").bounding_box()
+            assert flag_button == key_button
+            expect(page.get_by_text("API Keys can read feature flags and rules. Use the UI to make changes.", exact=True)).to_be_visible()
+            page.get_by_role("tab", name="Docs").click()
+            expect(page.locator(".docs-guide")).to_have_count(0)
+            expect(page.locator("footer")).to_have_count(0)
+            expect(page.get_by_text("Default project", exact=True)).to_have_count(0)
+            for select in page.locator("select:visible").all():
+                geometry = select.evaluate("""e => {
+                    const style = getComputedStyle(e);
+                    const arrow = getComputedStyle(e.parentElement, '::after');
+                    return { padding: parseFloat(style.paddingRight), inset: parseFloat(arrow.right),
+                             appearance: style.appearance, events: arrow.pointerEvents };
+                }""")
+                assert geometry == {"padding": 36, "inset": 14, "appearance": "none", "events": "none"}
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+            expect(page.locator(".brand-mark")).to_be_visible()
+            header = page.locator(".site-header").bounding_box()
+            tabs = page.get_by_role("tablist").bounding_box()
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_function("scrollY > 0")
+            assert page.locator(".site-header").bounding_box() == header
+            assert page.get_by_role("tablist").bounding_box() == tabs
+            page.get_by_role("tab", name="Feature flags").click()
+        page.get_by_role("button", name="Create flag", exact=True).click()
+        modal = page.get_by_role("dialog", name="Create a flag")
+        mode = modal.get_by_label("Rollout mode for new flag", exact=True)
+        mode.focus()
+        page.keyboard.press("c")  # Native select type-ahead chooses Custom rules.
+        expect(mode).to_have_value("custom")
+        mode.select_option("custom")
+        for select in modal.locator("select:visible").all():
+            assert select.evaluate("e => parseFloat(getComputedStyle(e).paddingRight)") == 36
+            assert select.evaluate("e => getComputedStyle(e.parentElement, '::after').pointerEvents") == "none"
+        page.on("dialog", lambda dialog: dialog.accept())
+        browser.close()
+
+
+def test_key_modal_dirty_and_pending_creation_safeguards(server, admin):
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        login(page, server, screen="keys")
+        page.locator("#generate-key").click()
+        modal = page.get_by_role("dialog", name="Generate API Key", exact=True)
+        expect(modal.get_by_label("Key name", exact=True)).to_be_focused()
+        expect(modal.get_by_text("Generate API Key in development.")).to_be_visible()
+        modal.get_by_label("Key name", exact=True).fill("Checkout service")
+        page.keyboard.press("Escape")
+        expect(page.get_by_role("dialog", name="Discard your changes?")).to_be_visible()
+        page.get_by_role("button", name="Keep editing").click()
+        expect(modal.get_by_label("Key name", exact=True)).to_have_value("Checkout service")
+        pending = []
+        page.route("**/api/environments/development/keys", lambda route: pending.append(route))
+        modal.get_by_role("button", name="Generate key", exact=True).click()
+        expect(modal.get_by_label("Key name", exact=True)).to_be_disabled()
+        expect(modal.get_by_role("button", name="Close key dialog", exact=True)).to_be_disabled()
+        page.keyboard.press("Escape")
+        expect(modal).to_be_visible()
+        assert len(pending) == 1
+        pending.pop().continue_()
+        expect(modal).to_be_hidden()
+        expect(page.get_by_label("API Key for Checkout service", exact=True)).to_have_attribute("type", "password")
+        page.locator("#generate-key").click()
+        expect(modal.get_by_label("Key name", exact=True)).to_have_value("")
+        modal.get_by_role("button", name="Cancel", exact=True).click()
+        expect(modal).to_be_hidden()
+        expect(page.get_by_role("dialog", name="Discard your changes?")).to_be_hidden()
+        browser.close()
+
+
+def test_success_feedback_never_moves_existing_content(server, admin):
+    def geometry(page, selector):
+        return page.locator(selector).evaluate_all("items => items.map(e => e.getBoundingClientRect().toJSON())")
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(permissions=["clipboard-read", "clipboard-write"])
+        login(page, server)
+        create_flag(page, "checkout", "percentage", 50)
+        page.get_by_role("tab", name="Key Management").click()
+        create_key(page, "Worker")
+        create_key(page, "Other worker")
+        page.clock.install()
+        artifacts = ROOT / "test-results"
+        artifacts.mkdir(exist_ok=True)
+        for width in (1280, 390, 320):
+            page.set_viewport_size({"width": width, "height": 900})
+            key_elements = ".workspace-heading, .key-row, .key-row input, .key-row button, #keys-screen > .hint"
+            before = geometry(page, key_elements)
+            row = page.locator(".key-row").first
+            row.get_by_role("button", name=re.compile("^Copy API Key ")).click()
+            expect(row.get_by_role("status")).to_have_text("Copied")
+            assert geometry(page, key_elements) == before
+            page.screenshot(path=str(artifacts / f"stable-key-feedback-{width}.png"), full_page=True)
+            page.clock.fast_forward(3000)
+            expect(page.get_by_role("status")).to_be_hidden()
+            assert geometry(page, key_elements) == before
+            row.locator('input[name="name"]').fill(f"Worker {width}")
+            row.get_by_role("button", name=re.compile("^Save name for ")).click()
+            expect(row.get_by_role("status")).to_have_text("Saved")
+            assert geometry(page, key_elements) == before
+
+            page.get_by_role("tab", name="Docs").click()
+            expect(page.get_by_role("button", name="Copy code")).to_be_enabled()
+            doc_elements = ".workspace-heading, .code-panel, .code-heading, .code-heading > span, .code-heading label, #copy-example, .code-example"
+            before = geometry(page, doc_elements)
+            page.get_by_role("button", name="Copy code").click()
+            expect(page.get_by_role("status")).to_have_text("Copied")
+            assert geometry(page, doc_elements) == before
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+            page.screenshot(path=str(artifacts / f"stable-docs-feedback-{width}.png"), full_page=True)
+            page.clock.fast_forward(3000)
+            expect(page.get_by_role("status")).to_be_hidden()
+            assert geometry(page, doc_elements) == before
+
+            page.get_by_role("tab", name="Feature flags").click()
+            page.get_by_label("Percentage for checkout").fill(str(width % 100))
+            flag_elements = ".workspace-heading, .flag-row, .flag-heading, .flag-row select, .flag-row input, .flag-row button"
+            before = geometry(page, flag_elements)
+            page.get_by_role("button", name="Save checkout", exact=True).click()
+            expect(page.get_by_role("status")).to_have_text("Saved")
+            assert geometry(page, flag_elements) == before
+            page.clock.fast_forward(3000)
+            expect(page.get_by_role("status")).to_be_hidden()
+            assert geometry(page, flag_elements) == before
+            page.get_by_role("tab", name="Key Management").click()
+        browser.close()
+
+
+def test_docs_highlighting_preserves_literal_source_and_never_renders_html(server, admin):
+    source = '''# Literal example containing HTML-like data
+API_KEY = "<img src=x onerror=alert(1)>"
+async def main():
+    count = 18
+    print(f"Value: {count}")
+'''
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(permissions=["clipboard-read", "clipboard-write"])
+        page.route("**/docs/python.py", lambda route: route.fulfill(status=200, content_type="text/plain", body=source))
+        login(page, server, screen="docs")
+        code = page.locator("#docs-code")
+        expect(code).to_have_text(source)
+        assert code.text_content() == source
+        assert code.locator("img, script").count() == 0
+        for kind in ("comment", "string", "keyword", "number"):
+            expect(code.locator(f".token-{kind}").first).to_be_visible()
+        colors = code.locator("span").evaluate_all("items => [...new Set(items.map(e => getComputedStyle(e).color))]")
+        assert len(colors) >= 3
+        page.get_by_role("button", name="Copy code", exact=True).click()
+        expect(page.get_by_role("status")).to_have_text("Copied")
+        assert page.evaluate("navigator.clipboard.readText()") == source
         browser.close()

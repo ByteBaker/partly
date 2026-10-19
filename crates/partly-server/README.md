@@ -25,17 +25,21 @@ Database operations and password hashing run on blocking worker threads, away fr
 
 The normal `/` page handles setup and login. After login, the top ribbon switches between **Feature flags**, **Key Management**, and **Docs**, in that order. The top-right environment selector performs a full page navigation. The environment and screen stay visible in the URL, such as `/environments/production/flags`. Unknown environments and screens return 404.
 
+Create flag and Generate key share the same page-header position and open separate dialogs. API Keys read feature flags and rules; use the UI to make changes.
+
+The logo, environment selector, and tab ribbon stay visible while scrolling. Short success messages use existing row padding or a tooltip beside the action. They disappear after three seconds without moving or resizing content.
+
 Create a flag in the modal, which names the current environment without allowing it to change. Choose one rollout mode: enabled for everyone, percentage of users, custom rules, or disabled for everyone. Custom rules match all conditions within a group and any group within the flag. Each condition contains `k`, `op`, and `v`. Number comparisons, case-sensitive string matching, and boolean equality use typed inputs. The SDK checks context types and reports errors; the control plane never receives evaluation context.
 
 The dashboard warns before navigation or modal dismissal would lose unsaved edits. Browser reload and close warnings use the browser's own confirmation prompt, which cannot be guaranteed on every device shutdown. Saving one flag updates its row directly from the response, preserving other drafts.
 
 The dashboard uses the selected blue Console design: compact controls, white and neutral surfaces, clear borders, and restrained blue accents. It has no external font or frontend dependency.
 
-Give each key an application name when generating it. Edit the name and select **Save name** to rename it; this does not change the key. Names accept 1–64 characters. Internal IDs are not shown.
+Select **Generate key** in the page header to open the API Key dialog. Give each key an application name when generating it. Edit the name and select **Save name** to rename it; this does not change the key. Names accept 1–64 characters. Internal IDs are not shown.
 
 The authenticated dashboard loads keys into masked fields. Select **Copy** to copy a key while it stays masked; a message confirms success. **Reveal** displays the value, and **Hide** masks it again. These actions use the value already in the UI and make no API request. Copy and reveal remain available after a restart. If the browser blocks clipboard access, reveal the key and copy it manually. Masking is visual: keys are still present in the authenticated browser.
 
-**Docs** has a language dropdown with Python as the only current option. It shows installation instructions and the minimal, runnable `examples/python/quickstart.py`, including initialization, key supply, evaluation, error handling, and cleanup. Background polling handles refresh automatically. The code is bundled into the executable and served at `/docs/python.py`; it contains no credentials. Select **Copy code** to use it in your application.
+**Docs** shows the syntax-highlighted `examples/python/quickstart.py` and a language dropdown with Python as the only current option. It includes initialization, key supply, evaluation, error handling, and cleanup. Replace its placeholder URL and API Key constants with your values; it needs no environment variables. The copy icon copies the complete source. Installation instructions stay in the READMEs. The code is bundled into the executable and served at `/docs/python.py`; it contains no credentials.
 
 New keys are 27 characters: `pk_` plus 24 random ASCII letters and digits, generated using the operating system's secure random source. Existing longer keys remain valid. Revocation removes policy-download access; it does not erase a policy already held by an SDK.
 
@@ -60,7 +64,7 @@ All admin writes require `X-Partly-Request: dashboard`. Login sets an HttpOnly, 
 | `DELETE /api/keys/{id}` | Admin; revoke key |
 | `GET /api/policy` | SDK bearer key; full policy or `304` |
 
-The SDK key chooses the project and environment; request parameters cannot widen access. The server authenticates before checking `If-None-Match`. `200` includes the complete JSON policy and a quoted SHA-256 content ETag. `304` has no body. Changes to another environment or saving identical flag values leave the current policy unchanged.
+The API Key chooses the project and environment; request parameters cannot widen access. The server authenticates before checking `If-None-Match`. `200` includes the complete JSON policy and a quoted SHA-256 content ETag. `304` has no body. Changes to another environment or saving identical flag values leave the current policy unchanged.
 
 Creation returns 409 if the key already exists in that environment. Updating a missing flag returns 404. Both authenticate the administrator before validating rules on a blocking worker. A flag has one of these JSON forms:
 
@@ -77,6 +81,6 @@ An environment's complete policy must fit within the SDK's 1 MiB download limit.
 
 There is no `/reveal` endpoint. All responses use `Cache-Control: no-store`, including authenticated key lists.
 
-Admin JSON bodies are limited to 16 KiB. Invalid input returns a 4xx response; storage failures return a generic 500 and details in the terminal. Credentials are not logged. SDK keys are deliberately plaintext in the database for this local POC; passwords are salted Argon2id hashes.
+Admin JSON bodies are limited to 16 KiB. Invalid input returns a 4xx response; storage failures return a generic 500 and details in the terminal. Credentials are not logged. API Keys are deliberately plaintext in the database for this local POC; passwords are salted Argon2id hashes.
 
 The [root README](../../README.md) has the complete build and test commands.

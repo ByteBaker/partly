@@ -2,7 +2,7 @@
 
 Partly is a small feature flag control plane. Run one Rust executable, set up an admin account in your browser, and connect a Python application. Flag checks run locally inside the SDK, even when the control plane is offline.
 
-This is a local POC. It supports boolean decisions, stable percentage rollouts, local context rules, development and production environments, and named SDK keys. The dashboard and SQLite are included in the executable. Docker, Node.js, and an external database are not needed to run it.
+This is a local POC. It supports boolean decisions, stable percentage rollouts, local context rules, development and production environments, and named API Keys. The dashboard and SQLite are included in the executable. Docker, Node.js, and an external database are not needed to run it.
 
 ## Run the control plane
 
@@ -17,7 +17,7 @@ Open <http://127.0.0.1:8080>. Create an admin account with a password of at leas
 
 Choose **Development** in the top-right environment selector. In **Feature flags**, select **Create flag**, enter `new_checkout`, and choose a rollout mode: enabled for everyone, percentage of users, custom rules, or disabled for everyone. Creation always uses the current environment. The environment is also in the URL; switching it reloads the page, with a warning before discarding unsaved edits.
 
-Open **Key Management**, name and generate an SDK key, then select **Copy**. The key stays masked; **Reveal** remains available whenever you need to see it. **Docs** contains the complete Python quickstart, with a language dropdown and error handling.
+Open **Key Management**, select **Generate key**, enter a name, and generate an API Key. Select **Copy** to use it. The key stays masked; **Reveal** remains available whenever you need to see it. **Docs** contains the complete Python quickstart, with syntax colors, a language dropdown, and a copy icon.
 
 The development database stays at schema v1 without upgrade migrations. Databases from the earlier on/off and percentage-only design are incompatible. Use a fresh path, such as `--db ./partly-rules.db`, to try this version; existing files are left untouched.
 
@@ -33,13 +33,13 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 maturin build --release --locked --manifest-path sdks/python/Cargo.toml --out target/wheels
 python -m pip install target/wheels/partly_sdk-*.whl
-export PARTLY_URL=http://127.0.0.1:8080
-read -r -s PARTLY_SDK_KEY
-export PARTLY_SDK_KEY
-python examples/python/quickstart.py
 ```
 
-Paste your copied SDK key when `read` waits for input, then press Enter. This keeps it out of your shell history. The example requires the `new_checkout` flag in the key's environment.
+In [quickstart.py](examples/python/quickstart.py), replace `YOUR_API_KEY` with your copied API Key and set `CONTROL_PLANE_URL` to the server address. The example requires the `new_checkout` flag in the key's environment. No environment variables are required.
+
+```sh
+python examples/python/quickstart.py
+```
 
 The [quickstart](examples/python/quickstart.py) builds one client, initializes it, evaluates one flag, and closes it in `finally`. It prints one decision. Initialization raises on failure. An unknown flag raises `FlagNotFoundError`; it does not silently allow or deny a feature. See the [SDK reference](sdks/python/README.md) for refresh and error types, or the [rollout example](examples/python/README.md#check-a-larger-rollout) to check 10,000 users with a compact summary.
 
@@ -108,7 +108,7 @@ Development contracts and scope are recorded in [AGENTS.md](AGENTS.md) and the p
 ## Current limits
 
 - One local server, one admin, and one default project. Use localhost; this POC has no TLS or production hosting setup. Direct IP addresses and `localhost` are accepted hostnames.
-- SDK keys are stored as plaintext in SQLite, by agreement for this POC. Anyone with the database or a backup can read them. Admin passwords use Argon2id.
+- API Keys are stored as plaintext in SQLite, by agreement for this POC. Anyone with the database or a backup can read them. Admin passwords use Argon2id.
 - SDK policies live in memory. A running SDK keeps its last good policy during an outage; a new process needs a successful connection before evaluation. Revoking a key stops future downloads, not already loaded rules.
 - Polling is included. SSE, HA, RBAC, other languages, persistent SDK snapshots, and licensing are deferred.
 - No source license or publication has been selected. Speed and memory goals are not production performance guarantees.

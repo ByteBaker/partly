@@ -18,14 +18,16 @@ Building needs Rust and a C compiler. Installing a matching wheel does not need 
 
 ```python
 import asyncio
-import os
 from partly import Client, Decision
+
+CONTROL_PLANE_URL = "http://127.0.0.1:8080"
+API_KEY = "YOUR_API_KEY"
 
 async def main():
     client = (
         Client.builder()
-        .url("http://127.0.0.1:8080")
-        .secret_key(os.environ["PARTLY_SDK_KEY"])
+        .url(CONTROL_PLANE_URL)
+        .secret_key(API_KEY)
         .build()
     )
     try:
@@ -56,7 +58,7 @@ The default poll interval is 30 seconds after the previous refresh completes. Us
 | `InvalidContextError` | Context is malformed or a required field is missing or invalid |
 | `ContextTypeError` | Context value has the wrong type; subclass of `InvalidContextError` |
 | `PolicyNotReadyError` | No policy has been initialized |
-| `AuthenticationError` | Control plane rejected the SDK key |
+| `AuthenticationError` | Control plane rejected the API Key |
 | `InvalidPolicyError` | Downloaded data or its ETag is invalid |
 | `RefreshError` | Network, timeout, or other HTTP failure |
 | `ClientClosedError` | Network operation attempted after close |

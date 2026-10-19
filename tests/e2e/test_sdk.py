@@ -134,8 +134,8 @@ async def test_rejected_init_and_empty_valid_policy(server, admin):
     ("missing_context", "required key is missing"),
     ("wrong_context_type", "expected number, got string"),
     ("invalid_key", "SDK key rejected"),
-    ("missing_key", "Set PARTLY_SDK_KEY"),
-    ("invalid_url", "Set PARTLY_SDK_KEY"),
+    ("empty_key", "Supply a non-empty ASCII SDK secret key"),
+    ("invalid_url", "Supply a control-plane URL"),
     ("offline", "Policy request failed"),
 ])
 async def test_dashboard_python_example(server, admin, tmp_path, scenario, expected):
@@ -148,19 +148,16 @@ async def test_dashboard_python_example(server, admin, tmp_path, scenario, expec
     response = httpx.get(f"{server.url}/docs/python.py", trust_env=False)
     assert response.status_code == 200
     assert response.text == (ROOT / "examples/python/quickstart.py").read_text()
+    api_key = {"invalid_key": "invalid", "empty_key": ""}.get(scenario, key)
+    url = "invalid" if scenario == "invalid_url" else server.url
     script = tmp_path / "quickstart.py"
-    script.write_text(response.text)
-    env = {**os.environ, "PARTLY_URL": server.url, "PARTLY_SDK_KEY": key}
-    if scenario == "invalid_key":
-        env["PARTLY_SDK_KEY"] = "invalid"
-    elif scenario == "missing_key":
-        del env["PARTLY_SDK_KEY"]
-    elif scenario == "invalid_url":
-        env["PARTLY_URL"] = "invalid"
-    elif scenario == "offline":
+    script.write_text(response.text.replace(
+        'CONTROL_PLANE_URL = "http://127.0.0.1:8080"', f"CONTROL_PLANE_URL = {url!r}",
+    ).replace('API_KEY = "YOUR_API_KEY"', f"API_KEY = {api_key!r}"))
+    if scenario == "offline":
         server.stop()
     process = await asyncio.create_subprocess_exec(
-        sys.executable, str(script), env=env,
+        sys.executable, str(script),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
     stdout, stderr = await process.communicate()
@@ -177,8 +174,6 @@ async def test_dashboard_python_example(server, admin, tmp_path, scenario, expec
 async def test_quickstart_evaluates_locally_and_closes(server, admin, monkeypatch, capsys):
     _, key = make_key(admin)
     save_flag(admin)
-    for name, value in {"PARTLY_URL": server.url, "PARTLY_SDK_KEY": key}.items():
-        monkeypatch.setenv(name, value)
     original_init = Client.init
     clients = []
 
@@ -189,6 +184,7 @@ async def test_quickstart_evaluates_locally_and_closes(server, admin, monkeypatc
 
     monkeypatch.setattr(Client, "init", init_then_stop_server)
     example = runpy.run_path(str(ROOT / "examples/python/quickstart.py"))
+    example["main"].__globals__.update(CONTROL_PLANE_URL=server.url, API_KEY=key)
     await example["main"]()
     captured = capsys.readouterr()
     assert captured.err == ""
