@@ -1,9 +1,9 @@
 """Exercise saved rules through the real server and installed native SDK."""
 
 import pytest
+from conftest import make_key
 
 from partly import Client, ContextTypeError, Decision, InvalidContextError, RefreshError
-from conftest import make_key
 
 
 def custom(groups, action="enable"):
@@ -145,3 +145,26 @@ async def test_environment_policies_restart_and_population_consistency(server, a
     finally:
         await development.aclose()
         await production.aclose()
+
+
+async def test_numeric_rules_keep_precision_across_api_storage_and_sdk(server, admin):
+    limits = [("minimum", -(2**63), 1), ("maximum", 2**64 - 1, -1)]
+    for key, value, _ in limits:
+        create_flag(admin, key, custom([[{"k": "number", "op": "eq", "v": value}]]))
+    _, secret = make_key(admin)
+    client = client_for(server, secret)
+    try:
+        await client.init()
+        for key, value, step in limits:
+            assert client.evaluate(key, context={"number": value}) is Decision.ENABLED
+            assert client.evaluate(key, context={"number": value + step}) is Decision.DISABLED
+            # Out-of-range integer literals must not be rounded into valid rules.
+            response = admin.put(
+                f"/api/environments/development/flags/{key}",
+                json=custom([[{"k": "number", "op": "eq", "v": value - step}]]),
+            )
+            assert response.status_code == 422, response.text
+        assert await client.refresh() is False
+        assert client.evaluate("minimum", context={"number": -(2**63)}) is Decision.ENABLED
+    finally:
+        await client.aclose()

@@ -6,10 +6,9 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from ._native import InvalidPolicyError, PartlyError, Snapshot
+from ._native import MAX_POLICY_BYTES, InvalidPolicyError, PartlyError, Snapshot
 
 logger = logging.getLogger("partly")
-MAX_POLICY_BYTES = 1024 * 1024
 
 
 class Decision(Enum):
@@ -60,17 +59,24 @@ class ClientBuilder:
         return self
 
     def build(self):
-        parsed = urlsplit(self._url or "")
+        if not isinstance(self._url, str) or any(ord(c) <= 32 or ord(c) == 127 for c in self._url):
+            raise ValueError("Supply a control-plane URL without whitespace or control characters")
+        parsed = urlsplit(self._url)
         if (parsed.scheme not in ("http", "https") or not parsed.hostname
-                or parsed.username or parsed.password or parsed.query or parsed.fragment
+                or parsed.username is not None or parsed.password is not None
+                or "?" in self._url or "#" in self._url
                 or parsed.path not in ("", "/")):
             raise ValueError("Supply a control-plane URL such as http://127.0.0.1:8080")
         # Accessing port validates its range and syntax before any network request.
         _ = parsed.port
-        if not isinstance(self._secret_key, str) or not self._secret_key or any(c.isspace() for c in self._secret_key) or not self._secret_key.isascii():
-            raise ValueError("Supply a non-empty SDK secret key without whitespace")
+        if not isinstance(self._secret_key, str) or not self._secret_key or any(not 33 <= ord(c) <= 126 for c in self._secret_key):
+            raise ValueError("Supply a non-empty ASCII SDK secret key without whitespace or control characters")
         for value in (self._interval, self._timeout):
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            try:
+                valid = not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and value > 0
+            except OverflowError:
+                valid = False
+            if not valid:
                 raise ValueError("Polling interval and timeout must be finite positive numbers")
         return Client(self._url.rstrip("/"), self._secret_key, self._interval, self._timeout)
 
@@ -128,11 +134,13 @@ class Client:
     async def _download(self) -> bool:
         try:
             downloaded = await asyncio.wait_for(self._request(), timeout=self._timeout)
+            self._check_open()
             if downloaded is None:
                 self.last_refresh_error = None
                 return False
             body, etag = downloaded
-            snapshot = Snapshot(body)
+            snapshot = await asyncio.to_thread(Snapshot, body)
+            self._check_open()
             if self._snapshot is not None and (snapshot.project, snapshot.environment) != (self._snapshot.project, self._snapshot.environment):
                 raise InvalidPolicyError("Policy project or environment changed unexpectedly")
         except PartlyError as error:
@@ -163,7 +171,8 @@ class Client:
             if response.status_code != 200:
                 raise RefreshError(f"Policy request returned HTTP {response.status_code}")
             etag = response.headers.get("etag", "")
-            if not (len(etag) >= 3 and etag.startswith('"') and etag.endswith('"')):
+            if not (len(etag) >= 3 and etag.startswith('"') and etag.endswith('"')
+                    and all(33 <= ord(c) <= 126 and c != '"' for c in etag[1:-1])):
                 raise InvalidPolicyError("Policy response is missing a valid ETag")
             body = bytearray()
             async for chunk in response.aiter_bytes(chunk_size=64 * 1024):

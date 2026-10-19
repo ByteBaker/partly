@@ -1,4 +1,4 @@
-"""Run against a flag created in the Partly dashboard."""
+"""Check a larger population against a flag created in the Partly dashboard."""
 import asyncio
 import os
 
@@ -15,11 +15,12 @@ async def main():
     try:
         await client.init()
         flag = os.environ.get("PARTLY_FLAG", "new_checkout")
-        for number in range(1, 10_001):
-            user_id = f"user-{number}"
-            decision = client.evaluate(flag, context={"id": user_id})
-            message = "new checkout" if decision is Decision.ENABLED else "current checkout"
-            print(f"{user_id}: {message}")
+        users = 10_000
+        enabled = sum(
+            client.evaluate(flag, context={"id": f"user-{number}"}) is Decision.ENABLED
+            for number in range(1, users + 1)
+        )
+        print(f"Enabled for {enabled:,} of {users:,} users ({enabled / users:.1%}).")
         print("Policy updated:", await client.refresh())
     finally:
         await client.aclose()

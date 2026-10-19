@@ -56,44 +56,69 @@ async function api(path, method = 'GET', body) {
   }
   return response.status === 204 ? undefined : response.json();
 }
-async function action(trigger, operation, errorArea = $('error')) {
-  errorArea.hidden = true; $('notice').textContent = '';
-  const form = trigger?.closest('form');
-  const controls = form ? [...form.querySelectorAll('input, select, button')].map(element => [element, element.disabled]) : [];
-  if (form === $('new-flag')) controls.push([$('close-flag'), $('close-flag').disabled]);
+async function action(trigger, operation, errorArea) {
+  const keyRow = trigger?.closest('.key-row');
+  const form = trigger?.closest('form') || keyRow?.querySelector('form');
   const state = trackers.get(form);
+  if (state?.pending) return;
+  const scope = keyRow || form;
+  errorArea ||= scope?.querySelector('.item-error') || $('error');
+  errorArea.hidden = true;
+  $('notice').textContent = '';
+  const focused = document.activeElement;
+  const controls = scope ? [...scope.querySelectorAll('input, select, button')].map(element => [element, element.disabled]) : [];
+  if (form === $('new-flag')) controls.push([$('close-flag'), $('close-flag').disabled]);
   if (state) state.pending = true;
-  if (form) form.setAttribute('aria-busy', 'true');
+  if (scope) scope.setAttribute('aria-busy', 'true');
   controls.forEach(([element]) => { element.disabled = true; });
   if (trigger) trigger.disabled = true;
   try { await operation(); }
-  catch (error) { errorArea.textContent = error.message; errorArea.hidden = false; }
+  catch (error) {
+    errorArea.textContent = error.message;
+    errorArea.hidden = false;
+    errorArea.scrollIntoView({ block: 'nearest' });
+  }
   finally {
     controls.forEach(([element, disabled]) => { element.disabled = disabled; });
-    if (form) form.removeAttribute('aria-busy');
+    if (scope) scope.removeAttribute('aria-busy');
     if (state) state.pending = false;
     if (trigger && !form) trigger.disabled = false;
     updateDirty();
+    if (document.activeElement === document.body && scope?.isConnected) {
+      const target = focused?.isConnected && !focused.disabled
+        ? focused
+        : scope.querySelector('input:not([disabled]), select:not([disabled]), button:not([disabled])');
+      target?.focus();
+    }
   }
 }
 function beforeUnload(event) {
   if (!unloading && isDirty()) { event.preventDefault(); event.returnValue = ''; }
 }
 function isDirty(element) {
-  return [...trackers].some(([item, state]) => (!element || element === item) && state.baseline !== JSON.stringify(state.read()));
+  if (element) {
+    const state = trackers.get(element);
+    return !!state && state.baseline !== JSON.stringify(state.read());
+  }
+  return [...trackers.values()].some(state => state.baseline !== JSON.stringify(state.read()));
 }
 function updateDirty() {
+  let anyDirty = false;
   for (const [element, state] of trackers) {
-    const dirty = isDirty(element);
+    const dirty = state.baseline !== JSON.stringify(state.read());
+    anyDirty ||= dirty;
     element.dataset.dirty = String(dirty);
     if (state.save && !state.pending) state.save.disabled = !dirty;
     if (state.indicator) state.indicator.hidden = !dirty;
   }
   window.removeEventListener('beforeunload', beforeUnload);
-  if (isDirty() && !unloading) window.addEventListener('beforeunload', beforeUnload);
+  if (anyDirty && !unloading) window.addEventListener('beforeunload', beforeUnload);
 }
 function track(element, read, save, indicator) {
-  trackers.set(element, { read, baseline: JSON.stringify(read()), save, indicator }); updateDirty();
+  trackers.set(element, { read, baseline: JSON.stringify(read()), save, indicator });
+  element.dataset.dirty = 'false';
+  if (save) save.disabled = true;
+  if (indicator) indicator.hidden = true;
 }
 function untrack(element) { trackers.delete(element); updateDirty(); }
 function markSaved(element) {
@@ -141,14 +166,24 @@ function createEditor(flag, name) {
       group.remove.disabled = groups.length === 1;
       group.conditions.forEach(condition => { condition.remove.disabled = group.conditions.length === 1; });
     });
-    updateDirty();
+    if (area.isConnected) updateDirty();
   }
   function addGroup(conditions = [{ k: '', op: 'matches', v: '' }]) {
     const join = node('div', 'OR', 'group-join');
     const box = node('div', '', 'rule-group');
     const heading = node('div', '', 'group-heading'); const title = node('h3');
+    title.id = `rule-group-${++nextId}`;
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-labelledby', title.id);
     const group = { box, title, join, conditions: [] };
-    const remove = button('Remove group', 'quiet', () => { groups.splice(groups.indexOf(group), 1); box.remove(); join.remove(); updateGroupLabels(); });
+    const remove = button('Remove group', 'quiet', () => {
+      const index = groups.indexOf(group);
+      groups.splice(index, 1);
+      box.remove();
+      join.remove();
+      updateGroupLabels();
+      groups[Math.min(index, groups.length - 1)].conditions[0].key.focus();
+    });
     group.remove = remove; heading.append(title, remove); box.append(heading);
     const rows = node('div'); box.append(rows);
     function addCondition(condition = { k: '', op: 'matches', v: '' }) {
@@ -199,22 +234,30 @@ function createEditor(flag, name) {
       });
       setValue(currentType, condition.v);
       const item = { row, key, operator, readValue, remove: null };
-      const removeCondition = button('×', 'quiet remove-condition', () => { group.conditions.splice(group.conditions.indexOf(item), 1); row.remove(); updateGroupLabels(); });
+      const removeCondition = button('×', 'quiet remove-condition', () => {
+        const index = group.conditions.indexOf(item);
+        group.conditions.splice(index, 1);
+        row.remove();
+        updateGroupLabels();
+        group.conditions[Math.min(index, group.conditions.length - 1)].key.focus();
+      });
       removeCondition.setAttribute('aria-label', 'Remove condition'); item.remove = removeCondition;
       row.append(label('Context key', key), label('Operator', operator), valueArea, removeCondition);
       group.conditions.push(item); rows.append(row); updateGroupLabels();
+      return key;
     }
-    const footer = node('div', '', 'group-footer'); footer.append(button('+ AND condition', '', () => addCondition())); box.append(footer);
+    const footer = node('div', '', 'group-footer'); footer.append(button('+ AND condition', '', () => addCondition().focus())); box.append(footer);
     groups.push(group); groupsArea.append(join, box); conditions.forEach(addCondition); updateGroupLabels();
+    return group.conditions[0].key;
   }
   (flag.groups || [[{ k: '', op: 'matches', v: '' }]]).forEach(addGroup);
-  custom.append(button('+ OR group', 'add-group', () => addGroup()));
+  custom.append(button('+ OR group', 'add-group', () => addGroup().focus()));
   custom.append(node('p', 'Context keys refer to your application data. Values stay in your application; only these rules are downloaded.', 'rule-note')); area.append(custom);
   function updateMode() {
     percentageArea.hidden = mode.value !== 'percentage'; custom.hidden = mode.value !== 'custom';
     percentage.disabled = percentageArea.hidden;
     custom.querySelectorAll('input, select').forEach(element => { element.disabled = custom.hidden; });
-    updateDirty();
+    if (area.isConnected) updateDirty();
   }
   mode.addEventListener('change', updateMode); updateMode();
   function read() {
@@ -254,12 +297,17 @@ function flagRow(key, flag) {
   }); remove.setAttribute('aria-label', `Delete ${key}`);
   actions.append(save, remove); heading.append(identity, actions); form.append(heading);
   const editor = createEditor(flag, key); form.append(editor.area);
+  const error = node('p', '', 'notice error item-error'); error.hidden = true; error.setAttribute('role', 'alert'); form.append(error);
   track(form, editor.read, save, indicator);
   form.addEventListener('submit', event => {
     event.preventDefault();
     action(save, async () => {
       const saved = await api(`/environments/${environment}/flags/${key}`, 'PUT', editor.value());
-      untrack(form); form.replaceWith(flagRow(saved.key, saved)); $('notice').textContent = `Saved ${saved.key} in ${environment}.`;
+      const replacement = flagRow(saved.key, saved);
+      untrack(form);
+      form.replaceWith(replacement);
+      if (document.activeElement === document.body) replacement.querySelector('[name=mode]').focus();
+      $('notice').textContent = `Saved ${saved.key} in ${environment}.`;
     });
   });
   return form;
@@ -296,7 +344,8 @@ function addKey({ id, name, secret }) {
     if (!confirm('Revoke this key? Connected SDKs keep their last policy but cannot download updates.')) return;
     action(revoke, async () => { await api(`/keys/${id}`, 'DELETE'); untrack(rename); row.remove(); keyEmptyState(); $('notice').textContent = 'Key revoked.'; });
   });
-  controls.append(secretLabel, copy, reveal, revoke); row.append(rename, controls); $('keys').append(row);
+  const error = node('p', '', 'notice error item-error'); error.hidden = true; error.setAttribute('role', 'alert');
+  controls.append(secretLabel, copy, reveal, revoke); row.append(rename, controls, error); $('keys').append(row);
 }
 function keyEmptyState() {
   if ($('keys').querySelector('.key-row')) return;
@@ -387,6 +436,7 @@ async function boot() {
   } else if (screen === 'keys') {
     const result = await api(`/environments/${environment}/keys`); result.keys.forEach(addKey); keyEmptyState(); track($('new-key'), () => $('key-name').value);
   } else {
+    $('docs-url').textContent = `export PARTLY_URL=${location.origin}`;
     const response = await fetch('/docs/python.py'); if (!response.ok) throw new Error('Could not load the Python example. Reload to try again.');
     $('docs-code').textContent = await response.text(); $('copy-example').disabled = false;
   }

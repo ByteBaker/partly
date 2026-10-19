@@ -1,12 +1,21 @@
 import asyncio
 import copy
 import json
+import threading
 
 import httpx
 import pytest
 
-from partly import (Client, ClientClosedError, Decision, FlagNotFoundError, InvalidContextError,
-                    InvalidPolicyError, PolicyNotReadyError, RefreshError)
+from partly import (
+    Client,
+    ClientClosedError,
+    Decision,
+    FlagNotFoundError,
+    InvalidContextError,
+    InvalidPolicyError,
+    PolicyNotReadyError,
+    RefreshError,
+)
 
 POLICY = {"schema_version": 1, "project": "default", "environment": "development", "revision": 1,
           "flags": {"checkout": {"mode": "percentage", "percentage": 100}}}
@@ -143,6 +152,121 @@ async def test_close_during_init_does_not_leave_a_poller():
     with pytest.raises(ClientClosedError): await task
     await close
     assert client._poll_task is None and client._http.is_closed
+    assert client._snapshot is None and client._etag is None
+
+
+@pytest.mark.parametrize("status", [200, 304])
+async def test_close_during_refresh_keeps_last_accepted_policy(status):
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(200, headers={"etag": '"good"'}, json=POLICY)
+        entered.set()
+        await release.wait()
+        return httpx.Response(status, headers={"etag": '"good"'}, json={**POLICY, "flags": {}})
+
+    client = mocked(handler)
+    await client.init()
+    snapshot = client._snapshot
+    refresh = asyncio.create_task(client.refresh())
+    await entered.wait()
+    close = asyncio.create_task(client.aclose())
+    await asyncio.sleep(0)
+    release.set()
+    try:
+        with pytest.raises(ClientClosedError):
+            await refresh
+    finally:
+        await close
+    assert client._snapshot is snapshot and client._etag == '"good"'
+
+
+async def test_policy_validation_does_not_block_the_event_loop(monkeypatch):
+    from partly._native import Snapshot
+
+    entered = asyncio.Event()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+
+    def delayed_parse(body):
+        loop.call_soon_threadsafe(entered.set)
+        release.wait(timeout=2)
+        return Snapshot(body)
+
+    monkeypatch.setattr("partly.client.Snapshot", delayed_parse)
+    client = mocked(lambda request: httpx.Response(200, headers={"etag": '"good"'}, json=POLICY))
+    init = asyncio.create_task(client.init())
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        assert not init.done()
+        close = asyncio.create_task(client.aclose())
+        await asyncio.sleep(0)
+        release.set()
+        with pytest.raises(ClientClosedError):
+            await init
+        await close
+        assert client._snapshot is None and client._etag is None
+    finally:
+        release.set()
+        await asyncio.gather(init, return_exceptions=True)
+        await client.aclose()
+
+
+async def test_canceled_policy_validation_cannot_replace_snapshot(monkeypatch):
+    from partly._native import Snapshot
+
+    entered = asyncio.Event()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+    finished = asyncio.Event()
+    client = mocked(lambda request: httpx.Response(200, headers={"etag": '"good"'}, json=POLICY))
+    await client.init()
+    snapshot = client._snapshot
+
+    def delayed_parse(body):
+        loop.call_soon_threadsafe(entered.set)
+        release.wait(timeout=2)
+        result = Snapshot(body)
+        loop.call_soon_threadsafe(finished.set)
+        return result
+
+    monkeypatch.setattr("partly.client.Snapshot", delayed_parse)
+    refresh = asyncio.create_task(client.refresh())
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        refresh.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await refresh
+        release.set()
+        await asyncio.wait_for(finished.wait(), timeout=1)
+        assert client._snapshot is snapshot and client._etag == '"good"'
+    finally:
+        release.set()
+        await asyncio.gather(refresh, return_exceptions=True)
+        await client.aclose()
+
+
+@pytest.mark.parametrize("etag", [b'"bad\x00tag"', b'"bad\ntag"', b'"bad"tag"', b'"bad tag"', b'"\xe9"'])
+async def test_invalid_etag_never_replaces_accepted_tag(etag):
+    state = {"bad": False}
+    def handler(request):
+        tag = etag if state["bad"] else b'"good"'
+        return httpx.Response(200, headers={b"etag": tag}, json=POLICY)
+    client = mocked(handler)
+    try:
+        await client.init()
+        snapshot = client._snapshot
+        state["bad"] = True
+        with pytest.raises(InvalidPolicyError):
+            await client.refresh()
+        assert client._snapshot is snapshot and client._etag == '"good"'
+    finally:
+        await client.aclose()
 
 
 async def test_timeout_cancellation_retry_and_scope_validation():
@@ -193,10 +317,14 @@ def test_builder_validation_and_no_network(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", forbidden)
     builder = Client.builder().url("http://localhost:8080").secret_key("test")
     assert builder.build()._http is None
-    for value in (0, -1, float("inf"), float("nan"), True):
+    for value in (0, -1, float("inf"), float("nan"), True, 10**1000):
         with pytest.raises(ValueError): builder.poll_interval(value).build()
-    for url in ("", "ftp://localhost", "http://u:p@localhost", "http://localhost/path", "http://localhost:99999"):
+    for url in (None, 42, "", "ftp://localhost", "http://u:p@localhost", "http://@localhost",
+                "http://localhost/path", "http://localhost:99999", "http://localhost?", "http://localhost#",
+                "http://localhost\n"):
         with pytest.raises(ValueError): Client.builder().url(url).secret_key("test").build()
+    for key in ("test\x00key", "test\x7fkey", "test\nkey", "test key"):
+        with pytest.raises(ValueError): Client.builder().url("http://localhost").secret_key(key).build()
 
 
 async def test_response_cleanup_failure_does_not_commit_snapshot():

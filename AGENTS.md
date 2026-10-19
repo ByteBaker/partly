@@ -25,13 +25,13 @@ Read this file and the relevant package READMEs before changing the project. The
 
 ## Quality and documentation
 
-- Preserve the proposed directory layout; add files and language folders when needed, not as empty placeholders.
+- Keep the separation between the Rust core, control plane, Python SDK, examples, and tests. Add files and language folders when needed, not as empty placeholders.
 - Keep the blue Console design: compact layout, white and neutral surfaces, restrained blue accents, clear borders, readable controls, and keyboard accessibility. Avoid gradients, decorative shadows, and generic AI-style decoration.
 - Keep three dashboard screens in this ribbon order: Feature flags, Key Management, Docs. Docs has a language selector with Python as the only current option and shows the tested complete Python quickstart.
 - Keep the environment selector at the top right. The environment is part of the URL; switching environments reloads the page. Warn before losing unsaved edits through navigation, reload, or closing a dirty modal.
 - Create flags through a modal in the current environment only. Display the environment as read-only context, never as a selectable field. Create and edit responses return the saved flag so the dashboard can update it in place without refetching the list or discarding other drafts.
 - Write READMEs in CEFR-B2 English. Explain necessary terms and provide working examples.
-- Keep `examples/python` runnable and exercise it through end-to-end tests. Cover all supported POC workflows, including setup, keys, async SDK lifecycle, refresh, and failures.
+- Keep `examples/python` runnable and exercise it through end-to-end tests. Start with a minimal working quickstart; keep detailed options and error types in the SDK reference. Cover all supported POC workflows, including setup, keys, async SDK lifecycle, refresh, and failures.
 - Add focused tests for native evaluation and percentage consistency. Run checks appropriate to each change; documentation-only edits do not require application tests.
 - Do not claim performance gains without measurements that include Python binding overhead.
 - When research is needed, use primary sources and the strongest available research model where model selection is supported.

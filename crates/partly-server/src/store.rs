@@ -1,6 +1,6 @@
 use crate::ApiError;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use partly_core::{Flag, Policy};
+use partly_core::{Flag, Policy, MAX_POLICY_BYTES};
 use rand::{
     distributions::{Alphanumeric, DistString},
     rngs::OsRng,
@@ -38,6 +38,18 @@ fn key_name(name: &str) -> Result<&str, ApiError> {
     Ok(name)
 }
 
+fn check_policy_size(policy: &Policy) -> Result<(), ApiError> {
+    let size = serde_json::to_vec(policy)
+        .map_err(|_| ApiError::internal("Cannot encode policy"))?
+        .len();
+    if size > MAX_POLICY_BYTES {
+        return Err(ApiError::bad(
+            "Policy exceeds the 1 MiB POC limit; remove flags or simplify rules",
+        ));
+    }
+    Ok(())
+}
+
 pub fn secret() -> String {
     let mut bytes = [0; 32];
     OsRng.fill_bytes(&mut bytes);
@@ -57,6 +69,15 @@ impl Store {
                 if integrity != "ok" || version != 1 {
                     return Err(ApiError::internal(
                         "Existing database is invalid or has an unsupported schema",
+                    ));
+                }
+                if connection
+                    .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
+                    .optional()?
+                    .is_some()
+                {
+                    return Err(ApiError::internal(
+                        "Existing database has invalid references",
                     ));
                 }
                 let count: u32 =
@@ -94,7 +115,9 @@ impl Store {
         if let Some(connection) = &store.connection {
             connection.execute_batch("PRAGMA foreign_keys = ON;")?;
             for env in ["development", "production"] {
-                store.policy(env)?.validate().map_err(ApiError::internal)?;
+                let policy = store.policy(env)?;
+                policy.validate().map_err(ApiError::internal)?;
+                check_policy_size(&policy)?;
             }
         }
         Ok(store)
@@ -226,7 +249,10 @@ impl Store {
 
     pub fn policy(&self, env: &str) -> Result<Policy, ApiError> {
         self.environment(env)?;
-        let db = self.db()?;
+        Self::read_policy(self.db()?, env)
+    }
+
+    fn read_policy(db: &Connection, env: &str) -> Result<Policy, ApiError> {
         let (project, revision): (String, i64) = db.query_row(
             "SELECT project, revision FROM environments WHERE name = ?1",
             [env],
@@ -245,6 +271,8 @@ impl Store {
             .into_iter()
             .map(|(key, config)| {
                 let flag = serde_json::from_str(&config)
+                    .map_err(|_| ApiError::internal("Invalid stored flag configuration"))?;
+                partly_core::validate_json_number_limits(config.as_bytes())
                     .map_err(|_| ApiError::internal("Invalid stored flag configuration"))?;
                 Ok((key, flag))
             })
@@ -296,6 +324,7 @@ impl Store {
                 "UPDATE environments SET revision = revision + 1 WHERE name = ?1",
                 [env],
             )?;
+            check_policy_size(&Self::read_policy(&transaction, env)?)?;
         }
         transaction.commit()?;
         Ok(())

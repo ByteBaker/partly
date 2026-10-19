@@ -2,15 +2,14 @@ import concurrent.futures
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import secrets
 import sqlite3
 import subprocess
+from pathlib import Path
 
 import httpx
 import pytest
-
 from conftest import ADMIN_HEADERS, PASSWORD, ROOT, make_key, save_flag
 
 
@@ -167,6 +166,8 @@ def test_key_names_validation_and_environment_isolation(admin):
         assert admin.post("/api/environments/development/keys", json={"name": name}).status_code == 400
         assert admin.put(f"/api/keys/{key_id}", json={"name": name}).status_code == 400
     assert admin.post("/api/environments/development/keys", json={}).status_code == 422
+    assert admin.post("/api/environments/development/keys", json={"name": "Wrong scope", "environment": "production"}).status_code == 422
+    assert admin.put(f"/api/keys/{key_id}", json={"name": "Wrong scope", "environment": "production"}).status_code == 422
     assert admin.put("/api/keys/missing", json={"name": "Checkout"}).status_code == 404
     assert admin.get("/api/environments/production/keys").json()["keys"] == []
     records = admin.get("/api/environments/development/keys").json()["keys"]
@@ -290,3 +291,93 @@ def test_invalid_flags_do_not_change_policy(admin, server, flag):
         assert admin.get(path).json() == {"existing": {"mode": "enabled"}}
         unchanged = sdk.get("/api/policy", headers={"If-None-Match": initial.headers["etag"]})
         assert unchanged.status_code == 304 and not unchanged.content
+
+
+def test_flag_authentication_precedes_rule_parsing(server, admin):
+    path = "/api/environments/development/flags"
+    invalid = {"mode": "custom", "action": "enable", "groups": [[{"k": "email", "op": "regex", "v": "["}]]}
+    with httpx.Client(base_url=server.url, headers=ADMIN_HEADERS, trust_env=False) as outsider:
+        assert outsider.post(path, json={"key": "invalid", **invalid}).status_code == 401
+        assert outsider.put(f"{path}/invalid", json=invalid).status_code == 401
+    assert admin.post(path, json={"key": "invalid", **invalid}).status_code == 422
+    assert admin.post(path, content='{"key":"duplicate","mode":"enabled","mode":"disabled"}', headers={"Content-Type": "application/json"}).status_code == 422
+    assert admin.post(path, content='{', headers={"Content-Type": "application/json"}).status_code == 400
+    assert admin.post(path, content='{"key":"wrong_type","mode":"enabled"}', headers={"Content-Type": "text/plain"}).status_code == 415
+    response = admin.post(path, content='{"key":"vendor_type","mode":"enabled"}', headers={"Content-Type": "application/vnd.partly+json; charset=utf-8"})
+    assert response.status_code == 201
+
+
+def test_policy_size_limit_rejects_write_without_changing_snapshot(server, admin):
+    path = "/api/environments/development/flags"
+    _, secret = make_key(admin)
+    flag = {"mode": "custom", "action": "enable", "groups": [[{"k": "text", "op": "matches", "v": "x" * 15000}]]}
+    with httpx.Client(base_url=server.url, headers={"Authorization": f"Bearer {secret}"}, trust_env=False) as sdk:
+        previous = sdk.get("/api/policy")
+        for index in range(75):
+            response = admin.post(path, json={"key": f"flag_{index}", **flag})
+            if response.status_code == 400:
+                assert "1 MiB" in response.json()["error"]
+                assert sdk.get("/api/policy", headers={"If-None-Match": previous.headers["etag"]}).status_code == 304
+                assert f"flag_{index}" not in admin.get(path).json()
+                break
+            assert response.status_code == 201, response.text
+            previous = sdk.get("/api/policy")
+            assert len(previous.content) <= 1024 * 1024
+        else:
+            pytest.fail("Server accepted a policy above the SDK download limit")
+        assert admin.post(path, json={"key": "small", "mode": "enabled"}).status_code == 201
+        before_update = sdk.get("/api/policy")
+        rejected = admin.put(f"{path}/small", json=flag)
+        assert rejected.status_code == 400 and "1 MiB" in rejected.json()["error"]
+        assert sdk.get("/api/policy", headers={"If-None-Match": before_update.headers["etag"]}).status_code == 304
+        assert admin.get(path).json()["small"] == {"mode": "enabled"}
+        # A rejected oversized create must not poison later edits or cleanup.
+        assert admin.put(f"{path}/flag_0", json={"mode": "disabled"}).status_code == 200
+        assert admin.post(path, json={"key": "replacement", **flag}).status_code == 201
+
+
+@pytest.mark.parametrize("kind, error", [
+    ("reference", "invalid references"),
+    ("number", "Invalid stored flag configuration"),
+    ("oversized", "1 MiB POC limit"),
+])
+def test_existing_database_with_invalid_data_is_preserved(server, admin, kind, error):
+    make_key(admin)
+    save_flag(admin)
+    server.stop()
+    with sqlite3.connect(server.db) as db:
+        if kind == "reference":
+            db.execute("UPDATE sdk_keys SET environment = 'missing'")
+        elif kind == "number":
+            config = {"mode": "custom", "action": "enable", "groups": [[
+                {"k": "number", "op": "eq", "v": -(2**63) - 1},
+            ]]}
+            db.execute("UPDATE flags SET config = ?", [json.dumps(config)])
+        else:
+            config = {"mode": "custom", "action": "enable", "groups": [[
+                {"k": "text", "op": "matches", "v": "x" * (1024 * 1024)},
+            ]]}
+            db.execute("UPDATE flags SET config = ?", [json.dumps(config)])
+    before = hashlib.sha256(server.db.read_bytes()).hexdigest()
+    binary = Path(os.environ.get("PARTLY_BINARY", ROOT / "target/debug/partly")).resolve()
+    result = subprocess.run([str(binary), "serve", "--port", "0", "--db", str(server.db)], capture_output=True, text=True, timeout=10)
+    assert result.returncode != 0
+    assert "could not start" in result.stderr
+    assert error in result.stderr
+    assert hashlib.sha256(server.db.read_bytes()).hexdigest() == before
+
+
+def test_rejected_requests_keep_security_headers(server):
+    with httpx.Client(base_url=server.url, trust_env=False) as client:
+        responses = [
+            client.get("/api/status", headers={"Host": "rebind.example"}),
+            client.get("/api/status", headers={"Sec-Fetch-Site": "cross-site"}),
+            client.post("/api/setup", json={}),
+            client.get("/api/status", headers={"Origin": "http://other.example"}),
+        ]
+    assert [response.status_code for response in responses] == [421, 403, 403, 403]
+    for response in responses:
+        assert response.json()["error"]
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert "frame-ancestors 'none'" in response.headers["content-security-policy"]

@@ -1,4 +1,4 @@
-use partly_core::{Context, Decision, EvaluationError, Policy};
+use partly_core::{Context, Decision, EvaluationError, Policy, MAX_POLICY_BYTES};
 use pyo3::{
     create_exception,
     exceptions::PyException,
@@ -109,9 +109,11 @@ fn context_values(key: &str, context: &Bound<'_, PyAny>) -> PyResult<Context> {
 #[pymethods]
 impl Snapshot {
     #[new]
-    fn new(body: &[u8]) -> PyResult<Self> {
+    fn new(py: Python<'_>, body: &[u8]) -> PyResult<Self> {
         Ok(Self {
-            policy: Policy::from_json(body).map_err(InvalidPolicyError::new_err)?,
+            policy: py
+                .detach(|| Policy::from_json(body))
+                .map_err(InvalidPolicyError::new_err)?,
         })
     }
 
@@ -143,6 +145,7 @@ impl Snapshot {
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Snapshot>()?;
+    m.add("MAX_POLICY_BYTES", MAX_POLICY_BYTES)?;
     m.add("PartlyError", m.py().get_type::<PartlyError>())?;
     m.add("FlagNotFoundError", m.py().get_type::<FlagNotFoundError>())?;
     m.add(

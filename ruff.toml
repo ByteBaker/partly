@@ -1,0 +1,11 @@
+target-version = "py310"
+
+[lint]
+select = ["E4", "E9", "F", "B", "I", "ASYNC"]
+
+[lint.isort]
+known-first-party = ["partly"]
+
+[lint.per-file-ignores]
+# These harnesses synchronously control a separate server process.
+"tests/**/*.py" = ["ASYNC"]

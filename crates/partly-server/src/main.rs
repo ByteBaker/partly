@@ -1,7 +1,7 @@
 mod store;
 
 use axum::{
-    body::Body,
+    body::{Body, Bytes},
     extract::{DefaultBodyLimit, Path, State},
     http::{header, HeaderMap, HeaderValue, Method, Request, StatusCode},
     middleware::{self, Next},
@@ -11,7 +11,7 @@ use axum::{
 };
 use clap::{Parser, Subcommand};
 use partly_core::Flag;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
@@ -126,7 +126,7 @@ fn login_response(token: &str) -> Response {
 }
 
 // Custom headers require a browser preflight; no cross-origin access is enabled.
-async fn security(request: Request<Body>, next: Next) -> Response {
+fn check_request(request: &Request<Body>) -> Result<(), ApiError> {
     // The local POC accepts direct IPs and localhost, preventing browser DNS rebinding.
     let allowed_host = request
         .headers()
@@ -138,7 +138,10 @@ async fn security(request: Request<Body>, next: Next) -> Response {
             host.eq_ignore_ascii_case("localhost") || host.parse::<IpAddr>().is_ok()
         });
     if !allowed_host {
-        return StatusCode::MISDIRECTED_REQUEST.into_response();
+        return Err(ApiError(
+            StatusCode::MISDIRECTED_REQUEST,
+            "Use localhost or a direct IP address".into(),
+        ));
     }
     if request.uri().path().starts_with("/api/") {
         let headers = request.headers();
@@ -146,11 +149,10 @@ async fn security(request: Request<Body>, next: Next) -> Response {
             .get("sec-fetch-site")
             .is_some_and(|v| v == "cross-site")
         {
-            return (
+            return Err(ApiError(
                 StatusCode::FORBIDDEN,
-                Json(json!({"error": "Cross-site requests are not allowed"})),
-            )
-                .into_response();
+                "Cross-site requests are not allowed".into(),
+            ));
         }
         if !matches!(
             *request.method(),
@@ -159,11 +161,10 @@ async fn security(request: Request<Body>, next: Next) -> Response {
             .get("x-partly-request")
             .is_none_or(|v| v != "dashboard")
         {
-            return (
+            return Err(ApiError(
                 StatusCode::FORBIDDEN,
-                Json(json!({"error": "Missing X-Partly-Request: dashboard header"})),
-            )
-                .into_response();
+                "Missing X-Partly-Request: dashboard header".into(),
+            ));
         }
         if let Some(origin) = headers.get(header::ORIGIN) {
             let expected = format!(
@@ -174,11 +175,21 @@ async fn security(request: Request<Body>, next: Next) -> Response {
                     .unwrap_or("")
             );
             if origin.as_bytes() != expected.as_bytes() {
-                return StatusCode::FORBIDDEN.into_response();
+                return Err(ApiError(
+                    StatusCode::FORBIDDEN,
+                    "Cross-origin requests are not allowed".into(),
+                ));
             }
         }
     }
-    let mut response = next.run(request).await;
+    Ok(())
+}
+
+async fn security(request: Request<Body>, next: Next) -> Response {
+    let mut response = match check_request(&request) {
+        Ok(()) => next.run(request).await,
+        Err(error) => error.into_response(),
+    };
     let headers = response.headers_mut();
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(
@@ -259,14 +270,42 @@ struct SavedFlag {
     flag: Flag,
 }
 
+fn parse_flag<T: DeserializeOwned>(headers: &HeaderMap, body: &[u8]) -> Result<T, ApiError> {
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if content_type != "application/json"
+        && !(content_type.starts_with("application/") && content_type.ends_with("+json"))
+    {
+        return Err(ApiError(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "Expected an application/json body".into(),
+        ));
+    }
+    let input = Json::<T>::from_bytes(body)
+        .map(|Json(input)| input)
+        .map_err(|error| ApiError(error.status(), error.body_text()))?;
+    partly_core::validate_json_number_limits(body)
+        .map_err(|error| ApiError(StatusCode::UNPROCESSABLE_ENTITY, error))?;
+    Ok(input)
+}
+
 async fn create_flag(
     State(app): State<App>,
     headers: HeaderMap,
     Path(env): Path<String>,
-    Json(input): Json<SavedFlag>,
+    body: Bytes,
 ) -> Result<(StatusCode, Json<SavedFlag>), ApiError> {
     app.run(move |s| {
         s.authorize(&session(&headers))?;
+        // Rule validation compiles regex; do it after auth on the blocking worker.
+        let input: SavedFlag = parse_flag(&headers, &body)?;
         s.save_flag(&env, &input.key, &input.flag, true)?;
         Ok((StatusCode::CREATED, Json(input)))
     })
@@ -277,10 +316,11 @@ async fn save_flag(
     State(app): State<App>,
     headers: HeaderMap,
     Path((env, key)): Path<(String, String)>,
-    Json(flag): Json<Flag>,
+    body: Bytes,
 ) -> Result<Json<SavedFlag>, ApiError> {
     app.run(move |s| {
         s.authorize(&session(&headers))?;
+        let flag: Flag = parse_flag(&headers, &body)?;
         s.save_flag(&env, &key, &flag, false)?;
         Ok(Json(SavedFlag { key, flag }))
     })
@@ -313,6 +353,7 @@ async fn keys(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct KeyName {
     name: String,
 }

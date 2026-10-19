@@ -1,12 +1,13 @@
 use regex::Regex;
 use regex_syntax::ast::{Ast, Flag as RegexFlag};
 use serde::{Deserialize, Serialize};
-use serde_json::{Number, Value};
+use serde_json::{value::RawValue, Number, Value};
 use sha2::{Digest, Sha256};
 use std::{cmp::Ordering, collections::BTreeMap};
 use thiserror::Error;
 
 pub type Context = BTreeMap<String, Value>;
+pub const MAX_POLICY_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
@@ -217,6 +218,43 @@ pub fn value_type(value: &Value) -> &'static str {
     }
 }
 
+// Check original literals before accepting parsed numbers: serde_json rounds overflowing integers.
+pub fn validate_json_number_limits(json: &[u8]) -> Result<(), String> {
+    let root: &RawValue = serde_json::from_slice(json).map_err(|error| error.to_string())?;
+    let mut pending = vec![(root, 0)];
+    while let Some((value, depth)) = pending.pop() {
+        if depth >= 128 {
+            return Err("JSON nesting exceeds the supported depth".into());
+        }
+        let text = value.get();
+        match text.as_bytes()[0] {
+            b'{' => {
+                let fields: BTreeMap<String, &RawValue> =
+                    serde_json::from_str(text).map_err(|error| error.to_string())?;
+                // Serde's private marker must never turn a supplied object into a scalar value.
+                if fields.contains_key("$serde_json::private::RawValue") {
+                    return Err("Reserved JSON object fields are not supported".into());
+                }
+                pending.extend(fields.into_values().map(|value| (value, depth + 1)));
+            }
+            b'[' => {
+                let values: Vec<&RawValue> =
+                    serde_json::from_str(text).map_err(|error| error.to_string())?;
+                pending.extend(values.into_iter().map(|value| (value, depth + 1)));
+            }
+            b'-' | b'0'..=b'9'
+                if !text.contains(['.', 'e', 'E'])
+                    && text.parse::<i64>().is_err()
+                    && text.parse::<u64>().is_err() =>
+            {
+                return Err("Integer values must fit signed or unsigned 64-bit values".into());
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 pub fn valid_key(key: &str) -> bool {
     !key.is_empty()
         && key.len() <= 64
@@ -227,8 +265,12 @@ pub fn valid_key(key: &str) -> bool {
 
 impl Policy {
     pub fn from_json(json: &[u8]) -> Result<Self, String> {
+        if json.len() > MAX_POLICY_BYTES {
+            return Err("Policy exceeds the 1 MiB POC limit".into());
+        }
         let policy: Self = serde_json::from_slice(json).map_err(|e| e.to_string())?;
         policy.validate()?;
+        validate_json_number_limits(json)?;
         Ok(policy)
     }
 
@@ -423,6 +465,18 @@ mod tests {
 
     fn policy(flag: Value) -> Policy {
         Policy::from_json(&serde_json::to_vec(&json!({"schema_version":1,"project":"default","environment":"development","revision":1,"flags":{"checkout":flag}})).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn policy_size_limit_applies_before_parsing() {
+        let mut bytes = serde_json::to_vec(&policy(json!({"mode":"enabled"}))).unwrap();
+        bytes.resize(MAX_POLICY_BYTES, b' ');
+        assert!(Policy::from_json(&bytes).is_ok());
+        bytes.push(b' ');
+        assert_eq!(
+            Policy::from_json(&bytes).unwrap_err(),
+            "Policy exceeds the 1 MiB POC limit"
+        );
     }
     fn context(value: Value) -> Context {
         serde_json::from_value(value).unwrap()
@@ -627,6 +681,39 @@ mod tests {
                 order.reverse()
             );
         }
+    }
+
+    #[test]
+    fn numeric_literals_outside_supported_range_are_rejected_without_rounding() {
+        for literal in [
+            "-9223372036854775809",
+            "18446744073709551616",
+            "1e400",
+            "-1e400",
+        ] {
+            let json = format!(
+                r#"{{"schema_version":1,"project":"default","environment":"development","revision":1,"flags":{{"checkout":{{"mode":"custom","action":"enable","groups":[[{{"k":"x","op":"eq","v":{literal}}}]]}}}}}}"#
+            );
+            assert!(Policy::from_json(json.as_bytes()).is_err(), "{literal}");
+        }
+        for literal in [
+            "-9223372036854775808",
+            "18446744073709551615",
+            "1e300",
+            "-1e300",
+        ] {
+            let json = format!(
+                r#"{{"schema_version":1,"project":"default","environment":"development","revision":1,"flags":{{"checkout":{{"mode":"custom","action":"enable","groups":[[{{"k":"x","op":"eq","v":{literal}}}]]}}}}}}"#
+            );
+            assert!(Policy::from_json(json.as_bytes()).is_ok(), "{literal}");
+        }
+        assert!(validate_json_number_limits(br#"{"\u0076": [-9223372036854775809]}"#).is_err());
+        assert!(validate_json_number_limits(
+            br#"{"v": ["-9223372036854775809", "escaped \"18446744073709551616\""]}"#
+        )
+        .is_ok());
+        let nested = format!("{}0{}", "[".repeat(129), "]".repeat(129));
+        assert!(validate_json_number_limits(nested.as_bytes()).is_err());
     }
 
     #[test]

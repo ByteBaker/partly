@@ -36,32 +36,12 @@ python -m pip install target/wheels/partly_sdk-*.whl
 export PARTLY_URL=http://127.0.0.1:8080
 read -r -s PARTLY_SDK_KEY
 export PARTLY_SDK_KEY
-python examples/python/rollout.py
+python examples/python/quickstart.py
 ```
 
 Paste your copied SDK key when `read` waits for input, then press Enter. This keeps it out of your shell history. The example requires the `new_checkout` flag in the key's environment.
 
-```python
-import os
-from partly import Client, Decision
-
-client = (
-    Client.builder()
-    .url("http://127.0.0.1:8080")
-    .secret_key(os.environ["PARTLY_SDK_KEY"])
-    .build()
-)
-
-# Inside your application's async startup/lifecycle:
-await client.init()
-decision = client.evaluate("new_checkout", context={"id": "user-123"})
-if decision is Decision.ENABLED:
-    print("Use the new checkout")
-changed = await client.refresh()  # False if the policy is unchanged.
-await client.aclose()
-```
-
-Use `try/finally` for cleanup, as shown in the [complete example](examples/python/rollout.py). Initialization raises on failure. An unknown flag raises `FlagNotFoundError`; it does not silently allow or deny a feature.
+The [quickstart](examples/python/quickstart.py) builds one client, initializes it, evaluates one flag, and closes it in `finally`. It prints one decision. Initialization raises on failure. An unknown flag raises `FlagNotFoundError`; it does not silently allow or deny a feature. See the [SDK reference](sdks/python/README.md) for refresh and error types, or the [rollout example](examples/python/README.md#check-a-larger-rollout) to check 10,000 users with a compact summary.
 
 ## Custom rules
 
@@ -86,42 +66,32 @@ String operations are case-sensitive. Types are strict: `"18"` is not a number, 
 
 ## Check the POC
 
-With the virtual environment active and the wheel installed:
+With the virtual environment active and the wheel installed (Node.js is needed only for the JavaScript syntax check):
 
 ```sh
 python -m playwright install chromium
 cargo fmt --all --check
+python -m ruff check .
 PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo test --locked --workspace
 PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo build --locked -p partly-server
+node --check crates/partly-server/dashboard/app.js
 python -m pytest -q
 ```
 
 The tests start temporary local servers and databases. They cover the real dashboard, environment navigation, unsaved edits, typed rule inputs, server restarts, key scope, percentage consistency, rule matching, the installed native SDK, refresh failures, async lifecycle, and runnable Python examples. Browser screenshots are written under `test-results/`. To test the release executable, set `PARTLY_BINARY` to its absolute path before running pytest.
 
-Verified on 19 October 2026: 6 Rust tests and 117 Python/end-to-end tests pass against the release executable, including 8 Chromium dashboard tests. The 59 focused SDK tests also pass on Python 3.14. Rust formatting, JavaScript syntax, and Clippy with warnings denied pass. The runnable example exercises 10,000 users.
+Browser checks use Chromium at desktop and mobile viewport sizes. Firefox, Safari, and real mobile devices are not verified. Generated reports, screenshots, databases, and caches stay outside Git.
 
-The independent visual review scored 8.5/10 after two revision retries, with every reviewed screen and state at least 8/10. Generated review reports and screenshots stay outside Git. Firefox, Safari, and real mobile devices were not checked. SQLite and dashboard assets remain bundled in the executable.
+## Measure locally
 
-## Initial local measurements
-
-Measured on 17 October 2026, macOS 26.6.2 ARM64, Python 3.12.13, with release builds:
-
-| Measurement | Result |
-| --- | --- |
-| Control-plane executable | 3.75 MiB |
-| Compressed native Python wheel | 255 KiB |
-| Startup to first status response, median of 5 runs | 11.11 ms |
-| Server resident memory after setup and one policy download | 24.28 MiB |
-| Full Python `evaluate()` call, median of 5 batches of 100,000 | 0.195 µs |
-
-These historical measurements predate context rules and the Console dashboard; they do not describe the current build. The small baseline used one 50% flag, a fixed user ID, warm operating-system caches, and no application load. Evaluation includes the Python wrapper and native boundary. Memory is one `ps` RSS sample, not a peak measurement. These values are not a load test or a comparison with another tool.
-
-To repeat after building the release executable and installing the release wheel:
+After building the release executable and installing the release wheel:
 
 ```sh
 python tests/benchmark.py
 ```
+
+This reports executable size, startup time, server memory, and full Python `evaluate()` time, including the native boundary. It uses five startup samples and five batches of 100,000 evaluations with one percentage flag and a fixed context ID. Memory is one `ps` RSS sample, not a peak. This small macOS/Linux benchmark is not a load test or a comparison with other tools.
 
 ## Where things live
 

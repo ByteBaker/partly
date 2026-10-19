@@ -19,42 +19,32 @@ Building needs Rust and a C compiler. Installing a matching wheel does not need 
 ```python
 import asyncio
 import os
-from partly import Client, ContextTypeError, Decision, FlagNotFoundError
+from partly import Client, Decision
 
 async def main():
     client = (
         Client.builder()
         .url("http://127.0.0.1:8080")
         .secret_key(os.environ["PARTLY_SDK_KEY"])
-        .poll_interval(30)
-        .timeout(5)
         .build()
     )
     try:
         await client.init()
-        try:
-            decision = client.evaluate("new_checkout", context={"id": "user-123", "age": 23})
-        except ContextTypeError as error:
-            print(error.k, error.expected_type, error.actual_type)
-            raise  # Report the error; the SDK chooses no default decision.
-        except FlagNotFoundError:
-            raise  # Choose and report your application's response here.
-        if decision is Decision.ENABLED:
-            print("Use the new checkout")
-        print("Policy updated:", await client.refresh())
+        decision = client.evaluate("new_checkout", context={"id": "user-123"})
+        print("Enabled:", decision is Decision.ENABLED)
     finally:
         await client.aclose()
 
 asyncio.run(main())
 ```
 
-`build()` validates configuration and does no network work. `init()` downloads and validates the first policy before starting a background poller. A repeated successful `init()` returns without starting another poller. Failed initialization can be retried unless the client has been closed.
+`build()` validates configuration and does no network work. `init()` downloads and validates the first policy before starting a background poller. Policy validation and regex compilation run outside the application event loop. A repeated successful `init()` returns without starting another poller. Failed initialization can be retried unless the client has been closed.
 
-The default poll interval is 30 seconds after the previous refresh completes. The request timeout is 5 seconds, including the full response download. Both settings must be finite positive values. Policy documents are limited to 1 MiB. The client rejects redirects and ignores proxy environment variables.
+The default poll interval is 30 seconds after the previous refresh completes. Use builder `.poll_interval(seconds)` and `.timeout(seconds)` to change these settings. The request timeout is 5 seconds, including the full response download. Both settings must be finite positive values. Policy documents are limited to 1 MiB. The client rejects redirects and ignores proxy environment variables.
 
 `refresh()` returns `True` after accepting a full policy and `False` for an unchanged response. A failed download raises and keeps the previous policy and ETag. Background failures are logged under `partly` and exposed as `client.last_refresh_error`; a successful refresh clears that value.
 
-`aclose()` stops polling and closes HTTP connections. Use it even after failed initialization. It is safe to call again. A closed client cannot reconnect, but its accepted policy remains available for local checks. Create a new client to reconnect.
+`aclose()` stops polling and closes HTTP connections. Use it even after failed initialization. It is safe to call again. A closed client cannot reconnect, and a request already in progress cannot replace its policy after closing starts. Its last accepted policy remains available for local checks. Create a new client to reconnect.
 
 ## Decisions and errors
 
@@ -88,9 +78,19 @@ Custom rules are defined in the dashboard. All conditions in a group must match,
 
 Number operators are `le`, `lt`, `ge`, `gt`, and `eq`. String operators are `prefix`, `suffix`, `contains`, `matches` (exact equality), and `regex`. Boolean comparisons use `is`. All strings are case-sensitive. Regex searches for a pattern; anchors `^` and `$` restrict it to the whole string. Rust regex does not support look-around or backreferences; case-insensitive inline flags are not allowed.
 
-No type conversion occurs: `"18"` is not numeric, and `True` is not `1`. Integers and floats are numbers; `18` equals `18.0`. Python integers must be between −2^63 and 2^64−1, and floats must be finite. Numbers outside those limits, nulls, arrays, nested dictionaries, and other Python objects raise context errors. Keep integers as integers when exact values matter; Python floats already have limited precision.
+No type conversion occurs: `"18"` is not numeric, and `True` is not `1`. Integers and floats are numbers; `18` equals `18.0`. Integer rule values and Python integers must be between −2^63 and 2^64−1, and floats must be finite. Out-of-range integer rules are rejected instead of rounded. Numbers outside those limits, nulls, arrays, nested dictionaries, and other Python objects raise context errors. Keep integers as integers when exact values matter; Python floats already have limited precision.
 
 `ContextTypeError` exposes `flag_key`, `k`, `op`, `expected_type`, and `actual_type`. Types use logical names such as `number`, `string`, and `boolean`. `op` is `None` for percentage IDs or unsupported extra context fields. Messages do not include context values. Existing `except InvalidContextError` handlers also catch this subclass.
+
+```python
+from partly import ContextTypeError
+
+try:
+    decision = client.evaluate("new_checkout", context=context)
+except ContextTypeError as error:
+    print(error.k, error.expected_type, error.actual_type)
+    raise  # Choose your application's response; the SDK has no default decision.
+```
 
 ## Package layout and tests
 

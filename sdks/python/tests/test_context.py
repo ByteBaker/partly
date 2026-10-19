@@ -3,7 +3,12 @@ import json
 
 import pytest
 
-from partly import ContextTypeError, FlagNotFoundError, InvalidContextError, InvalidPolicyError
+from partly import (
+    ContextTypeError,
+    FlagNotFoundError,
+    InvalidContextError,
+    InvalidPolicyError,
+)
 from partly._native import Snapshot
 
 
@@ -82,6 +87,19 @@ def test_numeric_comparisons_preserve_integer_precision():
     assert rule("eq", 2**53).evaluate("checkout", {"field": 2**53 + 1}) is False
     assert rule("gt", float(2**53)).evaluate("checkout", {"field": 2**53 + 1}) is True
     assert rule("lt", float(2**64)).evaluate("checkout", {"field": 2**64 - 1}) is True
+
+
+@pytest.mark.parametrize("value", [-(2**63) - 1, 2**64])
+def test_out_of_range_integer_rules_do_not_round_to_other_values(value):
+    with pytest.raises(InvalidPolicyError):
+        rule("eq", value)
+
+
+@pytest.mark.parametrize("marker", ["$serde_json::private::Number", "$serde_json::private::RawValue"])
+def test_internal_json_marker_remains_an_invalid_object(marker):
+    with pytest.raises(InvalidPolicyError):
+        rule("eq", {marker: "18"})
+    assert rule("matches", marker).evaluate("checkout", {"field": marker}) is True
 
 
 @pytest.mark.parametrize("op,value", [("eq", True), ("eq", "1"), ("is", 1), ("matches", 1),

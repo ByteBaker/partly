@@ -15,7 +15,7 @@ These are also the default values. `--db` is relative to the current working dir
 
 When the file is missing, Partly serves setup without creating it. Valid setup exclusively creates a file and writes the schema, hashed admin password, default project, and two environments in one SQLite transaction. Concurrent submissions cannot create two admins. A failed attempt removes only the file that attempt created.
 
-Existing files are opened without SQLite's create flag. Partly checks the schema version, database integrity, admin password record, and policy data before serving requests. It rejects incomplete or invalid files. Keep the file and its backups private; new files use owner-only permissions on Unix.
+Existing files are opened without SQLite's create flag. Partly checks the schema version, database integrity, foreign-key references, admin password record, and policy data before serving requests. It rejects incomplete or invalid files. Keep the file and its backups private; new files use owner-only permissions on Unix.
 
 The development schema stays at v1, with changes made in `001_initial.sql`. Flags store their rollout mode and conditions as JSON, so adding a rule does not change the database schema. There are no upgrade migrations. A database created before named keys or JSON flag configuration needs a fresh `--db` path. Partly reports an incompatible schema and leaves the existing file unchanged; it never resets data automatically.
 
@@ -35,7 +35,7 @@ Give each key an application name when generating it. Edit the name and select *
 
 The authenticated dashboard loads keys into masked fields. Select **Copy** to copy a key while it stays masked; a message confirms success. **Reveal** displays the value, and **Hide** masks it again. These actions use the value already in the UI and make no API request. Copy and reveal remain available after a restart. If the browser blocks clipboard access, reveal the key and copy it manually. Masking is visual: keys are still present in the authenticated browser.
 
-**Docs** has a language dropdown with Python as the only current option. It shows installation instructions and the complete, runnable `examples/python/quickstart.py`, including initialization, key supply, evaluation, refresh, error handling, and cleanup. The code is bundled into the executable and served at `/docs/python.py`; it contains no credentials. Select **Copy code** to use it in your application.
+**Docs** has a language dropdown with Python as the only current option. It shows installation instructions and the minimal, runnable `examples/python/quickstart.py`, including initialization, key supply, evaluation, error handling, and cleanup. Background polling handles refresh automatically. The code is bundled into the executable and served at `/docs/python.py`; it contains no credentials. Select **Copy code** to use it in your application.
 
 New keys are 27 characters: `pk_` plus 24 random ASCII letters and digits, generated using the operating system's secure random source. Existing longer keys remain valid. Revocation removes policy-download access; it does not erase a policy already held by an SDK.
 
@@ -62,7 +62,7 @@ All admin writes require `X-Partly-Request: dashboard`. Login sets an HttpOnly, 
 
 The SDK key chooses the project and environment; request parameters cannot widen access. The server authenticates before checking `If-None-Match`. `200` includes the complete JSON policy and a quoted SHA-256 content ETag. `304` has no body. Changes to another environment or saving identical flag values leave the current policy unchanged.
 
-Creation returns 409 if the key already exists in that environment. Updating a missing flag returns 404. Both validate the full configuration before writing. A flag has one of these JSON forms:
+Creation returns 409 if the key already exists in that environment. Updating a missing flag returns 404. Both authenticate the administrator before validating rules on a blocking worker. A flag has one of these JSON forms:
 
 ```json
 {"mode": "enabled"}
@@ -72,6 +72,8 @@ Creation returns 409 if the key already exists in that environment. Updating a m
 ```
 
 The custom action can be `enable` or `disable`; nonmatching context gets the opposite decision. Empty groups, invalid operator/value combinations, and invalid regex patterns are rejected. Regex uses Rust syntax without look-around, backreferences, or case-insensitive flags. See the [core README](../partly-core/README.md) for operators and evaluation details.
+
+An environment's complete policy must fit within the SDK's 1 MiB download limit. A save that would exceed it returns 400 and rolls back the flag and policy revision together. Remove flags or simplify rules before retrying; the last valid policy stays available.
 
 There is no `/reveal` endpoint. All responses use `Cache-Control: no-store`, including authenticated key lists.
 

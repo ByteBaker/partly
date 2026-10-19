@@ -2,3 +2,4 @@ maturin>=1.9.4,<2
 pytest>=8,<10
 pytest-asyncio>=0.24,<2
 playwright>=1.50,<2
+ruff>=0.17,<0.18

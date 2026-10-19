@@ -1,8 +1,7 @@
 import re
 
-from playwright.sync_api import sync_playwright, expect
-
 from conftest import PASSWORD, ROOT
+from playwright.sync_api import expect, sync_playwright
 
 
 def login(page, server, screen="flags", environment="development"):
@@ -138,6 +137,7 @@ def test_docs_navigation_and_complete_example(server, admin):
         expect(page.get_by_label("Language", exact=True)).to_have_value("python")
         expect(page.get_by_label("Language", exact=True).locator("option")).to_have_text(["Python"])
         expect(page.get_by_role("button", name="Copy code")).to_be_enabled()
+        expect(page.locator("#docs-url")).to_have_text(f"export PARTLY_URL={server.url}")
         code = (ROOT / "examples/python/quickstart.py").read_text()
         assert page.locator("#docs-code").text_content() == code
         page.get_by_role("button", name="Copy code").click()
@@ -344,8 +344,113 @@ def test_pending_save_locks_only_submitted_form(server, admin):
         expect(field).to_have_value("75")
         expect(page.get_by_role("button", name="Save checkout", exact=True)).to_be_disabled()
         expect(other).to_have_value("40")
+        expect(other).to_be_focused()
         expect(page.get_by_role("button", name="Save search", exact=True)).to_be_enabled()
         page.on("dialog", lambda dialog: dialog.accept())
+        browser.close()
+
+
+def test_key_requests_are_serialized_and_session_failure_keeps_draft(server, admin):
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        login(page, server, screen="keys")
+        page.get_by_label("Key name", exact=True).fill("Worker")
+        page.get_by_role("button", name="Generate key").click()
+        name = page.get_by_label("Name for Worker", exact=True)
+        name.fill("Worker v2")
+        pending = []
+        page.route("**/api/keys/*", lambda route: pending.append(route))
+        page.get_by_role("button", name="Save name for Worker", exact=True).click()
+        expect(name).to_be_disabled()
+        expect(page.get_by_role("button", name="Revoke", exact=True)).to_be_disabled()
+        expect(page.get_by_role("button", name="Reveal", exact=True)).to_be_disabled()
+        assert len(pending) == 1
+        pending.pop().fulfill(status=401, json={"error": "Unauthorized"})
+        expect(page.locator(".key-row").get_by_role("alert")).to_contain_text("Your session has ended")
+        expect(name).to_have_value("Worker v2")
+        expect(name).to_be_enabled()
+        expect(page.get_by_role("button", name="Revoke", exact=True)).to_be_enabled()
+        page.get_by_role("tab", name="Feature flags").click()
+        expect(page.get_by_role("dialog", name="Discard your changes?")).to_be_visible()
+        page.get_by_role("button", name="Keep editing").click()
+        page.unroute("**/api/keys/*")
+        page.get_by_role("button", name="Save name for Worker", exact=True).click()
+        expect(page.get_by_label("Name for Worker v2", exact=True)).to_have_value("Worker v2")
+        expect(page.get_by_label("Name for Worker v2", exact=True)).to_be_focused()
+        assert not errors
+        browser.close()
+
+
+def test_rule_keyboard_focus_and_independent_row_errors(server, admin):
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        login(page, server)
+        create_flag(page, "checkout", "percentage", 50)
+        create_flag(page, "search", "percentage", 25)
+        page.get_by_label("Percentage for checkout").fill("75")
+        page.route("**/api/environments/development/flags/checkout", lambda route: route.fulfill(status=500, json={"error": "Checkout could not be saved"}))
+        page.get_by_role("button", name="Save checkout", exact=True).click()
+        checkout = page.locator('.flag-row[data-key="checkout"]')
+        expect(checkout.get_by_role("alert")).to_have_text("Checkout could not be saved")
+        page.get_by_label("Percentage for search").fill("40")
+        page.get_by_role("button", name="Save search", exact=True).click()
+        expect(page.get_by_role("status")).to_contain_text("Saved search")
+        expect(page.get_by_label("Rollout mode for search", exact=True)).to_be_focused()
+        expect(checkout.get_by_role("alert")).to_have_text("Checkout could not be saved")
+        expect(page.get_by_label("Percentage for checkout")).to_have_value("75")
+        page.get_by_role("button", name="+ Create flag", exact=True).click()
+        modal = page.get_by_role("dialog", name="Create a flag")
+        modal.get_by_label("Rollout mode for new flag").select_option("custom")
+        first_group = modal.get_by_role("group", name="Group 1 · Match all", exact=True)
+        first_group.get_by_role("button", name="+ AND condition").focus()
+        page.keyboard.press("Enter")
+        expect(first_group.get_by_label("Context key", exact=True).nth(1)).to_be_focused()
+        first_group.get_by_role("button", name="Remove condition", exact=True).nth(1).click()
+        expect(first_group.get_by_label("Context key", exact=True)).to_be_focused()
+        modal.get_by_role("button", name="+ OR group").focus()
+        page.keyboard.press("Enter")
+        second_group = modal.get_by_role("group", name="Group 2 · Match all", exact=True)
+        expect(second_group.get_by_label("Context key", exact=True)).to_be_focused()
+        second_group.get_by_role("button", name="Remove group", exact=True).click()
+        expect(first_group.get_by_label("Context key", exact=True)).to_be_focused()
+        page.keyboard.press("Escape")
+        expect(page.get_by_role("button", name="Keep editing")).to_be_focused()
+        page.keyboard.press("Escape")
+        expect(first_group.get_by_label("Context key", exact=True)).to_be_focused()
+        page.on("dialog", lambda dialog: dialog.accept())
+        browser.close()
+
+
+def test_browser_back_preserves_dirty_edits_and_forward_keeps_environment(server, admin):
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        login(page, server, environment="production")
+        create_flag(page, "checkout", "percentage", 50)
+        page.get_by_role("tab", name="Key Management").click()
+        page.get_by_role("tab", name="Feature flags").click()
+        field = page.get_by_label("Percentage for checkout")
+        field.fill("75")
+        def cancel(dialog):
+            assert dialog.type == "beforeunload"
+            dialog.dismiss()
+        page.on("dialog", cancel)
+        with page.expect_event("dialog"):
+            page.evaluate("setTimeout(() => history.back(), 0)")
+        expect(page).to_have_url(f"{server.url}/environments/production/flags")
+        expect(field).to_have_value("75")
+        page.remove_listener("dialog", cancel)
+        field.fill("50")
+        page.go_back()
+        expect(page).to_have_url(f"{server.url}/environments/production/keys")
+        page.go_forward()
+        expect(page).to_have_url(f"{server.url}/environments/production/flags")
+        expect(field).to_have_value("50")
+        expect(page.locator(".brand")).to_have_attribute("href", "/environments/production/flags")
         browser.close()
 
 

@@ -1,9 +1,7 @@
 """Small local baseline, not a load test. Run with the release binary and wheel."""
 import asyncio
-from contextlib import contextmanager
 import json
 import os
-from pathlib import Path
 import platform
 import signal
 import statistics
@@ -11,6 +9,8 @@ import subprocess
 import tempfile
 import time
 import timeit
+from contextlib import contextmanager
+from pathlib import Path
 
 import httpx
 

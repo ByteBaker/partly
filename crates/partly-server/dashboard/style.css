@@ -115,7 +115,7 @@ h2 { font-size: 15px; line-height: 1.4; font-weight: 600; }
 .docs-language select { min-width: 96px; font-size: 12px; }
 pre { margin: 0; overflow: auto; font: 11px/1.85 var(--mono); tab-size: 4; }
 pre code { font: inherit; }
-.code-example { padding: 18px; max-height: 650px; }
+.code-example { padding: 18px; }
 footer { display: flex; justify-content: space-between; gap: 18px; padding-top: 16px; margin-top: 30px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
 .local-badge { font: 9px var(--mono); border: 1px solid var(--border); padding: 2px 5px; margin-left: 7px; }
 .auth-card { max-width: 420px; margin: 8vh auto; padding: 32px; border: 1px solid var(--border); border-radius: 3px; }
@@ -126,6 +126,7 @@ footer { display: flex; justify-content: space-between; gap: 18px; padding-top: 
 .notice { margin: 0 0 20px; padding: 10px 14px; border: 1px solid var(--border); border-left: 3px solid var(--accent); background: var(--inset); font-size: 12px; }
 .notice:empty { display: none; }
 .notice.error { border-left-color: var(--danger); color: var(--danger); }
+.item-error { grid-column: 1 / -1; margin: 12px 0 0; }
 .production-note { padding: 10px 14px; margin-bottom: 22px; border: 1px solid var(--border); border-left: 3px solid var(--accent); background: var(--inset); font-size: 12px; }
 .loading { padding: 80px 0; text-align: center; }
 dialog { padding: 0; color: var(--text); background: white; border: 1px solid var(--control); border-radius: 4px; width: min(780px, calc(100% - 32px)); max-height: calc(100dvh - 48px); }

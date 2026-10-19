@@ -53,12 +53,12 @@
       <section id="docs-screen" role="tabpanel" aria-labelledby="docs-tab" hidden>
         <div class="docs-grid">
           <aside class="docs-guide">
-            <section><span class="eyebrow">01 / INSTALL</span><h2>Add the Python SDK</h2><p>Install your locally built wheel in your application's environment.</p><pre tabindex="0" aria-label="Python installation"><code>python -m pip install \
-  /path/to/partly_sdk.whl</code></pre><p class="small">Requires Python 3.10 or later.</p></section>
-            <section><span class="eyebrow">02 / CONNECT</span><h2>Supply your key</h2><p>Copy a key from Key Management in this environment. Set your control-plane address and paste the key at the prompt.</p><pre tabindex="0" aria-label="Python configuration"><code>export PARTLY_URL=http://127.0.0.1:8080
+            <section><span class="eyebrow">01 / INSTALL</span><h2>Add the Python SDK</h2><p>From the repository root, install your built wheel in your application's environment.</p><pre tabindex="0" aria-label="Python installation"><code>python -m pip install \
+  target/wheels/partly_sdk-*.whl</code></pre><p class="small">Requires Python 3.10 or later.</p></section>
+            <section><span class="eyebrow">02 / CONNECT</span><h2>Supply your key</h2><p>Copy a key from Key Management in this environment. Run these commands, paste your key, and press Enter.</p><pre tabindex="0" aria-label="Python configuration"><code><span id="docs-url">export PARTLY_URL=http://127.0.0.1:8080</span>
 read -r -s PARTLY_SDK_KEY
 export PARTLY_SDK_KEY</code></pre></section>
-            <section><span class="eyebrow">03 / EVALUATE</span><h2>Make your first check</h2><p>Create <code>new_checkout</code> in this environment. Save the example as <code>quickstart.py</code> and run it with Python.</p><p>Initialize once. Reuse the client. Evaluation errors let your application choose what to do.</p></section>
+            <section><span class="eyebrow">03 / EVALUATE</span><h2>Make your first check</h2><p>Create <code>new_checkout</code> in this environment. Copy the example into <code>quickstart.py</code>, then run:</p><pre tabindex="0" aria-label="Run the example"><code>python quickstart.py</code></pre><p>Initialize once. Reuse the client. Errors let your application choose what to do.</p></section>
           </aside>
           <div class="code-panel"><div class="code-heading"><span>quickstart.py</span><label class="docs-language" for="docs-language">Language<select id="docs-language" aria-label="Language"><option value="python">Python</option></select></label><button id="copy-example" disabled>Copy code</button></div><pre class="code-example" tabindex="0" aria-label="Complete Python example"><code id="docs-code">Loading example…</code></pre></div>
         </div>

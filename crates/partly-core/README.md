@@ -26,9 +26,9 @@ This crate validates policy documents and evaluates flags. It has no HTTP, SQLit
 }
 ```
 
-Flag, project, and environment keys contain 1–64 lowercase ASCII letters, digits, underscores, or hyphens. Percentages are whole numbers from 0 to 100. Unknown document fields, wrong types, and unsupported schema versions are rejected. An empty `flags` object is valid.
+Flag, project, and environment keys contain 1–64 lowercase ASCII letters, digits, underscores, or hyphens. Percentages are whole numbers from 0 to 100. Unknown document fields, wrong types, and unsupported schema versions are rejected. An empty `flags` object is valid. Policy documents are limited to 1 MiB, shared with the server and SDK through `MAX_POLICY_BYTES`.
 
-Use `Policy::from_json()` to parse and validate downloaded bytes once. `evaluate(flag_key, &context)` returns `Result<Decision, EvaluationError>`. Context is a flat map of plain string keys to strings, numbers, or booleans. Nulls, arrays, and nested objects are not supported. Percentage mode requires `context["id"]`: a nonblank string of 1–256 UTF-8 bytes. Other modes only require their rule fields.
+Use `Policy::from_json()` to parse and validate downloaded bytes once. For direct flag JSON, use `validate_json_number_limits()` on the original bytes as well as normal deserialization; this prevents large integer literals from being silently rounded. `evaluate(flag_key, &context)` returns `Result<Decision, EvaluationError>`. Context is a flat map of plain string keys to strings, numbers, or booleans. Nulls, arrays, and nested objects are not supported. Percentage mode requires `context["id"]`: a nonblank string of 1–256 UTF-8 bytes. Other modes only require their rule fields.
 
 ## Custom rules
 
@@ -42,7 +42,7 @@ All conditions inside a group must match; any group may match. Empty groups and 
 | `regex` | String | Pattern search; add `^` and `$` to match the whole string |
 | `is` | Boolean | Equals literal true or false |
 
-Strings are case-sensitive, without trimming or normalization. Types are never converted. Numeric `18` equals `18.0`; string `"18"` and boolean `true` are not numbers. Integer comparisons preserve precision, including values beyond 2^53. Non-finite numbers are rejected.
+Strings are case-sensitive, without trimming or normalization. Types are never converted. Numeric `18` equals `18.0`; string `"18"` and boolean `true` are not numbers. Integer comparisons preserve precision, including values beyond 2^53. Integer rule values and context values must be between −2^63 and 2^64−1; larger integer literals are rejected instead of rounded. Floating-point values must be finite.
 
 Regex patterns use Rust's `regex` syntax. Look-around, backreferences, and inline case-insensitive flags are rejected. Patterns compile when accepting the policy, not on each evaluation. Invalid or overly large patterns cannot be accepted.
 
