@@ -1,8 +1,9 @@
+mod auth;
 mod store;
 
 use axum::{
     body::{Body, Bytes},
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{ConnectInfo, DefaultBodyLimit, Path, State},
     http::{header, HeaderMap, HeaderValue, Method, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -15,7 +16,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
-    net::IpAddr,
+    io::{IsTerminal, Read},
+    net::{IpAddr, SocketAddr},
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -30,6 +32,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Reset the local administrator password from one line on standard input. Stop the server first.
+    ResetPassword {
+        #[arg(long, default_value = "./partly.db")]
+        db: PathBuf,
+    },
     Serve {
         #[arg(long, default_value = "127.0.0.1")]
         host: IpAddr,
@@ -104,6 +111,12 @@ impl ApiError {
             "Authentication required or credentials invalid".into(),
         )
     }
+    fn throttled() -> Self {
+        Self(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many sign-in attempts or password workers busy. Retry after 60 seconds.".into(),
+        )
+    }
 }
 
 impl From<rusqlite::Error> for ApiError {
@@ -120,20 +133,35 @@ impl IntoResponse for ApiError {
         } else {
             self.1
         };
-        (self.0, Json(json!({"error": message}))).into_response()
+        let mut response = (self.0, Json(json!({"error": message}))).into_response();
+        if self.0 == StatusCode::TOO_MANY_REQUESTS {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("60"));
+        }
+        response
     }
 }
 
 #[derive(Clone)]
-struct App(Arc<Mutex<Store>>);
+struct App {
+    store: Arc<Mutex<Store>>,
+    auth: Arc<auth::Auth>,
+}
 
 impl App {
+    fn new(store: Store) -> Self {
+        Self {
+            store: Arc::new(Mutex::new(store)),
+            auth: Arc::new(auth::Auth::new()),
+        }
+    }
     async fn run<T, F>(&self, operation: F) -> Result<T, ApiError>
     where
         T: Send + 'static,
         F: FnOnce(&mut Store) -> Result<T, ApiError> + Send + 'static,
     {
-        let store = self.0.clone();
+        let store = self.store.clone();
         tokio::task::spawn_blocking(move || {
             let mut store = store
                 .lock()
@@ -294,16 +322,56 @@ async fn status(State(app): State<App>, headers: HeaderMap) -> Result<Json<Value
 }
 
 async fn setup(State(app): State<App>, Json(c): Json<Credentials>) -> Result<Response, ApiError> {
+    app.run(|s| {
+        if s.ready() {
+            Err(ApiError::conflict("Setup is already complete"))
+        } else {
+            Ok(())
+        }
+    })
+    .await?;
+    if c.username.is_empty()
+        || c.username.len() > 64
+        || c.username.trim() != c.username
+        || c.username.chars().any(char::is_control)
+    {
+        return Err(ApiError::bad(
+            "Use a username of 1–64 bytes without control characters or surrounding whitespace",
+        ));
+    }
+    auth::validate_password(&c.password)?;
+    let hash = app
+        .auth
+        .run(move || auth::hash_password(&c.password))
+        .await?;
     app.run(move |s| {
-        s.setup(&c.username, &c.password)?;
+        s.setup(&c.username, &hash)?;
         Ok(login_response(&s.new_session()))
     })
     .await
 }
 
-async fn login(State(app): State<App>, Json(c): Json<Credentials>) -> Result<Response, ApiError> {
-    app.run(move |s| Ok(login_response(&s.login(&c.username, &c.password)?)))
-        .await
+async fn login(
+    State(app): State<App>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(c): Json<Credentials>,
+) -> Result<Response, ApiError> {
+    app.auth.check_attempt(peer.ip())?;
+    if c.password.len() > 1024 || c.username.len() > 64 {
+        return Err(ApiError::unauthorized());
+    }
+    let (username, hash) = app.run(|s| s.credentials()).await?;
+    let valid = app
+        .auth
+        .run(move || {
+            let valid = auth::verify_password(&c.password, &hash)?;
+            Ok(valid && username == c.username)
+        })
+        .await?;
+    if !valid {
+        return Err(ApiError::unauthorized());
+    }
+    app.run(|s| Ok(login_response(&s.new_session()))).await
 }
 
 async fn logout(State(app): State<App>, headers: HeaderMap) -> Result<Response, ApiError> {
@@ -531,24 +599,70 @@ async fn environment_dashboard(
 
 #[tokio::main]
 async fn main() {
-    if let Err(error) = serve().await {
+    let result = match Cli::parse().command {
+        Command::ResetPassword { db } => reset_password(db),
+        Command::Serve {
+            host,
+            port,
+            db,
+            tls_cert,
+            tls_key,
+            hostname,
+        } => serve(host, port, db, tls_cert, tls_key, hostname).await,
+    };
+    if let Err(error) = result {
         eprintln!("Partly could not start: {error}");
         std::process::exit(1);
     }
 }
 
-async fn serve() -> Result<(), Box<dyn std::error::Error>> {
-    let Cli {
-        command:
-            Command::Serve {
-                host,
-                port,
-                db,
-                tls_cert,
-                tls_key,
-                hostname,
-            },
-    } = Cli::parse();
+fn reset_password(db: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let store = Store::open(db).map_err(|e| e.1)?;
+    if !store.ready() {
+        return Err("Database does not exist; complete setup first".into());
+    }
+    if std::io::stdin().is_terminal() {
+        return Err("Read the password privately and pipe one line to reset-password; terminal input would expose it".into());
+    }
+    let mut password = String::new();
+    std::io::stdin().take(1027).read_to_string(&mut password)?;
+    if password.ends_with('\n') {
+        password.pop();
+        if password.ends_with('\r') {
+            password.pop();
+        }
+    }
+    if password.contains(['\r', '\n']) {
+        return Err("Supply exactly one password line on standard input".into());
+    }
+    let hash = auth::hash_password(&password).map_err(|e| e.1)?;
+    store.reset_password(&hash).map_err(|e| e.1)?;
+    println!("Administrator password reset. Start the server and sign in with the new password.");
+    Ok(())
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("Could not register SIGTERM handler");
+        tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+async fn serve(
+    host: IpAddr,
+    port: u16,
+    db: PathBuf,
+    tls_cert: Option<PathBuf>,
+    tls_key: Option<PathBuf>,
+    hostname: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let tls_config = if let (Some(cert), Some(key)) = (tls_cert, tls_key) {
         rustls::crypto::ring::default_provider()
             .install_default()
@@ -563,6 +677,9 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     };
     let scheme = transport.scheme();
     let store = Store::open(db).map_err(|e| e.1)?;
+    if !store.ready() && !host.is_loopback() {
+        return Err("Complete setup locally first: run with --host 127.0.0.1, create the administrator, then restart with the remote bind address".into());
+    }
     let app = Router::new()
         .route("/", get(dashboard))
         .route("/environments/{env}/{screen}", get(environment_dashboard))
@@ -620,25 +737,26 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/policy", get(policy))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(middleware::from_fn_with_state(transport, security))
-        .with_state(App(Arc::new(Mutex::new(store))));
+        .with_state(App::new(store));
     let listener = tokio::net::TcpListener::bind((host, port)).await?;
     println!("Partly listening at {scheme}://{}", listener.local_addr()?);
+    let handle = axum_server::Handle::new();
+    let shutdown = handle.clone();
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        shutdown.graceful_shutdown(Some(std::time::Duration::from_secs(3)));
+    });
+    let listener = listener.into_std()?;
+    let service = app.into_make_service_with_connect_info::<SocketAddr>();
     if let Some(tls) = tls_config {
-        let handle = axum_server::Handle::new();
-        let shutdown = handle.clone();
-        tokio::spawn(async move {
-            let _ = tokio::signal::ctrl_c().await;
-            shutdown.graceful_shutdown(Some(std::time::Duration::from_secs(3)));
-        });
-        axum_server::from_tcp_rustls(listener.into_std()?, tls)?
+        axum_server::from_tcp_rustls(listener, tls)?
             .handle(handle)
-            .serve(app.into_make_service())
+            .serve(service)
             .await?;
     } else {
-        axum::serve(listener, app)
-            .with_graceful_shutdown(async {
-                let _ = tokio::signal::ctrl_c().await;
-            })
+        axum_server::from_tcp(listener)?
+            .handle(handle)
+            .serve(service)
             .await?;
     }
     Ok(())
@@ -647,6 +765,47 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn blocked_password_workers_do_not_hold_storage_or_queue_more_hashes() {
+        let path = std::env::temp_dir().join(format!("partly-test-{}", store::secret()));
+        let app = App::new(Store::open(path).unwrap());
+        let mut releases = Vec::new();
+        let mut tasks = Vec::new();
+        for _ in 0..2 {
+            let (started, ready) = tokio::sync::oneshot::channel();
+            let (release, wait) = std::sync::mpsc::channel();
+            let auth = app.auth.clone();
+            tasks.push(tokio::spawn(async move {
+                auth.run(move || {
+                    started.send(()).unwrap();
+                    wait.recv().unwrap();
+                    Ok(())
+                })
+                .await
+            }));
+            releases.push(release);
+            ready.await.unwrap();
+        }
+        assert_eq!(
+            app.auth.run(|| Ok(())).await.unwrap_err().0,
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        let read = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            app.run(|s| Ok(s.ready())),
+        )
+        .await;
+        // Release workers before asserting so a regression cannot hang test shutdown.
+        for release in releases {
+            release.send(()).unwrap();
+        }
+        for task in tasks {
+            task.await.unwrap().unwrap();
+        }
+        assert!(!read.expect("Password work held the store lock").unwrap());
+        app.auth.run(|| Ok(())).await.unwrap();
+    }
 
     #[test]
     fn https_accepts_http2_authority_and_rejects_conflicting_host() {

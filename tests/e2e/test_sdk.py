@@ -22,6 +22,11 @@ def client_for(server, key, interval=60):
     return Client.builder().url(server.url).secret_key(key).poll_interval(interval).timeout(1).build()
 
 
+async def wait_until(predicate):
+    while not predicate():
+        await asyncio.sleep(0.02)
+
+
 async def test_real_sdk_rollout_refresh_and_outage(server, admin):
     key_id, key = make_key(admin)
     save_flag(admin, percentage=25)
@@ -78,9 +83,9 @@ async def test_polling_and_example(server, admin):
     try:
         await client.init()
         save_flag(admin, enabled=False)
-        async with asyncio.timeout(3):
-            while client.evaluate("new_checkout", context={"id": "u"}) is Decision.ENABLED:
-                await asyncio.sleep(0.02)
+        await asyncio.wait_for(wait_until(
+            lambda: client.evaluate("new_checkout", context={"id": "u"}) is Decision.DISABLED,
+        ), timeout=3)
         save_flag(admin, percentage=50)
         process = await asyncio.create_subprocess_exec(
             sys.executable, str(ROOT / "examples/python/rollout.py"),
@@ -101,9 +106,7 @@ async def test_polling_and_example(server, admin):
             "Policy updated: False",
         ]
         server.stop()
-        async with asyncio.timeout(3):
-            while client.last_refresh_error is None:
-                await asyncio.sleep(0.02)
+        await asyncio.wait_for(wait_until(lambda: client.last_refresh_error is not None), timeout=3)
         assert client.evaluate("new_checkout", context={"id": "u"}) in (Decision.ENABLED, Decision.DISABLED)
     finally:
         await client.aclose()

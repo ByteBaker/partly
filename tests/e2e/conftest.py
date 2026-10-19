@@ -15,7 +15,7 @@ ADMIN_HEADERS = {"X-Partly-Request": "dashboard"}
 
 
 class Server:
-    def __init__(self, directory, *, tls_cert=None, tls_key=None, ca_bundle=None, hostname=None):
+    def __init__(self, directory, *, tls_cert=None, tls_key=None, ca_bundle=None, hostname=None, host="127.0.0.1"):
         self.directory = directory
         self.db = directory / "partly.db"
         with socket.socket() as sock:
@@ -24,6 +24,7 @@ class Server:
         self.tls_cert = tls_cert
         self.tls_key = tls_key
         self.hostname = hostname
+        self.host = host
         self.verify = ssl.create_default_context(cafile=str(ca_bundle)) if ca_bundle else True
         scheme = "https" if tls_cert else "http"
         self.url = f"{scheme}://127.0.0.1:{self.port}"
@@ -33,7 +34,7 @@ class Server:
     def start(self, *, wait_for_http=True):
         binary = Path(os.environ.get("PARTLY_BINARY", ROOT / "target/debug/partly")).resolve()
         self.log = (self.directory / "server.log").open("ab")
-        command = [str(binary), "serve", "--port", str(self.port), "--db", str(self.db)]
+        command = [str(binary), "serve", "--host", self.host, "--port", str(self.port), "--db", str(self.db)]
         for option, value in [("--tls-cert", self.tls_cert), ("--tls-key", self.tls_key), ("--hostname", self.hostname)]:
             if value is not None:
                 command.extend([option, str(value)])

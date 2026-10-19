@@ -4,12 +4,12 @@ Read this file and the relevant package READMEs before changing the project. The
 
 ## Scope and implementation
 
-- Build the smallest complete local POC. Avoid speculative abstractions, extra services, and features added only for future customers.
+- Prepare the smallest complete self-hosted alpha. Avoid speculative abstractions, extra services, and features added only for future customers.
 - Control plane: Rust, Axum, embedded SQLite, and a vanilla HTML/CSS/JavaScript dashboard bundled into one executable. No required Docker, external database, or frontend runtime.
 - SDK: Python only for now, with shared Rust evaluation through PyO3 and Maturin. No browser SDK or frontend application example.
 - Flags return boolean decisions through four rollout modes: everyone, percentage, custom rules, or nobody. Evaluate one flat `context` dictionary; percentage selection uses its stable `id`. Custom rules use plain context keys, with AND within groups and OR between groups. Keep rules inside each flag for now; no reusable audiences, stored profiles, variants, or evaluation-result LRU.
 - Keep the Rust evaluator independent of HTTP, storage, and language bindings.
-- Do not publish or select a source license as part of the local POC. Enterprise features, HA, billing, and licensing implementation are deferred. SSE is optional.
+- Release preparation is authorized: versioning, package metadata, binaries, wheels, checks, and operational basics. The PyPI name is `partly-sdk`; `partly.sh` URLs are placeholders until deployed. Source license and public repository remain undecided. Do not publish or choose a license without the user's decision. Enterprise features, HA, billing, and licensing implementation are deferred. SSE is optional.
 
 ## Contracts to preserve
 
@@ -20,8 +20,10 @@ Read this file and the relevant package READMEs before changing the project. The
 - Refresh uses `200` with a complete policy or `304` without a body. Keep the last accepted snapshot on errors; replace policy and ETag only after validation succeeds.
 - Support native HTTPS with paired certificate/key flags. Validate TLS configuration before listening; never fall back to HTTP after a TLS failure. Use actual transport settings for Origin checks and Secure cookies, not forwarding headers. Allow custom DNS names only when explicitly configured. The Python SDK uses verified async HTTPX requests; optional `ca_bundle(path)` supplies private trust roots without disabling certificate or hostname checks.
 - Missing database at startup means show setup without creating a file. Create and populate it after valid setup submission. Never overwrite an existing invalid database automatically.
+- First setup requires a loopback bind. Existing databases may be served remotely. Use a persistent database-path `.lock` sidecar to exclude other Partly processes; never create it on empty first boot or remove it while in use. Offline password reset preserves all other data. Support graceful SIGINT and SIGTERM shutdown.
+- Bound password hashing concurrency and run it outside the database mutex. Limit login attempts by the actual peer IP, ignoring forwarded headers. Return 429 with Retry-After when busy or throttled.
 - Generate named SDK keys in the dashboard. The authenticated key list includes secrets; keep them in masked fields and copy or reveal locally, without a `/reveal` endpoint. Keep IDs internal. Plaintext SDK-key storage in SQLite is explicitly allowed for the POC; admin passwords must still be hashed. Do not log credentials.
-- Keep the database schema at v1 while in development. Update the initial schema directly; do not add migrations or reset existing databases automatically.
+- Keep the database schema at v1; do not add a migration to this alpha. The released v1 format becomes a compatibility baseline. Later schema changes need a tested, data-preserving upgrade path. Never reset existing databases automatically. Test stopped backup/restore with flags, keys, and admin access.
 - Mark the key-storage limit in code: `shortcut: SDK keys are plaintext in the local POC, add protected storage before production use.`
 
 ## Quality and documentation

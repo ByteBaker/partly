@@ -1,5 +1,5 @@
 use crate::ApiError;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use argon2::PasswordHash;
 use partly_core::{Flag, Policy, MAX_POLICY_BYTES};
 use rand::{
     distributions::{Alphanumeric, DistString},
@@ -10,8 +10,8 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::Serialize;
 use std::{
     collections::{BTreeMap, HashMap},
-    fs::OpenOptions,
-    path::PathBuf,
+    fs::{File, OpenOptions, TryLockError},
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -19,6 +19,7 @@ pub struct Store {
     path: PathBuf,
     connection: Option<Connection>,
     sessions: HashMap<String, Instant>,
+    lock: Option<File>,
 }
 
 #[derive(Serialize)]
@@ -56,11 +57,39 @@ pub fn secret() -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn lock_database(path: &Path) -> Result<File, ApiError> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|error| ApiError::internal(format!("Cannot resolve database path: {error}")))?;
+    let mut lock_path = canonical.into_os_string();
+    lock_path.push(".lock");
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    // A separate persistent inode avoids interfering with SQLite's own database locks.
+    let file = options
+        .open(lock_path)
+        .map_err(|error| ApiError::internal(format!("Cannot open database lock: {error}")))?;
+    file.try_lock().map_err(|error| match error {
+        TryLockError::WouldBlock => {
+            ApiError::conflict("Database is in use; stop the Partly server before continuing")
+        }
+        TryLockError::Error(error) => ApiError::internal(format!("Cannot lock database: {error}")),
+    })?;
+    Ok(file)
+}
+
 impl Store {
     pub fn open(path: PathBuf) -> Result<Self, ApiError> {
+        let mut lock = None;
         let connection = match path.try_exists() {
             Ok(false) => None,
             Ok(true) => {
+                lock = Some(lock_database(&path)?);
                 let connection =
                     Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
                 let integrity: String =
@@ -111,6 +140,7 @@ impl Store {
             path,
             connection,
             sessions: HashMap::new(),
+            lock,
         };
         if let Some(connection) = &store.connection {
             connection.execute_batch("PRAGMA foreign_keys = ON;")?;
@@ -133,26 +163,17 @@ impl Store {
             .ok_or_else(|| ApiError::conflict("Complete setup first"))
     }
 
-    pub fn setup(&mut self, username: &str, password: &str) -> Result<(), ApiError> {
+    pub fn setup(&mut self, username: &str, hash: &str) -> Result<(), ApiError> {
         if self.ready() {
             return Err(ApiError::conflict("Setup is already complete"));
         }
-        if username.trim() != username
-            || username.is_empty()
-            || username.len() > 64
-            || password.len() < 12
-            || password.len() > 1024
-        {
+        if username.trim() != username || username.is_empty() || username.len() > 64 {
             return Err(ApiError::bad(
-                "Use a username of 1–64 bytes and a password of 12–1024 bytes",
+                "Use a username of 1–64 bytes without surrounding whitespace",
             ));
         }
-        let hash = Argon2::default()
-            .hash_password(password.as_bytes())
-            .map_err(|_| ApiError::internal("Cannot hash password"))?
-            .to_string();
         let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
+        options.read(true).write(true).create_new(true);
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
@@ -163,8 +184,8 @@ impl Store {
                 "Cannot create database; existing files are preserved: {e}"
             ))
         })?;
-        drop(file);
-        let result = (|| -> Result<Connection, ApiError> {
+        let result = (|| -> Result<(Connection, File), ApiError> {
+            let lock = lock_database(&self.path)?;
             let mut connection =
                 Connection::open_with_flags(&self.path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
             connection.execute_batch("PRAGMA foreign_keys = ON;")?;
@@ -175,39 +196,35 @@ impl Store {
                 params![username, hash],
             )?;
             transaction.commit()?;
-            Ok(connection)
+            Ok((connection, lock))
         })();
         match result {
-            Ok(connection) => {
+            Ok((connection, lock)) => {
                 self.connection = Some(connection);
+                self.lock = Some(lock);
                 Ok(())
             }
             Err(error) => {
                 // Only remove the file this setup attempt exclusively created.
+                drop(file);
                 let _ = std::fs::remove_file(&self.path);
                 Err(error)
             }
         }
     }
 
-    pub fn login(&mut self, username: &str, password: &str) -> Result<String, ApiError> {
-        if password.len() > 1024 || username.len() > 64 {
-            return Err(ApiError::unauthorized());
-        }
-        let (stored_user, hash): (String, String) = self.db()?.query_row(
+    pub fn credentials(&self) -> Result<(String, String), ApiError> {
+        Ok(self.db()?.query_row(
             "SELECT username, password_hash FROM admin WHERE id = 1",
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
-        let parsed = PasswordHash::new(&hash)
-            .map_err(|_| ApiError::internal("Invalid stored password hash"))?;
-        let valid = Argon2::default()
-            .verify_password(password.as_bytes(), &parsed)
-            .is_ok();
-        if !valid || username != stored_user {
-            return Err(ApiError::unauthorized());
-        }
-        Ok(self.new_session())
+        )?)
+    }
+
+    pub fn reset_password(&self, hash: &str) -> Result<(), ApiError> {
+        self.db()?
+            .execute("UPDATE admin SET password_hash = ?1 WHERE id = 1", [hash])?;
+        Ok(())
     }
 
     pub fn new_session(&mut self) -> String {

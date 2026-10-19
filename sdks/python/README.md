@@ -9,10 +9,10 @@ From the repository root, with a virtual environment active:
 ```sh
 python -m pip install 'maturin>=1.9.4,<2'
 maturin build --release --locked --manifest-path sdks/python/Cargo.toml --out target/wheels
-python -m pip install target/wheels/partly_sdk-*.whl
+python -m pip install target/wheels/partly_sdk-0.1.0a1-*.whl
 ```
 
-Building needs Rust and a C compiler. Installing a matching wheel does not need Rust. The wheel targets regular CPython 3.10+ through ABI3 and the platform where it was built. The full local test environment is Python 3.12 on macOS ARM64, and the focused SDK suite also passes on Python 3.14. Python 3.10/3.11, free-threaded builds, and other platforms are not verified.
+Building needs Rust and a C compiler. Installing a matching wheel does not need Rust. The wheel targets regular CPython 3.10+ through ABI3 and the platform where it was built. The first release targets are macOS ARM64 and Linux x86_64 (manylinux2014). CI covers regular CPython 3.10, 3.12, and 3.14. Linux artifacts still require a successful release workflow run. Free-threaded Python is not supported. The current alpha version is `0.1.0a1`; public PyPI distribution and the `partly.sh` documentation/install pages are still being prepared.
 
 ## Use a reusable client
 

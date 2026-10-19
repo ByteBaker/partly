@@ -1,0 +1,174 @@
+name: Release checks and artifacts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12", "3.14"]
+    env:
+      PARTLY_BINARY: ${{ github.workspace }}/target/release/partly
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            sdks/python/pyproject.toml
+      - name: Install build and test tools
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+      - name: Build and install the SDK and server
+        run: |
+          maturin build --release --locked --manifest-path sdks/python/Cargo.toml --out target/wheels
+          python -m pip install target/wheels/*.whl
+          cargo build --release --locked -p partly-server
+      - name: Lint and test Rust
+        if: matrix.python == '3.12'
+        run: |
+          export PYO3_PYTHON="$(command -v python)"
+          cargo fmt --all --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo test --locked --workspace
+          python -m ruff check .
+          node --check crates/partly-server/dashboard/app.js
+          node --check crates/partly-server/dashboard/dropdown.js
+      - name: Test the installed SDK and dashboard
+        run: python -m pytest -q
+      - name: Check Firefox and WebKit
+        if: matrix.python == '3.12'
+        run: |
+          python -m playwright install --with-deps firefox webkit
+          PARTLY_BROWSER=firefox python -m pytest -q tests/e2e/test_dashboard.py -k 'flag_modal_types_rules_and_in_place_saves or custom_dropdown_keyboard_commit_cancel_and_modal_escape or environment_dropdown_only_navigates_after_commit'
+          PARTLY_BROWSER=webkit python -m pytest -q tests/e2e/test_dashboard.py -k 'flag_modal_types_rules_and_in_place_saves or custom_dropdown_keyboard_commit_cancel_and_modal_escape or environment_dropdown_only_navigates_after_commit'
+      - name: Audit Rust and installed Python dependencies
+        if: matrix.python == '3.12'
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
+          python -m pip install pip-audit
+          python -m pip freeze --exclude partly-sdk > "$RUNNER_TEMP/audit-requirements.txt"
+          python -m pip_audit --no-deps --disable-pip -r "$RUNNER_TEMP/audit-requirements.txt"
+
+  artifacts:
+    needs: checks
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            binary-target: x86_64-unknown-linux-musl
+            wheel-target: x86_64-unknown-linux-gnu
+            manylinux: "2014"
+          - runner: macos-14
+            binary-target: aarch64-apple-darwin
+            wheel-target: aarch64-apple-darwin
+            manylinux: ""
+    runs-on: ${{ matrix.runner }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install the Rust target
+        env:
+          BINARY_TARGET: ${{ matrix.binary-target }}
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add "$BINARY_TARGET"
+      - name: Install the Linux static linker
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+      - name: Build the standalone server
+        env:
+          BINARY_TARGET: ${{ matrix.binary-target }}
+        run: cargo build --release --locked -p partly-server --target "$BINARY_TARGET"
+      - name: Check that the Linux server has no dynamic dependencies
+        if: runner.os == 'Linux'
+        run: |
+          readelf -d target/x86_64-unknown-linux-musl/release/partly > "$RUNNER_TEMP/partly-elf.txt"
+          if grep -q NEEDED "$RUNNER_TEMP/partly-elf.txt"; then
+            cat "$RUNNER_TEMP/partly-elf.txt"
+            exit 1
+          fi
+      - name: Prepare the SDK source distribution
+        run: |
+          python -m pip install maturin==1.15.0
+          cargo fetch --locked --manifest-path sdks/python/Cargo.toml
+          CARGO_NET_OFFLINE=true maturin sdist --manifest-path sdks/python/Cargo.toml --out dist
+          python scripts/prepare_sdist.py dist/*.tar.gz target/release-source
+      - name: Build the ABI3 wheel from its source distribution
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          maturin-version: v1.15.0
+          rust-toolchain: stable
+          target: ${{ matrix.wheel-target }}
+          manylinux: ${{ matrix.manylinux }}
+          working-directory: target/release-source
+          args: --release --locked --compatibility pypi --out ../../dist -i python3.12
+      - name: Check package metadata
+        run: |
+          python -m pip install twine
+          python -m twine check --strict dist/*
+      - name: Test the packaged binary and wheel outside the checkout
+        env:
+          BINARY_TARGET: ${{ matrix.binary-target }}
+        run: |
+          python -m venv "$RUNNER_TEMP/partly-smoke"
+          "$RUNNER_TEMP/partly-smoke/bin/python" -m pip install --only-binary=:all: dist/*.whl trustme packaging
+          cp scripts/release_smoke.py "$RUNNER_TEMP/release_smoke.py"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/partly-smoke/bin/python" -I release_smoke.py "$GITHUB_WORKSPACE/target/$BINARY_TARGET/release/partly"
+      - name: Package the server and checksums
+        env:
+          BINARY_TARGET: ${{ matrix.binary-target }}
+        run: |
+          tar -czf "dist/partly-$BINARY_TARGET.tar.gz" -C "target/$BINARY_TARGET/release" partly
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+
+          directory = Path("dist")
+          files = sorted(path for path in directory.iterdir() if path.is_file())
+          (directory / "SHA256SUMS").write_text("".join(
+              f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in files
+          ))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: partly-${{ matrix.binary-target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14

@@ -1,7 +1,14 @@
+import os
 import re
 
 from conftest import PASSWORD, ROOT
 from playwright.sync_api import expect, sync_playwright
+
+
+def launch_browser(playwright):
+    engine = os.environ.get("PARTLY_BROWSER", "chromium")
+    assert engine in {"chromium", "firefox", "webkit"}, f"Unknown browser: {engine}"
+    return getattr(playwright, engine).launch()
 
 
 def login(page, server, screen="flags", environment="development"):
@@ -48,7 +55,7 @@ def create_key(page, name):
 
 def test_dashboard_setup_flags_keys_and_restart(server):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page(viewport={"width": 1280, "height": 1000}, permissions=["clipboard-read", "clipboard-write"])
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
@@ -148,7 +155,7 @@ def test_dashboard_setup_flags_keys_and_restart(server):
 
 def test_docs_navigation_and_complete_example(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page(viewport={"width": 1280, "height": 1000}, permissions=["clipboard-read", "clipboard-write"])
         login(page, server)
         flags = page.get_by_role("tab", name="Feature flags")
@@ -193,7 +200,7 @@ def test_docs_navigation_and_complete_example(server, admin):
 
 def test_flag_modal_types_rules_and_in_place_saves(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page(viewport={"width": 1280, "height": 1000})
         login(page, server)
         create_flag(page, "other_flag", "percentage", 50)
@@ -262,7 +269,7 @@ def test_flag_modal_types_rules_and_in_place_saves(server, admin):
 
 def test_unsaved_navigation_reload_and_modal_protection(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server)
         create_flag(page, "checkout", "percentage", 50)
@@ -327,7 +334,7 @@ def test_unsaved_navigation_reload_and_modal_protection(server, admin):
 
 def test_failed_save_preserves_draft_and_key_rename_warns(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server)
         create_flag(page, "checkout", "percentage", 50)
@@ -355,7 +362,7 @@ def test_failed_save_preserves_draft_and_key_rename_warns(server, admin):
 
 def test_pending_save_locks_only_submitted_form(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server)
         create_flag(page, "checkout", "percentage", 50)
@@ -385,7 +392,7 @@ def test_pending_save_locks_only_submitted_form(server, admin):
 
 def test_key_requests_are_serialized_and_session_failure_keeps_draft(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
@@ -418,7 +425,7 @@ def test_key_requests_are_serialized_and_session_failure_keeps_draft(server, adm
 
 def test_rule_keyboard_focus_and_independent_row_errors(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server)
         create_flag(page, "checkout", "percentage", 50)
@@ -459,7 +466,7 @@ def test_rule_keyboard_focus_and_independent_row_errors(server, admin):
 
 def test_browser_back_preserves_dirty_edits_and_forward_keeps_environment(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server, environment="production")
         create_flag(page, "checkout", "percentage", 50)
@@ -491,7 +498,7 @@ def test_long_flag_key_stays_clear_of_controls(server, admin):
     response = admin.post("/api/environments/development/flags", json={"key": key, "mode": "enabled"})
     assert response.status_code == 201
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server)
         row = page.locator(".flag-row")
@@ -509,7 +516,7 @@ def test_long_flag_key_stays_clear_of_controls(server, admin):
 
 def test_pending_creation_cannot_close_or_replace_draft(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server)
         pending = []
@@ -536,7 +543,7 @@ def test_pending_creation_cannot_close_or_replace_draft(server, admin):
 
 def test_utilitarian_headers_select_clearance_and_sticky_navigation(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server, environment="production")
         for width in (1280, 390, 320):
@@ -584,7 +591,7 @@ def test_utilitarian_headers_select_clearance_and_sticky_navigation(server, admi
 
 def test_key_modal_dirty_and_pending_creation_safeguards(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server, screen="keys")
         page.locator("#generate-key").click()
@@ -620,7 +627,7 @@ def test_success_feedback_never_moves_existing_content(server, admin):
         return page.locator(selector).evaluate_all("items => items.map(e => e.getBoundingClientRect().toJSON())")
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page(permissions=["clipboard-read", "clipboard-write"])
         login(page, server)
         create_flag(page, "checkout", "percentage", 50)
@@ -682,7 +689,7 @@ async def main():
     print(f"Value: {count}")
 '''
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page(permissions=["clipboard-read", "clipboard-write"])
         page.route("**/docs/python.py", lambda route: route.fulfill(status=200, content_type="text/plain", body=source))
         login(page, server, screen="docs")
@@ -702,7 +709,7 @@ async def main():
 
 def test_custom_dropdown_keyboard_commit_cancel_and_modal_escape(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server)
         page.get_by_role("button", name="Create flag", exact=True).click()
@@ -773,7 +780,7 @@ def test_custom_dropdown_keyboard_commit_cancel_and_modal_escape(server, admin):
 
 def test_environment_dropdown_only_navigates_after_commit(server, admin):
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server)
         environment = page.get_by_role("combobox", name="Environment", exact=True)
@@ -806,7 +813,7 @@ def test_dropdown_popup_fits_viewport_without_layout_shift_and_cancels_on_move(s
         assert box["y"] + box["height"] <= viewport["height"]
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = launch_browser(playwright)
         page = browser.new_page()
         login(page, server)
         for width in (1280, 390, 320):

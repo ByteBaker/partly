@@ -3,6 +3,7 @@
 /.cache/
 *.db
 *.db-*
+*.db.lock
 __pycache__/
 *.pyc
 .pytest_cache/

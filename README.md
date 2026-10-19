@@ -2,11 +2,13 @@
 
 Partly is a small feature flag control plane. Run one Rust executable, set up an admin account in your browser, and connect a Python application. Flag checks run locally inside the SDK, even when the control plane is offline.
 
-This is a local POC. It supports boolean decisions, stable percentage rollouts, local context rules, development and production environments, and named API Keys. The dashboard and SQLite are included in the executable. Docker, Node.js, and an external database are not needed to run it.
+This is an alpha candidate (`0.1.0-alpha.1`; Python package `0.1.0a1`). It supports boolean decisions, stable percentage rollouts, local context rules, development and production environments, and named API Keys. The dashboard and SQLite are included in the executable. Docker, Node.js, and an external database are not needed to run it.
+
+Public distribution is being prepared. The package name is `partly-sdk` on PyPI. `https://partly.sh`, `/install`, and `/docs` are planned destinations, not working download instructions yet. No public upload has been made; the source license remains undecided. See the [release checklist](RELEASING.md).
 
 ## Run the control plane
 
-Building from source needs a recent stable Rust toolchain and a C compiler. From this directory:
+Building from source needs a recent stable Rust toolchain (at least 1.89) and a C compiler. From this directory:
 
 ```sh
 cargo build --release --locked -p partly-server
@@ -21,20 +23,20 @@ Choose **Development** in the top-right environment selector. In **Feature flags
 
 Open **Key Management**, select **Generate key**, enter a name, and generate an API Key. Select **Copy** to use it. The key stays masked; **Reveal** remains available whenever you need to see it. **Docs** contains the complete Python quickstart, with syntax colors, a language dropdown, and a copy icon.
 
-The development database stays at schema v1 without upgrade migrations. Databases from the earlier on/off and percentage-only design are incompatible. Use a fresh path, such as `--db ./partly-rules.db`, to try this version; existing files are left untouched.
+This alpha uses database schema v1. Earlier development databases may be incompatible; use a fresh path to try the alpha without changing the old file. Once released, this v1 format is the compatibility baseline: later changes must preserve user data. There are no migrations in this version, and unsupported files are never reset. See [backup, restore, and upgrades](crates/partly-server/README.md#backup-restore-and-upgrades).
 
 After building, the executable can be moved to another directory and run by itself on the same platform. The Python package is separate.
 
 ## Build and try the Python SDK
 
-The SDK targets regular CPython 3.10+ using a native ABI3 extension. The full local checks use Python 3.12 on macOS ARM64; the focused SDK suite also passes on Python 3.14. Other platforms need their own wheel builds; free-threaded Python is not supported by this wheel.
+The SDK targets regular CPython 3.10+ using a native ABI3 extension. Release checks cover Python 3.10, 3.12, and 3.14. The first artifact targets are Linux x86_64 and macOS ARM64; see [verified platforms and limits](RELEASING.md). Free-threaded Python is not supported by this wheel.
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 maturin build --release --locked --manifest-path sdks/python/Cargo.toml --out target/wheels
-python -m pip install target/wheels/partly_sdk-*.whl
+python -m pip install target/wheels/partly_sdk-0.1.0a1-*.whl
 ```
 
 In [quickstart.py](examples/python/quickstart.py), replace `YOUR_API_KEY` with your copied API Key and set `CONTROL_PLANE_URL` to the server address. The example requires the `new_checkout` flag in the key's environment. No environment variables are required.
@@ -66,7 +68,7 @@ In the dashboard, every condition uses a key, an operator, and a value. All cond
 
 String operations are case-sensitive. Types are strict: `"18"` is not a number, and `1` is not a boolean. Missing required fields raise `InvalidContextError`; wrong types raise its subclass `ContextTypeError`, with the flag key, context key, operator, and expected/actual type. The SDK checks every field required by the selected flag before matching groups. The application chooses how to handle these errors; Partly provides no automatic allow/deny fallback.
 
-## Check the POC
+## Check the application
 
 With the virtual environment active and the wheel installed (Node.js is needed only for the JavaScript syntax check):
 
@@ -86,7 +88,7 @@ The tests start temporary local servers and databases. They cover the real dashb
 
 HTTPS tests generate temporary certificates with the development-only `trustme` package. They check TLS 1.2/1.3, HTTP/2 dashboard access, secure cookies, private CA trust, invalid certificates, and policy retention after TLS failures. They need no external certificate service.
 
-Browser checks use Chromium at desktop and mobile viewport sizes. Firefox, Safari, and real mobile devices are not verified. Generated reports, screenshots, databases, and caches stay outside Git.
+The full browser suite uses Chromium at desktop and mobile viewport sizes. Focused Firefox and WebKit checks cover rule editing, dropdown keyboard controls, and environment navigation. Set `PARTLY_BROWSER=firefox` or `webkit` for those dashboard tests. Safari itself and real mobile devices are not verified. Generated reports, screenshots, databases, and caches stay outside Git.
 
 ## Measure locally
 

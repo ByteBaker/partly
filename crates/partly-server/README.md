@@ -9,11 +9,13 @@ cargo build --release --locked -p partly-server
 ./target/release/partly serve --host 127.0.0.1 --port 8080 --db ./partly.db
 ```
 
-These are also the default values. `--db` is relative to the current working directory. Its parent directory must exist. Stop with Ctrl+C. Restart with the same path to reuse the data. Admin sessions last up to 12 hours and are cleared on restart.
+These are also the default values. `--db` is relative to the current working directory. Its parent directory must exist. Stop with Ctrl+C or SIGTERM. Restart with the same path to reuse the data. Admin sessions last up to 12 hours and are cleared on restart.
+
+HTTP and HTTPS stop accepting connections on shutdown and allow up to three seconds for current requests to finish. Connections still open after that deadline are closed.
 
 ## HTTPS
 
-The executable can serve HTTPS directly using Rustls. Supply a PEM certificate chain and its matching private key:
+The executable can serve HTTPS directly using Rustls. Complete first-run setup on the default loopback address before binding a public address. Then stop the process and supply a PEM certificate chain and its matching private key:
 
 ```sh
 ./target/release/partly serve --host 0.0.0.0 --port 8443 --db ./partly.db \
@@ -31,13 +33,48 @@ Certificates are read at startup. Obtain and renew them outside Partly, then res
 
 ## Setup and storage
 
-When the file is missing, Partly serves setup without creating it. Valid setup exclusively creates a file and writes the schema, hashed admin password, default project, and two environments in one SQLite transaction. Concurrent submissions cannot create two admins. A failed attempt removes only the file that attempt created.
+When the file is missing, Partly serves setup on a loopback address without creating a database or lock file. An unconfigured server refuses a non-loopback bind. Valid setup exclusively creates a file and writes the schema, hashed admin password, default project, and two environments in one SQLite transaction. Concurrent submissions cannot create two admins. A failed attempt removes only the database that attempt created.
 
 Existing files are opened without SQLite's create flag. Partly checks the schema version, database integrity, foreign-key references, admin password record, and policy data before serving requests. It rejects incomplete or invalid files. Keep the file and its backups private; new files use owner-only permissions on Unix.
 
-The development schema stays at v1, with changes made in `001_initial.sql`. Flags store their rollout mode and conditions as JSON, so adding a rule does not change the database schema. There are no upgrade migrations. A database created before named keys or JSON flag configuration needs a fresh `--db` path. Partly reports an incompatible schema and leaves the existing file unchanged; it never resets data automatically.
+The alpha schema is v1, defined in `001_initial.sql`. Flags store their rollout mode and conditions as JSON, so adding a rule does not change the database schema. There are no upgrade migrations. A database created before named keys or JSON flag configuration needs a fresh `--db` path. Partly reports an incompatible schema and leaves the existing file unchanged; it never resets data automatically.
 
-Database operations and password hashing run on blocking worker threads, away from the HTTP event loop. One process serializes its SQLite work through a small storage boundary. No HA behavior or alternative storage adapter is included.
+Database operations and password hashing run on blocking worker threads, away from the HTTP event loop. Password hashing does not hold the database mutex. One process serializes its SQLite work through a small storage boundary. A persistent `<database>.lock` sidecar prevents another Partly server or password reset from opening the same database concurrently. Keep it in place; the OS releases its lock when the process exits. No HA behavior or alternative storage adapter is included.
+
+## Password recovery
+
+Stop the server before changing or recovering the admin password. From a terminal with access to the database, run:
+
+```sh
+python3 -c 'import getpass; print(getpass.getpass("New admin password: "))' | \
+  ./target/release/partly reset-password --db ./partly.db
+```
+
+The command reads a single password from standard input. It refuses direct terminal input to avoid showing the password while you type. Passwords must be 12–1024 UTF-8 bytes long (12–1024 characters for ASCII). Do not put the password in command arguments or shell history. This changes the password while preserving the username, flags, and API Keys. Restart the server afterward; old browser sessions are no longer valid. Missing or invalid databases are rejected without creating or replacing them.
+
+## Backup, restore, and upgrades
+
+For this single-server alpha, use a stopped-database backup. Stop Partly with Ctrl+C or SIGTERM and wait for it to exit successfully. Then copy the database:
+
+```sh
+umask 077
+cp -p ./partly.db ./partly-backup.db
+chmod 600 ./partly-backup.db
+```
+
+Restart with the original `--db` path. Do not copy a live database file: an in-progress transaction may also depend on SQLite journal files. The `.lock` file contains no application data and is not part of the backup. Backups contain readable API Keys, so keep them private.
+
+To restore, stop the server, copy the backup to a **new** path, and start Partly with that path:
+
+```sh
+cp -p ./partly-backup.db ./partly-restored.db
+chmod 600 ./partly-restored.db
+./target/release/partly serve --db ./partly-restored.db
+```
+
+Check the flags and application access before removing any original file. Users must sign in again; browser sessions are kept only in memory. Use the same TLS flags as your usual deployment when restoring an HTTPS server.
+
+Before replacing the executable, make a stopped backup and retain the previous executable. The released v1 schema is the compatibility baseline. Future schema changes need an explicit, tested upgrade path that preserves accounts, keys, and policies. This alpha does not migrate data. A newer or incompatible schema causes a startup error without modification. To roll back a future schema upgrade, restore its pre-upgrade backup with the matching older executable.
 
 ## Dashboard
 
@@ -83,6 +120,8 @@ All admin writes require `X-Partly-Request: dashboard`. Login sets an HttpOnly, 
 | `PUT /api/keys/{id}` | Admin; rename with `{name}` |
 | `DELETE /api/keys/{id}` | Admin; revoke key |
 | `GET /api/policy` | SDK bearer key; full policy or `304` |
+
+Login allows five attempts per peer IP per 60 seconds. Forwarded headers do not change that IP. At most two password operations run at once, and the limiter tracks at most 1,024 peers. A throttled or busy request returns `429` with `Retry-After: 60`; wait before trying again. These limits reset when the server restarts.
 
 The API Key chooses the project and environment; request parameters cannot widen access. The server authenticates before checking `If-None-Match`. `200` includes the complete JSON policy and a quoted SHA-256 content ETag. `304` has no body. Changes to another environment or saving identical flag values leave the current policy unchanged.
 
