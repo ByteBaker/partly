@@ -76,6 +76,7 @@ PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo test --locked --workspace
 PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo build --locked -p partly-server
 node --check crates/partly-server/dashboard/app.js
+node --check crates/partly-server/dashboard/dropdown.js
 python -m pytest -q
 ```
 

@@ -11,14 +11,19 @@ html { scroll-padding-top: 10rem; }
 body { margin: 0; }
 [hidden] { display: none !important; }
 h1, h2, h3, p { margin: 0; }
-button, input, select { font: inherit; }
-button, input, select { min-height: 36px; border: 1px solid var(--control); border-radius: 3px; background: var(--surface); color: var(--text); }
-input, select { min-width: 0; max-width: 100%; padding: 7px 10px; }
-select { appearance: none; padding-right: 36px; width: 100%; }
+button, input { font: inherit; }
+button, input { min-height: 36px; border: 1px solid var(--control); border-radius: 3px; background: var(--surface); color: var(--text); }
+input { min-width: 0; max-width: 100%; padding: 7px 10px; }
 .select-control { position: relative; display: block; min-width: 0; }
 .select-control::after { content: ''; position: absolute; right: 14px; top: calc(50% - 5px); width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); pointer-events: none; }
 input::placeholder { color: var(--muted); opacity: 1; }
 button { padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.dropdown { appearance: none; width: 100%; min-width: 0; max-width: 100%; padding: 7px 36px 7px 10px; text-align: left; font-weight: 550; overflow: hidden; text-overflow: ellipsis; }
+.dropdown-menu { position: fixed; inset: auto; margin: 0; padding: 4px; width: max-content; max-width: calc(100vw - 16px); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--control); border-radius: 3px; background: var(--surface); color: var(--text); font-size: 12px; }
+.dropdown-option { position: relative; padding: 7px 32px 7px 10px; min-height: 32px; line-height: 18px; white-space: nowrap; cursor: pointer; }
+.dropdown-option[data-active=true] { background: var(--inset); outline: 1px solid var(--border); outline-offset: -1px; }
+.dropdown-option[aria-selected=true] { color: var(--accent-ink); }
+.dropdown-option[aria-selected=true]::after { content: '✓'; position: absolute; right: 10px; font-weight: 600; }
 button:hover { background: var(--inset); border-color: var(--accent); }
 button:disabled { cursor: default; opacity: .5; }
 button.primary { background: var(--accent); color: white; border-color: var(--accent); }
@@ -26,7 +31,7 @@ button.primary:hover { background: var(--accent-ink); }
 button.quiet { background: transparent; border-color: transparent; color: var(--muted); }
 button.quiet:hover { background: var(--inset); border-color: var(--border); color: var(--text); }
 button.danger { color: var(--danger); }
-:where(input, select, button, a, pre):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+:where(input, button, a, pre):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 550; }
 input[type=radio] { min-height: 16px; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .site-header { position: sticky; top: 0; z-index: 10; background: var(--surface); }
@@ -37,7 +42,7 @@ input[type=radio] { min-height: 16px; width: 16px; height: 16px; margin: 0; acce
 .brand-mark i:last-child { height: 14px; opacity: .65; }
 .session { display: flex; gap: 18px; align-items: end; }
 .environment-label { flex-direction: row; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; }
-.environment-label select { min-width: 154px; font-size: 12px; font-weight: 550; color: var(--text); }
+.environment-label .dropdown { min-width: 154px; }
 .screen-tabs { display: flex; gap: 28px; padding-inline: max(32px, calc((100% - 1120px) / 2)); background: var(--inset); border-bottom: 1px solid var(--border); }
 .screen-tabs button { padding: 12px 1px 11px; border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); }
 .screen-tabs button[aria-selected=true] { border-bottom-color: var(--accent); color: var(--accent-ink); }
@@ -65,7 +70,6 @@ h2 { font-size: 15px; line-height: 1.4; font-weight: 600; }
 .flag-row:has(.custom-editor:not([hidden])) .flag-heading { margin-bottom: 12px; }
 .flag-row:has(.custom-editor:not([hidden])) .rollout-editor { margin-top: 0; margin-left: 0; margin-right: 0; }
 .flag-row:has(.custom-editor:not([hidden])) .mode-label { margin-left: 36%; margin-top: -48px; margin-bottom: 16px; }
-.mode-label select { width: 100%; font-size: 12px; }
 .percentage-editor { margin-top: 12px; display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .percentage-editor label { flex-direction: row; align-items: center; gap: 8px; }
 .percentage-editor input { width: 78px; }
@@ -74,13 +78,12 @@ h2 { font-size: 15px; line-height: 1.4; font-weight: 600; }
 .custom-heading { display: flex; align-items: center; gap: 20px; justify-content: space-between; margin-bottom: 18px; }
 .custom-heading p { color: var(--muted); font-size: 12px; }
 .match-action { max-width: 365px; flex: 1; }
-.match-action select { font-size: 12px; }
 .rule-group { background: var(--surface); padding: 14px; border: 1px solid var(--border); border-radius: 3px; }
 .group-heading { display: flex; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .group-heading h3 { font-size: 12px; font-weight: 600; }
 .group-heading button { min-height: 28px; padding: 4px 8px; font-size: 11px; }
 .condition { display: grid; grid-template-columns: minmax(110px,1fr) minmax(165px,1fr) minmax(140px,1.2fr) 30px; gap: 12px; align-items: start; margin-top: 12px; }
-.condition input, .condition select { width: 100%; font-size: 12px; }
+.condition input { width: 100%; font-size: 12px; }
 .condition .remove-condition { margin-top: 24px; padding: 5px; min-width: 30px; font-size: 16px; }
 .value-help { font-size: 12px; line-height: 1.55; color: var(--muted); margin-top: 6px; }
 .bool-values { display: flex; gap: 18px; align-items: center; min-height: 36px; }
@@ -106,7 +109,7 @@ h2 { font-size: 15px; line-height: 1.4; font-weight: 600; }
 .code-heading { display: flex; align-items: center; gap: 14px; padding: 10px 16px; background: var(--inset); border-bottom: 1px solid var(--border); }
 .code-heading > span { flex: 1; color: var(--muted); font: 12px var(--mono); }
 .docs-language { flex-direction: row; align-items: center; font-size: 10px; color: var(--muted); }
-.docs-language select { min-width: 96px; font-size: 12px; }
+.docs-language .dropdown { min-width: 96px; }
 pre { margin: 0; overflow: auto; font: 13px/1.8 var(--mono); tab-size: 4; }
 pre code { font: inherit; }
 .code-example { padding: 18px; }
@@ -151,13 +154,14 @@ dialog::backdrop { background: rgb(19 32 52 / 38%); }
   .key-name-form { max-width: 440px; }
 }
 @media (max-width: 700px) {
-  button, input, select { min-height: 42px; }
+  button, input { min-height: 42px; }
+  .dropdown-option { min-height: 40px; padding-block: 11px; }
   .topbar { padding: 14px 16px; align-items: center; gap: 8px; }
   .brand { font-size: 21px; }
   .session { gap: 8px; align-items: end; }
   .session > button { padding-inline: 4px; font-size: 11px; }
   .environment-label { flex-direction: column; gap: 2px; align-items: start; font-size: 9px; }
-  .environment-label select { min-width: 137px; padding-left: 9px; font-size: 11px; }
+  .environment-label .dropdown { min-width: 137px; padding-left: 9px; font-size: 11px; }
   .screen-tabs { padding-inline: 16px; gap: 25px; }
   .screen-tabs button { font-size: 11px; }
   main { padding: 24px 16px; }
@@ -169,7 +173,6 @@ dialog::backdrop { background: rgb(19 32 52 / 38%); }
   .flag-row .rollout-editor { margin: 12px 0 0; }
   .flag-row:has(.custom-editor:not([hidden])) .mode-label { margin: 0 0 12px; }
   .mode-label { max-width: none; }
-  .mode-label select { font-size: 12px; }
   .percentage-editor { flex-wrap: wrap; }
   .custom-editor { padding: 12px; margin-top: 12px; }
   .custom-heading { flex-direction: column; gap: 12px; align-items: stretch; }
@@ -190,7 +193,6 @@ dialog::backdrop { background: rgb(19 32 52 / 38%); }
   .key-controls > button:last-child { margin-left: auto; }
   .code-heading { padding: 12px; gap: 10px; }
   .docs-language { gap: 4px; }
-  .docs-language select { min-width: 96px; }
   .docs-language { font-size: 0; }
   .code-heading > button { margin-left: auto; }
   .code-example { padding: 12px; font-size: 12px; }

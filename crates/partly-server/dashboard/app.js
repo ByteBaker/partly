@@ -30,15 +30,10 @@ function button(text, className, handler) {
 }
 function label(text, input) {
   const element = node('label');
-  const control = input.tagName === 'SELECT' ? node('span', '', 'select-control') : input;
+  const control = input.matches('[role=combobox]') ? node('span', '', 'select-control') : input;
   if (control !== input) control.append(input);
   element.append(node('span', text), control);
   return element;
-}
-function select(options, value, name) {
-  const element = node('select'); element.name = name;
-  for (const [key, text] of options) { const option = node('option', text); option.value = key; element.append(option); }
-  element.value = value; return element;
 }
 function input(name, value = '', type = 'text') {
   const element = node('input'); element.name = name; element.type = type; element.value = value; element.required = true; return element;
@@ -64,6 +59,7 @@ async function api(path, method = 'GET', body) {
   return response.status === 204 ? undefined : response.json();
 }
 async function action(trigger, operation, errorArea) {
+  closeDropdown();
   const keyRow = trigger?.closest('.key-row');
   const form = trigger?.closest('form') || keyRow?.querySelector('form');
   const state = trackers.get(form);
@@ -73,7 +69,7 @@ async function action(trigger, operation, errorArea) {
   errorArea.hidden = true;
   clearTimeout(noticeReset); notice.textContent = '';
   const focused = document.activeElement;
-  const controls = scope ? [...scope.querySelectorAll('input, select, button')].map(element => [element, element.disabled]) : [];
+  const controls = scope ? [...scope.querySelectorAll('input, button')].map(element => [element, element.disabled]) : [];
   if (form === $('new-flag')) controls.push([$('close-flag'), $('close-flag').disabled]);
   if (form === $('new-key')) controls.push([$('close-key'), $('close-key').disabled]);
   if (state) state.pending = true;
@@ -95,7 +91,7 @@ async function action(trigger, operation, errorArea) {
     if (document.activeElement === document.body && scope?.isConnected) {
       const target = focused?.isConnected && !focused.disabled
         ? focused
-        : scope.querySelector('input:not([disabled]), select:not([disabled]), button:not([disabled])');
+        : scope.querySelector('input:not([disabled]), button:not([disabled])');
       target?.focus();
     }
   }
@@ -159,7 +155,7 @@ async function navigate(path, focusTab = false) {
 
 function createEditor(flag, name) {
   const area = node('div', '', 'rollout-editor');
-  const mode = select([
+  const mode = createDropdown([
     ['enabled', 'Enabled for everyone'], ['percentage', 'Percentage of users'], ['custom', 'Custom rules'], ['disabled', 'Disabled for everyone'],
   ], flag.mode, 'mode'); mode.setAttribute('aria-label', `Rollout mode for ${name}`);
   const modeLabel = label('Rollout mode', mode); modeLabel.className = 'mode-label'; area.append(modeLabel);
@@ -169,7 +165,7 @@ function createEditor(flag, name) {
   const custom = node('div', '', 'custom-editor');
   const customHeading = node('div', '', 'custom-heading');
   const explanation = node('div'); explanation.append(node('h2', 'Match your context'), node('p', 'Match any group. All conditions in a group must match.'));
-  const matchAction = select([['enable', 'Enable matches; others off'], ['disable', 'Disable matches; others on']], flag.action || 'enable', 'action');
+  const matchAction = createDropdown([['enable', 'Enable matches; others off'], ['disable', 'Disable matches; others on']], flag.action || 'enable', 'action');
   matchAction.setAttribute('aria-label', `Match action for ${name}`);
   const actionLabel = label('When a group matches', matchAction); actionLabel.className = 'match-action'; customHeading.append(explanation, actionLabel); custom.append(customHeading);
   const groupsArea = node('div', '', 'rule-groups'); custom.append(groupsArea);
@@ -204,7 +200,7 @@ function createEditor(flag, name) {
     function addCondition(condition = { k: '', op: 'matches', v: '' }) {
       const row = node('div', '', 'condition');
       const key = input('k', condition.k); key.maxLength = 64; key.placeholder = 'e.g. plan'; key.setAttribute('aria-label', 'Context key');
-      const operator = select(Object.entries(ops).map(([key, [text, type]]) => [key, `${text} (${type[0].toUpperCase()}${type.slice(1)})`]), condition.op, 'op');
+      const operator = createDropdown(Object.entries(ops).map(([key, [text, type]]) => [key, `${text} (${type[0].toUpperCase()}${type.slice(1)})`]), condition.op, 'op');
       operator.setAttribute('aria-label', 'Operator');
       const valueArea = node('div', '', 'rule-value');
       let valueInput; let booleanInputs; let currentType = ops[condition.op][1];
@@ -271,7 +267,7 @@ function createEditor(flag, name) {
   function updateMode() {
     percentageArea.hidden = mode.value !== 'percentage'; custom.hidden = mode.value !== 'custom';
     percentage.disabled = percentageArea.hidden;
-    custom.querySelectorAll('input, select').forEach(element => { element.disabled = custom.hidden; });
+    custom.querySelectorAll('input, [role=combobox]').forEach(element => { element.disabled = custom.hidden; });
     if (area.isConnected) updateDirty();
   }
   mode.addEventListener('change', updateMode); updateMode();
@@ -412,10 +408,17 @@ $('generate-key').addEventListener('click', () => {
 $('close-key').addEventListener('click', closeKey);
 $('cancel-key').addEventListener('click', closeKey);
 $('key-dialog').addEventListener('cancel', event => { event.preventDefault(); closeKey(); });
-$('environment').value = environment;
+for (const [id, options, value, label] of [
+  ['environment', [['development', 'Development'], ['production', 'Production']], environment, 'Environment'],
+  ['docs-language', [['python', 'Python']], 'python', 'Language'],
+]) {
+  const control = createDropdown(options, value, id);
+  control.id = id; control.setAttribute('aria-label', label);
+  $(id).replaceWith(control);
+}
 document.querySelector('.brand').href = `/environments/${environment}/flags`;
 $('environment').addEventListener('change', async () => {
-  const target = $('environment').value; $('environment').value = environment;
+  const target = $('environment').value; $('environment').setValue(environment);
   if (target !== environment) await navigate(`/environments/${target}/${screen}`);
 });
 const tabs = [...$('screens').querySelectorAll('[role=tab]')];

@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="light">
   <title>Partly · Feature flags</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/dropdown.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -13,7 +14,7 @@
     <div class="topbar">
       <a class="brand" href="/" aria-label="Partly home"><span class="brand-mark" aria-hidden="true"><i></i><i></i></span>partly</a>
       <div id="session" class="session" hidden>
-        <label class="environment-label" for="environment">Environment<span class="select-control"><select id="environment" aria-label="Environment"><option value="development">Development</option><option value="production">Production</option></select></span></label>
+        <label class="environment-label" for="environment">Environment<span class="select-control"><button id="environment" type="button" disabled>Development</button></span></label>
         <button id="logout" class="quiet">Sign out</button>
       </div>
     </div>
@@ -47,7 +48,7 @@
         <p class="hint">API Keys can read feature flags and rules. Use the UI to make changes.</p>
       </section>
       <section id="docs-screen" role="tabpanel" aria-labelledby="docs-tab" hidden>
-        <div class="code-panel"><div class="code-heading"><span>quickstart.py</span><label class="docs-language" for="docs-language">Language<span class="select-control"><select id="docs-language" aria-label="Language"><option value="python">Python</option></select></span></label><button id="copy-example" class="icon-button" aria-label="Copy code" title="Copy code" disabled><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="8" y="8" width="12" height="13" rx="1"></rect><path d="M16 8V3H3v13h5"></path></svg></button></div><pre class="code-example" tabindex="0" aria-label="Complete Python example"><code id="docs-code">Loading example…</code></pre></div>
+        <div class="code-panel"><div class="code-heading"><span>quickstart.py</span><label class="docs-language" for="docs-language">Language<span class="select-control"><button id="docs-language" type="button" disabled>Python</button></span></label><button id="copy-example" class="icon-button" aria-label="Copy code" title="Copy code" disabled><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="8" y="8" width="12" height="13" rx="1"></rect><path d="M16 8V3H3v13h5"></path></svg></button></div><pre class="code-example" tabindex="0" aria-label="Complete Python example"><code id="docs-code">Loading example…</code></pre></div>
       </section>
     </section>
     <p id="loading" class="muted loading">Connecting to Partly…</p>

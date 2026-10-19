@@ -12,11 +12,24 @@ def login(page, server, screen="flags", environment="development"):
     expect(page.locator("#workspace")).to_be_visible()
 
 
+def choose(page, trigger, value):
+    trigger.click()
+    popup = page.locator("#dropdown-options")
+    expect(popup).to_be_visible()
+    popup.locator(f'[role="option"][data-value="{value}"]').click()
+
+
+def expect_active_option(page, trigger, value):
+    expect(trigger).to_have_attribute("aria-activedescendant", re.compile(r".+"))
+    active_id = trigger.get_attribute("aria-activedescendant")
+    expect(page.locator(f"#{active_id}")).to_have_attribute("data-value", value)
+
+
 def create_flag(page, key, mode="disabled", percentage=None):
     page.get_by_role("button", name="Create flag", exact=True).click()
     dialog = page.get_by_role("dialog", name="Create a flag")
     dialog.get_by_label("Flag key", exact=True).fill(key)
-    dialog.get_by_label("Rollout mode for new flag", exact=True).select_option(mode)
+    choose(page, dialog.get_by_label("Rollout mode for new flag", exact=True), mode)
     if percentage is not None:
         dialog.get_by_label("Percentage for new flag", exact=True).fill(str(percentage))
     dialog.get_by_role("button", name="Create flag", exact=True).click()
@@ -111,12 +124,12 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         expect(page.get_by_role("alert")).to_contain_text("Could not copy")
         expect(field).to_have_attribute("type", "password")
         page.evaluate("delete navigator.clipboard.writeText")
-        page.get_by_label("Environment", exact=True).select_option("production")
+        choose(page, page.get_by_label("Environment", exact=True), "production")
         expect(page).to_have_url(f"{server.url}/environments/production/keys")
         expect(page.get_by_text("Generate a key to connect your application.")).to_be_visible()
         page.get_by_role("tab", name="Feature flags").click()
         expect(page.get_by_text("No flags in this environment")).to_be_visible()
-        page.get_by_label("Environment", exact=True).select_option("development")
+        choose(page, page.get_by_label("Environment", exact=True), "development")
         expect(page.get_by_label("Percentage for new_checkout")).to_have_value("50")
         page.screenshot(path=str(artifacts / "dashboard-mobile.png"), full_page=True)
         page.on("dialog", lambda dialog: dialog.accept())
@@ -148,8 +161,11 @@ def test_docs_navigation_and_complete_example(server, admin):
         page.keyboard.press("End")
         expect(docs).to_be_focused()
         expect(docs).to_have_attribute("aria-selected", "true")
-        expect(page.get_by_label("Language", exact=True)).to_have_value("python")
-        expect(page.get_by_label("Language", exact=True).locator("option")).to_have_text(["Python"])
+        expect(page.get_by_label("Language", exact=True)).to_have_attribute("value", "python")
+        page.get_by_label("Language", exact=True).click()
+        expect(page.locator("#dropdown-options").get_by_role("option")).to_have_count(1)
+        expect(page.locator("#dropdown-options").get_by_role("option", name="Python", exact=True)).to_be_visible()
+        page.keyboard.press("Escape")
         expect(page.get_by_role("button", name="Copy code")).to_be_enabled()
         expect(page.locator("#docs-code .token-keyword").first).to_be_visible()
         expect(page.locator("#docs-code .token-string").first).to_be_visible()
@@ -190,11 +206,11 @@ def test_flag_modal_types_rules_and_in_place_saves(server, admin):
         assert modal.get_by_label("Environment", exact=True).count() == 0
         expect(modal.get_by_label("Flag key", exact=True)).to_be_focused()
         modal.get_by_label("Flag key", exact=True).fill("eligible")
-        modal.get_by_label("Rollout mode for new flag").select_option("custom")
+        choose(page, modal.get_by_label("Rollout mode for new flag"), "custom")
         first = modal.locator(".condition").first
         first.get_by_label("Context key", exact=True).fill("age")
         for op in ("le", "lt", "ge", "gt", "eq"):
-            first.get_by_label("Operator", exact=True).select_option(op)
+            choose(page, first.get_by_label("Operator", exact=True), op)
             expect(first.get_by_label("Comparison value", exact=True)).to_have_attribute("type", "number")
         expect(first.get_by_text(re.compile("ContextTypeError"))).to_be_visible()
         first.get_by_label("Comparison value", exact=True).fill("9007199254740993")
@@ -203,15 +219,15 @@ def test_flag_modal_types_rules_and_in_place_saves(server, admin):
         assert first.get_by_label("Comparison value", exact=True).evaluate("e => !e.checkValidity()")
         first.get_by_label("Comparison value", exact=True).fill("-18.5")
         for op in ("prefix", "suffix", "contains", "matches", "regex"):
-            first.get_by_label("Operator", exact=True).select_option(op)
+            choose(page, first.get_by_label("Operator", exact=True), op)
             expect(first.get_by_label("Comparison value", exact=True)).to_have_attribute("type", "text")
         expect(first.get_by_label("Comparison value", exact=True)).to_have_value("")
-        first.get_by_label("Operator", exact=True).select_option("ge")
+        choose(page, first.get_by_label("Operator", exact=True), "ge")
         first.get_by_label("Comparison value", exact=True).fill("18")
         modal.get_by_role("button", name="+ AND condition", exact=True).click()
         second = modal.locator(".condition").nth(1)
         second.get_by_label("Context key", exact=True).fill("verified")
-        second.get_by_label("Operator", exact=True).select_option("is")
+        choose(page, second.get_by_label("Operator", exact=True), "is")
         expect(second.get_by_role("radio", name="True", exact=True)).not_to_be_checked()
         expect(second.get_by_role("radio", name="False", exact=True)).not_to_be_checked()
         second.get_by_role("radio", name="True", exact=True).check()
@@ -223,7 +239,7 @@ def test_flag_modal_types_rules_and_in_place_saves(server, admin):
         expect(modal).to_be_hidden()
         expect(page.get_by_label("Percentage for other_flag")).to_have_value("75")
         row = page.locator('.flag-row[data-key="eligible"]')
-        row.get_by_label("Match action for eligible").select_option("disable")
+        choose(page, row.get_by_label("Match action for eligible"), "disable")
         page.get_by_role("button", name="Save eligible", exact=True).click()
         expect(page.get_by_role("status")).to_contain_text("Saved")
         expect(page.get_by_label("Percentage for other_flag")).to_have_value("75")
@@ -252,20 +268,20 @@ def test_unsaved_navigation_reload_and_modal_protection(server, admin):
         create_flag(page, "checkout", "percentage", 50)
         field = page.get_by_label("Percentage for checkout")
         field.fill("")  # Invalid/incomplete drafts still need protection.
-        page.get_by_label("Environment", exact=True).select_option("production")
+        choose(page, page.get_by_label("Environment", exact=True), "production")
         discard = page.get_by_role("dialog", name="Discard your changes?")
         expect(discard).to_be_visible()
         page.get_by_role("button", name="Keep editing").click()
         expect(field).to_have_value("")
-        expect(page.get_by_label("Environment", exact=True)).to_have_value("development")
+        expect(page.get_by_label("Environment", exact=True)).to_have_attribute("value", "development")
         field.fill("50")
         expect(page.get_by_role("button", name="Save checkout", exact=True)).to_be_disabled()
         # Returning to the baseline removes the warning entirely.
         page.evaluate("window.reloadMarker = true")
-        page.get_by_label("Environment", exact=True).select_option("production")
+        choose(page, page.get_by_label("Environment", exact=True), "production")
         expect(page).to_have_url(f"{server.url}/environments/production/flags")
         assert page.evaluate("window.reloadMarker === undefined")
-        page.get_by_label("Environment", exact=True).select_option("development")
+        choose(page, page.get_by_label("Environment", exact=True), "development")
         field.fill("75")
         page.get_by_role("tab", name="Docs").click()
         expect(discard).to_be_visible()
@@ -326,7 +342,7 @@ def test_failed_save_preserves_draft_and_key_rename_warns(server, admin):
         create_key(page, "Worker")
         name = page.get_by_label("Name for Worker", exact=True)
         name.fill("Renamed worker")
-        page.get_by_label("Environment", exact=True).select_option("production")
+        choose(page, page.get_by_label("Environment", exact=True), "production")
         expect(page.get_by_role("dialog", name="Discard your changes?")).to_be_visible()
         page.get_by_role("button", name="Keep editing").click()
         expect(name).to_have_value("Renamed worker")
@@ -420,7 +436,7 @@ def test_rule_keyboard_focus_and_independent_row_errors(server, admin):
         expect(page.get_by_label("Percentage for checkout")).to_have_value("75")
         page.get_by_role("button", name="Create flag", exact=True).click()
         modal = page.get_by_role("dialog", name="Create a flag")
-        modal.get_by_label("Rollout mode for new flag").select_option("custom")
+        choose(page, modal.get_by_label("Rollout mode for new flag"), "custom")
         first_group = modal.get_by_role("group", name="Group 1 · Match all", exact=True)
         first_group.get_by_role("button", name="+ AND condition").focus()
         page.keyboard.press("Enter")
@@ -534,14 +550,14 @@ def test_utilitarian_headers_select_clearance_and_sticky_navigation(server, admi
             expect(page.locator(".docs-guide")).to_have_count(0)
             expect(page.locator("footer")).to_have_count(0)
             expect(page.get_by_text("Default project", exact=True)).to_have_count(0)
-            for select in page.locator("select:visible").all():
-                geometry = select.evaluate("""e => {
+            for dropdown in page.get_by_role("combobox").all():
+                geometry = dropdown.evaluate("""e => {
                     const style = getComputedStyle(e);
                     const arrow = getComputedStyle(e.parentElement, '::after');
                     return { padding: parseFloat(style.paddingRight), inset: parseFloat(arrow.right),
-                             appearance: style.appearance, events: arrow.pointerEvents };
+                             events: arrow.pointerEvents };
                 }""")
-                assert geometry == {"padding": 36, "inset": 14, "appearance": "none", "events": "none"}
+                assert geometry == {"padding": 36, "inset": 14, "events": "none"}
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             expect(page.locator(".brand-mark")).to_be_visible()
             header = page.locator(".site-header").bounding_box()
@@ -555,12 +571,13 @@ def test_utilitarian_headers_select_clearance_and_sticky_navigation(server, admi
         modal = page.get_by_role("dialog", name="Create a flag")
         mode = modal.get_by_label("Rollout mode for new flag", exact=True)
         mode.focus()
-        page.keyboard.press("c")  # Native select type-ahead chooses Custom rules.
-        expect(mode).to_have_value("custom")
-        mode.select_option("custom")
-        for select in modal.locator("select:visible").all():
-            assert select.evaluate("e => parseFloat(getComputedStyle(e).paddingRight)") == 36
-            assert select.evaluate("e => getComputedStyle(e.parentElement, '::after').pointerEvents") == "none"
+        page.keyboard.press("c")
+        expect(mode).to_have_attribute("value", "disabled")
+        page.keyboard.press("Enter")
+        expect(mode).to_have_attribute("value", "custom")
+        for dropdown in modal.get_by_role("combobox").all():
+            assert dropdown.evaluate("e => parseFloat(getComputedStyle(e).paddingRight)") == 36
+            assert dropdown.evaluate("e => getComputedStyle(e.parentElement, '::after').pointerEvents") == "none"
         page.on("dialog", lambda dialog: dialog.accept())
         browser.close()
 
@@ -645,7 +662,7 @@ def test_success_feedback_never_moves_existing_content(server, admin):
 
             page.get_by_role("tab", name="Feature flags").click()
             page.get_by_label("Percentage for checkout").fill(str(width % 100))
-            flag_elements = ".workspace-heading, .flag-row, .flag-heading, .flag-row select, .flag-row input, .flag-row button"
+            flag_elements = ".workspace-heading, .flag-row, .flag-heading, .flag-row .dropdown, .flag-row input, .flag-row button"
             before = geometry(page, flag_elements)
             page.get_by_role("button", name="Save checkout", exact=True).click()
             expect(page.get_by_role("status")).to_have_text("Saved")
@@ -680,4 +697,159 @@ async def main():
         page.get_by_role("button", name="Copy code", exact=True).click()
         expect(page.get_by_role("status")).to_have_text("Copied")
         assert page.evaluate("navigator.clipboard.readText()") == source
+        browser.close()
+
+
+def test_custom_dropdown_keyboard_commit_cancel_and_modal_escape(server, admin):
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        login(page, server)
+        page.get_by_role("button", name="Create flag", exact=True).click()
+        modal = page.get_by_role("dialog", name="Create a flag")
+        mode = modal.get_by_role("combobox", name="Rollout mode for new flag", exact=True)
+        popup = page.locator("#dropdown-options")
+        expect(mode).to_have_attribute("type", "button")
+        expect(mode).to_have_attribute("value", "disabled")
+        mode.click()
+        expect(popup).to_be_visible()
+        expect(mode).to_have_attribute("aria-expanded", "true")
+        expect(popup.locator('[data-value="disabled"]')).to_have_attribute("aria-selected", "true")
+        page.keyboard.press("Home")
+        expect_active_option(page, mode, "enabled")
+        page.keyboard.press("ArrowDown")
+        expect_active_option(page, mode, "percentage")
+        expect(mode).to_have_attribute("value", "disabled")
+        expect(popup.locator('[data-value="disabled"]')).to_have_attribute("aria-selected", "true")
+        page.keyboard.press("Escape")
+        expect(popup).to_be_hidden()
+        expect(mode).to_have_attribute("aria-expanded", "false")
+        expect(mode).to_have_attribute("value", "disabled")
+        expect(modal).to_be_visible()
+        expect(page.get_by_role("dialog", name="Discard your changes?")).to_be_hidden()
+        expect(mode).to_be_focused()
+
+        page.keyboard.press("Enter")
+        expect(popup).to_be_visible()
+        page.keyboard.press("End")
+        expect_active_option(page, mode, "disabled")
+        page.keyboard.press("ArrowUp")
+        expect_active_option(page, mode, "custom")
+        page.keyboard.press("Space")
+        expect(popup).to_be_hidden()
+        expect(mode).to_have_attribute("value", "custom")
+        expect(modal.get_by_role("combobox", name="Match action for new flag")).to_be_visible()
+
+        mode.focus()
+        page.keyboard.press("p")
+        expect_active_option(page, mode, "percentage")
+        expect(mode).to_have_attribute("value", "custom")
+        page.keyboard.press("Enter")
+        expect(mode).to_have_attribute("value", "percentage")
+        expect(modal.get_by_label("Percentage for new flag", exact=True)).to_be_visible()
+
+        mode.click()
+        page.keyboard.press("Home")
+        page.keyboard.press("Tab")
+        expect(popup).to_be_hidden()
+        expect(mode).to_have_attribute("value", "enabled")
+        expect(mode).not_to_be_focused()
+        expect(modal).to_be_visible()
+
+        mode.click()
+        page.keyboard.press("End")
+        modal.get_by_label("Flag key", exact=True).click()
+        expect(popup).to_be_hidden()
+        expect(mode).to_have_attribute("value", "enabled")
+        expect(modal.get_by_label("Flag key", exact=True)).to_be_focused()
+        mode.click()
+        page.keyboard.press("End")
+        modal.get_by_label("Flag key", exact=True).focus()
+        expect(popup).to_be_hidden()
+        expect(mode).to_have_attribute("value", "enabled")
+        page.on("dialog", lambda dialog: dialog.accept())
+        browser.close()
+
+
+def test_environment_dropdown_only_navigates_after_commit(server, admin):
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        login(page, server)
+        environment = page.get_by_role("combobox", name="Environment", exact=True)
+        page.evaluate("window.environmentNavigationMarker = true")
+        environment.click()
+        page.keyboard.press("End")
+        expect_active_option(page, environment, "production")
+        expect(environment).to_have_attribute("value", "development")
+        expect(page).to_have_url(f"{server.url}/environments/development/flags")
+        page.keyboard.press("Escape")
+        assert page.evaluate("window.environmentNavigationMarker")
+        environment.focus()
+        page.keyboard.press("p")
+        expect_active_option(page, environment, "production")
+        expect(environment).to_have_attribute("value", "development")
+        page.keyboard.press("Tab")
+        expect(page).to_have_url(f"{server.url}/environments/production/flags")
+        expect(environment).to_have_attribute("value", "production")
+        assert page.evaluate("window.environmentNavigationMarker === undefined")
+        browser.close()
+
+
+def test_dropdown_popup_fits_viewport_without_layout_shift_and_cancels_on_move(server, admin):
+    def fits_viewport(page, popup):
+        box = popup.bounding_box()
+        viewport = page.viewport_size
+        assert box is not None
+        assert box["x"] >= 0 and box["y"] >= 0
+        assert box["x"] + box["width"] <= viewport["width"]
+        assert box["y"] + box["height"] <= viewport["height"]
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        login(page, server)
+        for width in (1280, 390, 320):
+            page.set_viewport_size({"width": width, "height": 640})
+            environment = page.get_by_role("combobox", name="Environment", exact=True)
+            popup = page.locator("#dropdown-options")
+            header_box = page.locator(".site-header").bounding_box()
+            trigger_box = environment.bounding_box()
+            environment.click()
+            expect(popup).to_be_visible()
+            fits_viewport(page, popup)
+            assert page.locator(".site-header").bounding_box() == header_box
+            assert environment.bounding_box() == trigger_box
+            page.keyboard.press("Escape")
+            page.get_by_role("button", name="Create flag", exact=True).click()
+            modal = page.get_by_role("dialog", name="Create a flag")
+            choose(page, modal.get_by_role("combobox", name="Rollout mode for new flag"), "custom")
+            operator = modal.get_by_role("combobox", name="Operator", exact=True)
+            operator.scroll_into_view_if_needed()
+            before = operator.bounding_box()
+            modal_box = modal.bounding_box()
+            operator.click()
+            expect(popup).to_be_visible()
+            expect(popup.get_by_role("option")).to_have_count(11)
+            assert popup.evaluate("e => e.closest('dialog').id") == "flag-dialog"
+            assert operator.bounding_box() == before
+            assert modal.bounding_box() == modal_box
+            fits_viewport(page, popup)
+            page.keyboard.press("End")
+            expect_active_option(page, operator, "is")
+            expect(popup.locator('[data-value="is"]')).to_be_in_viewport(ratio=0.9)
+            expect(operator).to_have_attribute("value", "matches")
+            page.set_viewport_size({"width": width, "height": 630})
+            expect(popup).to_be_hidden()
+            expect(operator).to_have_attribute("value", "matches")
+            page.set_viewport_size({"width": width, "height": 640})
+            operator.click()
+            expect(popup).to_be_visible()
+            modal.evaluate("e => { e.scrollTop = e.scrollTop ? 0 : e.scrollHeight; }")
+            expect(popup).to_be_hidden()
+            expect(operator).to_have_attribute("value", "matches")
+            choose(page, modal.get_by_role("combobox", name="Rollout mode for new flag"), "disabled")
+            modal.get_by_role("button", name="Cancel", exact=True).click()
+            expect(modal).to_be_hidden()
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         browser.close()

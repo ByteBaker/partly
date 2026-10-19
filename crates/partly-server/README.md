@@ -35,6 +35,8 @@ The dashboard warns before navigation or modal dismissal would lose unsaved edit
 
 The dashboard uses the selected blue Console design: compact controls, white and neutral surfaces, clear borders, and restrained blue accents. It has no external font or frontend dependency.
 
+Dropdowns use the same styled menus throughout the dashboard. Use arrows, Home, End, or type a label to highlight an option; Enter, Space, Tab, or a click selects it. Escape or an outside click cancels the choice. Menus overlay the page without moving content, including inside dialogs. This uses the browser's Popover API and requires a current browser.
+
 Select **Generate key** in the page header to open the API Key dialog. Give each key an application name when generating it. Edit the name and select **Save name** to rename it; this does not change the key. Names accept 1–64 characters. Internal IDs are not shown.
 
 The authenticated dashboard loads keys into masked fields. Select **Copy** to copy a key while it stays masked; a message confirms success. **Reveal** displays the value, and **Hide** masks it again. These actions use the value already in the UI and make no API request. Copy and reveal remain available after a restart. If the browser blocks clipboard access, reveal the key and copy it manually. Masking is visual: keys are still present in the authenticated browser.
