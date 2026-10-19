@@ -1,6 +1,7 @@
 import os
 import signal
 import socket
+import ssl
 import subprocess
 import time
 from pathlib import Path
@@ -14,32 +15,44 @@ ADMIN_HEADERS = {"X-Partly-Request": "dashboard"}
 
 
 class Server:
-    def __init__(self, directory):
+    def __init__(self, directory, *, tls_cert=None, tls_key=None, ca_bundle=None, hostname=None):
         self.directory = directory
         self.db = directory / "partly.db"
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             self.port = sock.getsockname()[1]
-        self.url = f"http://127.0.0.1:{self.port}"
+        self.tls_cert = tls_cert
+        self.tls_key = tls_key
+        self.hostname = hostname
+        self.verify = ssl.create_default_context(cafile=str(ca_bundle)) if ca_bundle else True
+        scheme = "https" if tls_cert else "http"
+        self.url = f"{scheme}://127.0.0.1:{self.port}"
         self.process = None
         self.log = None
 
-    def start(self):
+    def start(self, *, wait_for_http=True):
         binary = Path(os.environ.get("PARTLY_BINARY", ROOT / "target/debug/partly")).resolve()
         self.log = (self.directory / "server.log").open("ab")
+        command = [str(binary), "serve", "--port", str(self.port), "--db", str(self.db)]
+        for option, value in [("--tls-cert", self.tls_cert), ("--tls-key", self.tls_key), ("--hostname", self.hostname)]:
+            if value is not None:
+                command.extend([option, str(value)])
         self.process = subprocess.Popen(
-            [str(binary), "serve", "--port", str(self.port), "--db", str(self.db)],
+            command,
             cwd=self.directory, stdout=self.log, stderr=self.log,
         )
         deadline = time.monotonic() + 10
-        with httpx.Client(trust_env=False, timeout=0.3) as client:
+        with httpx.Client(trust_env=False, timeout=0.3, verify=self.verify) as client:
             while time.monotonic() < deadline:
                 if self.process.poll() is not None:
                     raise RuntimeError((self.directory / "server.log").read_text())
                 try:
+                    if not wait_for_http:
+                        with socket.create_connection(("127.0.0.1", self.port), timeout=0.3):
+                            return
                     if client.get(f"{self.url}/api/status").status_code == 200:
                         return
-                except httpx.HTTPError:
+                except (httpx.HTTPError, OSError):
                     pass
                 time.sleep(0.02)
         raise RuntimeError("Partly did not start")
@@ -56,7 +69,7 @@ class Server:
             self.log.close()
 
     def admin(self, setup=True):
-        client = httpx.Client(base_url=self.url, headers=ADMIN_HEADERS, trust_env=False, timeout=10)
+        client = httpx.Client(base_url=self.url, headers=ADMIN_HEADERS, trust_env=False, timeout=10, verify=self.verify)
         response = client.post("/api/setup" if setup else "/api/login", json={"username": "admin", "password": PASSWORD})
         assert response.status_code == 200, response.text
         return client

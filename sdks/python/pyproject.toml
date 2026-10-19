@@ -7,7 +7,7 @@ name = "partly-sdk"
 dynamic = ["version"]
 description = "Local feature flag evaluation with an async Python client and Rust core"
 requires-python = ">=3.10"
-dependencies = ["httpx>=0.27,<1"]
+dependencies = ["httpx>=0.27,<1", "certifi"]
 
 [tool.maturin]
 python-source = "python"

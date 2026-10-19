@@ -37,7 +37,49 @@ enum Command {
         port: u16,
         #[arg(long, default_value = "./partly.db")]
         db: PathBuf,
+        /// PEM certificate chain for native HTTPS. Requires --tls-key.
+        #[arg(long, requires = "tls_key")]
+        tls_cert: Option<PathBuf>,
+        /// PEM private key matching --tls-cert.
+        #[arg(long, requires = "tls_cert")]
+        tls_key: Option<PathBuf>,
+        /// Additional DNS hostname to accept, without scheme or port.
+        #[arg(long, value_parser = parse_hostname)]
+        hostname: Option<String>,
     },
+}
+
+fn parse_hostname(value: &str) -> Result<String, String> {
+    if value.len() > 253
+        || value.split('.').any(|label| {
+            label.is_empty()
+                || label.len() > 63
+                || !label.starts_with(|c: char| c.is_ascii_alphanumeric())
+                || !label.ends_with(|c: char| c.is_ascii_alphanumeric())
+                || !label
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'-')
+        })
+    {
+        return Err("Expected a hostname such as flags.example.com, without scheme or port".into());
+    }
+    Ok(value.to_ascii_lowercase())
+}
+
+#[derive(Clone)]
+struct Transport {
+    tls: bool,
+    hostname: Option<String>,
+}
+
+impl Transport {
+    fn scheme(&self) -> &'static str {
+        if self.tls {
+            "https"
+        } else {
+            "http"
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -126,22 +168,46 @@ fn login_response(token: &str) -> Response {
 }
 
 // Custom headers require a browser preflight; no cross-origin access is enabled.
-fn check_request(request: &Request<Body>) -> Result<(), ApiError> {
-    // The local POC accepts direct IPs and localhost, preventing browser DNS rebinding.
-    let allowed_host = request
+fn check_request(request: &Request<Body>, transport: &Transport) -> Result<(), ApiError> {
+    let invalid_host = || {
+        ApiError(
+            StatusCode::MISDIRECTED_REQUEST,
+            "Hostname is not allowed".into(),
+        )
+    };
+    let host_header = request
         .headers()
         .get(header::HOST)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<axum::http::uri::Authority>().ok())
-        .is_some_and(|authority| {
-            let host = authority.host().trim_matches(['[', ']']);
-            host.eq_ignore_ascii_case("localhost") || host.parse::<IpAddr>().is_ok()
-        });
+        .map(|value| {
+            value
+                .to_str()
+                .ok()
+                .and_then(|v| v.parse::<axum::http::uri::Authority>().ok())
+                .ok_or_else(invalid_host)
+        })
+        .transpose()?;
+    // HTTP/2 carries :authority in the URI and need not include a Host header.
+    let authority = request
+        .uri()
+        .authority()
+        .or(host_header.as_ref())
+        .ok_or_else(invalid_host)?;
+    if host_header
+        .as_ref()
+        .is_some_and(|host| !host.as_str().eq_ignore_ascii_case(authority.as_str()))
+        || authority.as_str().contains('@')
+    {
+        return Err(invalid_host());
+    }
+    let host = authority.host().trim_matches(['[', ']']);
+    let allowed_host = host.eq_ignore_ascii_case("localhost")
+        || host.parse::<IpAddr>().is_ok()
+        || transport
+            .hostname
+            .as_ref()
+            .is_some_and(|name| host.eq_ignore_ascii_case(name));
     if !allowed_host {
-        return Err(ApiError(
-            StatusCode::MISDIRECTED_REQUEST,
-            "Use localhost or a direct IP address".into(),
-        ));
+        return Err(invalid_host());
     }
     if request.uri().path().starts_with("/api/") {
         let headers = request.headers();
@@ -167,12 +233,16 @@ fn check_request(request: &Request<Body>) -> Result<(), ApiError> {
             ));
         }
         if let Some(origin) = headers.get(header::ORIGIN) {
+            let default_port = if transport.tls { 443 } else { 80 };
+            let origin_host = if authority.port_u16() == Some(default_port) {
+                authority.host()
+            } else {
+                authority.as_str()
+            };
             let expected = format!(
-                "http://{}",
-                headers
-                    .get(header::HOST)
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("")
+                "{}://{}",
+                transport.scheme(),
+                origin_host.to_ascii_lowercase()
             );
             if origin.as_bytes() != expected.as_bytes() {
                 return Err(ApiError(
@@ -185,12 +255,23 @@ fn check_request(request: &Request<Body>) -> Result<(), ApiError> {
     Ok(())
 }
 
-async fn security(request: Request<Body>, next: Next) -> Response {
-    let mut response = match check_request(&request) {
+async fn security(
+    State(transport): State<Transport>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let mut response = match check_request(&request, &transport) {
         Ok(()) => next.run(request).await,
         Err(error) => error.into_response(),
     };
     let headers = response.headers_mut();
+    if transport.tls {
+        if let Some(cookie) = headers.get_mut(header::SET_COOKIE) {
+            let mut value = cookie.as_bytes().to_vec();
+            value.extend_from_slice(b"; Secure");
+            *cookie = HeaderValue::from_bytes(&value).expect("Static cookie suffix is valid");
+        }
+    }
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(
         "x-content-type-options",
@@ -458,8 +539,29 @@ async fn main() {
 
 async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let Cli {
-        command: Command::Serve { host, port, db },
+        command:
+            Command::Serve {
+                host,
+                port,
+                db,
+                tls_cert,
+                tls_key,
+                hostname,
+            },
     } = Cli::parse();
+    let tls_config = if let (Some(cert), Some(key)) = (tls_cert, tls_key) {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .map_err(|_| "Could not initialize the TLS crypto provider")?;
+        Some(axum_server::tls_rustls::RustlsConfig::from_pem_file(cert, key).await?)
+    } else {
+        None
+    };
+    let transport = Transport {
+        tls: tls_config.is_some(),
+        hostname,
+    };
+    let scheme = transport.scheme();
     let store = Store::open(db).map_err(|e| e.1)?;
     let app = Router::new()
         .route("/", get(dashboard))
@@ -517,14 +619,117 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/keys/{id}", put(rename_key).delete(revoke_key))
         .route("/api/policy", get(policy))
         .layer(DefaultBodyLimit::max(16 * 1024))
-        .layer(middleware::from_fn(security))
+        .layer(middleware::from_fn_with_state(transport, security))
         .with_state(App(Arc::new(Mutex::new(store))));
     let listener = tokio::net::TcpListener::bind((host, port)).await?;
-    println!("Partly listening at http://{}", listener.local_addr()?);
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
+    println!("Partly listening at {scheme}://{}", listener.local_addr()?);
+    if let Some(tls) = tls_config {
+        let handle = axum_server::Handle::new();
+        let shutdown = handle.clone();
+        tokio::spawn(async move {
             let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
+            shutdown.graceful_shutdown(Some(std::time::Duration::from_secs(3)));
+        });
+        axum_server::from_tcp_rustls(listener.into_std()?, tls)?
+            .handle(handle)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                let _ = tokio::signal::ctrl_c().await;
+            })
+            .await?;
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn https_accepts_http2_authority_and_rejects_conflicting_host() {
+        let transport = Transport {
+            tls: true,
+            hostname: Some("flags.example.com".into()),
+        };
+        let mut request = Request::builder()
+            .uri("https://flags.example.com:8443/api/status")
+            .version(axum::http::Version::HTTP_2)
+            .header(header::ORIGIN, "https://flags.example.com:8443")
+            .body(Body::empty())
+            .unwrap();
+        assert!(check_request(&request, &transport).is_ok());
+        request
+            .headers_mut()
+            .insert(header::HOST, HeaderValue::from_static("localhost:8443"));
+        assert_eq!(
+            check_request(&request, &transport).unwrap_err().0,
+            StatusCode::MISDIRECTED_REQUEST
+        );
+        request.headers_mut().remove(header::HOST);
+        request.headers_mut().insert(
+            header::ORIGIN,
+            HeaderValue::from_static("http://flags.example.com:8443"),
+        );
+        request
+            .headers_mut()
+            .insert("x-forwarded-proto", HeaderValue::from_static("http"));
+        assert_eq!(
+            check_request(&request, &transport).unwrap_err().0,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[test]
+    fn hostname_configuration_is_explicit_and_has_no_scheme_or_port() {
+        assert_eq!(
+            parse_hostname("Flags.Example.com").unwrap(),
+            "flags.example.com"
+        );
+        for invalid in [
+            "",
+            "https://flags.example.com",
+            "flags.example.com:443",
+            "user@host",
+            "*.example.com",
+            "a..b",
+            "-a.com",
+            "a-.com",
+            "a/b",
+            "a b",
+            "a\\nb",
+        ] {
+            assert!(parse_hostname(invalid).is_err(), "{invalid}");
+        }
+        let request = Request::builder()
+            .uri("/api/status")
+            .header(header::HOST, "flags.example.com:8443")
+            .body(Body::empty())
+            .unwrap();
+        let transport = Transport {
+            tls: true,
+            hostname: None,
+        };
+        assert_eq!(
+            check_request(&request, &transport).unwrap_err().0,
+            StatusCode::MISDIRECTED_REQUEST
+        );
+    }
+
+    #[test]
+    fn https_origin_omits_default_port_and_lowercases_hostname() {
+        let transport = Transport {
+            tls: true,
+            hostname: Some("flags.example.com".into()),
+        };
+        let request = Request::builder()
+            .uri("/api/status")
+            .header(header::HOST, "Flags.Example.com:443")
+            .header(header::ORIGIN, "https://flags.example.com")
+            .body(Body::empty())
+            .unwrap();
+        assert!(check_request(&request, &transport).is_ok());
+    }
 }

@@ -1,9 +1,12 @@
 import asyncio
 import logging
 import math
+import os
+import ssl
 from enum import Enum
 from urllib.parse import urlsplit
 
+import certifi
 import httpx
 
 from ._native import MAX_POLICY_BYTES, InvalidPolicyError, PartlyError, Snapshot
@@ -41,6 +44,7 @@ class ClientBuilder:
         self._secret_key = None
         self._interval = 30.0
         self._timeout = 5.0
+        self._ca_bundle = None
 
     def url(self, value: str):
         self._url = value
@@ -56,6 +60,10 @@ class ClientBuilder:
 
     def timeout(self, seconds: float):
         self._timeout = seconds
+        return self
+
+    def ca_bundle(self, path: str | os.PathLike[str]):
+        self._ca_bundle = path
         return self
 
     def build(self):
@@ -78,17 +86,26 @@ class ClientBuilder:
                 valid = False
             if not valid:
                 raise ValueError("Polling interval and timeout must be finite positive numbers")
-        return Client(self._url.rstrip("/"), self._secret_key, self._interval, self._timeout)
+        ca_bundle = self._ca_bundle
+        if ca_bundle is not None:
+            try:
+                ca_bundle = os.fspath(ca_bundle)
+            except TypeError:
+                raise ValueError("Supply a CA bundle path as a string or PathLike") from None
+            if not isinstance(ca_bundle, str) or not ca_bundle or "\0" in ca_bundle:
+                raise ValueError("Supply a non-empty CA bundle path without null characters")
+        return Client(self._url.rstrip("/"), self._secret_key, self._interval, self._timeout, ca_bundle)
 
 
 class Client:
     """Reuse one client per application process and event loop."""
 
-    def __init__(self, url: str, secret_key: str, interval: float, timeout: float):
+    def __init__(self, url: str, secret_key: str, interval: float, timeout: float, ca_bundle: str | None = None):
         self._url = url
         self._secret_key = secret_key
         self._interval = interval
         self._timeout = timeout
+        self._ca_bundle = ca_bundle
         self._http = None
         self._snapshot = None
         self._etag = None
@@ -107,7 +124,16 @@ class Client:
             if self._snapshot is not None:
                 return
             if self._http is None:
-                self._http = httpx.AsyncClient(timeout=self._timeout, follow_redirects=False, trust_env=False)
+                try:
+                    verify = await asyncio.to_thread(
+                        lambda: ssl.create_default_context(cafile=self._ca_bundle or certifi.where())
+                    )
+                except (OSError, ValueError):
+                    error = RefreshError("Cannot load TLS trust certificates; check the CA bundle path and PEM contents")
+                    self.last_refresh_error = error
+                    raise error from None
+                self._check_open()
+                self._http = httpx.AsyncClient(timeout=self._timeout, verify=verify, follow_redirects=False, trust_env=False)
             await self._download()
             self._check_open()
             self._poll_task = asyncio.create_task(self._poll(), name="partly-refresh")

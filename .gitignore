@@ -19,3 +19,6 @@ htmlcov/
 .ruff_cache/
 *.log
 *.whl
+*.pem
+*.key
+*.crt

@@ -1,8 +1,12 @@
 import asyncio
 import copy
 import json
+import shutil
+import ssl
 import threading
+from pathlib import Path
 
+import certifi
 import httpx
 import pytest
 
@@ -315,8 +319,10 @@ async def test_explicit_decisions_context_and_native_hash():
 def test_builder_validation_and_no_network(monkeypatch):
     def forbidden(*args, **kwargs): raise AssertionError("build must not create HTTP resources")
     monkeypatch.setattr(httpx, "AsyncClient", forbidden)
+    monkeypatch.setattr(ssl, "create_default_context", forbidden)
     builder = Client.builder().url("http://localhost:8080").secret_key("test")
     assert builder.build()._http is None
+    assert builder.ca_bundle(Path("missing-ca.pem")).build()._ca_bundle == "missing-ca.pem"
     for value in (0, -1, float("inf"), float("nan"), True, 10**1000):
         with pytest.raises(ValueError): builder.poll_interval(value).build()
     for url in (None, 42, "", "ftp://localhost", "http://u:p@localhost", "http://@localhost",
@@ -325,6 +331,101 @@ def test_builder_validation_and_no_network(monkeypatch):
         with pytest.raises(ValueError): Client.builder().url(url).secret_key("test").build()
     for key in ("test\x00key", "test\x7fkey", "test\nkey", "test key"):
         with pytest.raises(ValueError): Client.builder().url("http://localhost").secret_key(key).build()
+    for path in (42, False, b"ca.pem", "", "bad\0path"):
+        with pytest.raises(ValueError): Client.builder().url("https://localhost").secret_key("test").ca_bundle(path).build()
+
+
+@pytest.mark.parametrize("initial", ["missing", "invalid"])
+async def test_ca_bundle_failure_is_safe_and_retryable(tmp_path, monkeypatch, initial):
+    bundle = tmp_path / "private-key.pem"
+    if initial == "invalid":
+        await asyncio.to_thread(bundle.write_text, "not a certificate")
+    original_client = httpx.AsyncClient
+    created = []
+
+    def create_client(**options):
+        assert isinstance(options["verify"], ssl.SSLContext)
+        assert options["verify"].check_hostname
+        assert options["verify"].verify_mode == ssl.CERT_REQUIRED
+        assert options["trust_env"] is False and options["follow_redirects"] is False
+        client = original_client(**options, transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, headers={"etag": '"good"'}, json=POLICY)
+        ))
+        created.append(client)
+        return client
+
+    monkeypatch.setattr(httpx, "AsyncClient", create_client)
+    client = Client.builder().url("https://partly.test").secret_key("private-key").ca_bundle(bundle).build()
+    try:
+        with pytest.raises(RefreshError, match="CA bundle") as caught:
+            await client.init()
+        assert "private-key" not in str(caught.value)
+        assert client.last_refresh_error is caught.value
+        assert not created and client._http is None and client._snapshot is None and client._poll_task is None
+        await asyncio.to_thread(shutil.copyfile, certifi.where(), bundle)
+        await client.init()
+        assert client.last_refresh_error is None
+        assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
+    finally:
+        await client.aclose()
+    assert len(created) == 1 and created[0].is_closed
+
+
+@pytest.mark.parametrize("finish", ["close", "cancel", "success"])
+async def test_tls_context_loading_is_async_and_cannot_create_client_after_close(monkeypatch, finish):
+    entered = asyncio.Event()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+    main_thread = threading.get_ident()
+    create_context = ssl.create_default_context
+    original_client = httpx.AsyncClient
+    created = []
+
+    def load_context(*, cafile):
+        assert threading.get_ident() != main_thread
+        assert cafile == certifi.where()
+        loop.call_soon_threadsafe(entered.set)
+        release.wait(timeout=2)
+        return create_context(cafile=cafile)
+
+    def create_client(**options):
+        assert threading.get_ident() == main_thread
+        assert options["verify"].verify_mode == ssl.CERT_REQUIRED and options["verify"].check_hostname
+        client = original_client(**options, transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, headers={"etag": '"good"'}, json=POLICY)
+        ))
+        created.append(client)
+        return client
+
+    monkeypatch.setattr(ssl, "create_default_context", load_context)
+    monkeypatch.setattr(httpx, "AsyncClient", create_client)
+    client = Client.builder().url("https://partly.test").secret_key("test-key").build()
+    init = asyncio.create_task(client.init())
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        assert not init.done() and not created
+        if finish == "cancel":
+            init.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await init
+            await client.aclose()
+        elif finish == "close":
+            close = asyncio.create_task(client.aclose())
+            await asyncio.sleep(0)
+            release.set()
+            with pytest.raises(ClientClosedError):
+                await init
+            await close
+        else:
+            release.set()
+            await init
+            assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
+    finally:
+        release.set()
+        await asyncio.gather(init, return_exceptions=True)
+        await client.aclose()
+    assert len(created) == (1 if finish == "success" else 0)
+    assert all(client.is_closed for client in created)
 
 
 async def test_response_cleanup_failure_does_not_commit_snapshot():

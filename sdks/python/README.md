@@ -48,6 +48,29 @@ The default poll interval is 30 seconds after the previous refresh completes. Us
 
 `aclose()` stops polling and closes HTTP connections. Use it even after failed initialization. It is safe to call again. A closed client cannot reconnect, and a request already in progress cannot replace its policy after closing starts. Its last accepted policy remains available for local checks. Create a new client to reconnect.
 
+## HTTPS and private certificate authorities
+
+HTTPS URLs verify the server certificate and hostname. By default, the SDK uses HTTPX's standard certifi trust bundle. It does not use proxy or certificate environment variables, follow redirects, or retry an HTTPS request over HTTP.
+
+For a server certificate issued by your own certificate authority (CA), supply a PEM bundle containing the trusted CA certificate:
+
+```python
+from pathlib import Path
+from partly import Client
+
+client = (
+    Client.builder()
+    .url("https://partly.example.com:8443")
+    .secret_key("YOUR_API_KEY")
+    .ca_bundle(Path("/path/to/company-ca.pem"))
+    .build()
+)
+```
+
+A string path also works. This bundle replaces the default trust roots for this client; it does not disable verification. The certificate must still match the hostname in the URL. There is no option to skip certificate checks.
+
+`build()` validates the path's form without reading the file. `await client.init()` loads the CA bundle outside the application event loop. A missing, unreadable, or invalid bundle raises `RefreshError`; correct the file and retry `init()`, or close the client. Certificate verification failures also raise `RefreshError`. After successful initialization, a failed refresh keeps the previous policy.
+
 ## Decisions and errors
 
 | Result or exception | Meaning |
@@ -60,7 +83,7 @@ The default poll interval is 30 seconds after the previous refresh completes. Us
 | `PolicyNotReadyError` | No policy has been initialized |
 | `AuthenticationError` | Control plane rejected the API Key |
 | `InvalidPolicyError` | Downloaded data or its ETag is invalid |
-| `RefreshError` | Network, timeout, or other HTTP failure |
+| `RefreshError` | Network, timeout, certificate configuration, or other HTTP failure |
 | `ClientClosedError` | Network operation attempted after close |
 
 These exceptions inherit `PartlyError`. Compare decisions explicitly: `decision is Decision.ENABLED`. Testing a decision as a boolean raises `TypeError`, which prevents treating a disabled enum as truthy by accident. No fallback is chosen for the application.
@@ -101,7 +124,7 @@ except ContextTypeError as error:
 Install the wheel before testing. From the repository root:
 
 ```sh
-python -m pytest -q sdks/python/tests tests/e2e/test_sdk.py
+python -m pytest -q sdks/python/tests tests/e2e/test_sdk.py tests/e2e/test_https.py
 ```
 
 Tests exercise both the native boundary and the real control plane. The root README includes the browser and full-workspace checks.

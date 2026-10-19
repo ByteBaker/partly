@@ -15,6 +15,8 @@ cargo build --release --locked -p partly-server
 
 Open <http://127.0.0.1:8080>. Create an admin account with a password of at least 12 characters. Partly creates the database only after valid setup. An existing invalid database causes a startup error; it is never replaced automatically.
 
+For HTTPS, supply `--tls-cert` and `--tls-key`, plus `--hostname` when using a custom DNS name. See the [HTTPS setup](crates/partly-server/README.md#https) for certificate requirements and an example command. The Python SDK uses async HTTPX transport with certificate verification; Rust handles local evaluation.
+
 Choose **Development** in the top-right environment selector. In **Feature flags**, select **Create flag**, enter `new_checkout`, and choose a rollout mode: enabled for everyone, percentage of users, custom rules, or disabled for everyone. Creation always uses the current environment. The environment is also in the URL; switching it reloads the page, with a warning before discarding unsaved edits.
 
 Open **Key Management**, select **Generate key**, enter a name, and generate an API Key. Select **Copy** to use it. The key stays masked; **Reveal** remains available whenever you need to see it. **Docs** contains the complete Python quickstart, with syntax colors, a language dropdown, and a copy icon.
@@ -82,6 +84,8 @@ python -m pytest -q
 
 The tests start temporary local servers and databases. They cover the real dashboard, environment navigation, unsaved edits, typed rule inputs, server restarts, key scope, percentage consistency, rule matching, the installed native SDK, refresh failures, async lifecycle, and runnable Python examples. Browser screenshots are written under `test-results/`. To test the release executable, set `PARTLY_BINARY` to its absolute path before running pytest.
 
+HTTPS tests generate temporary certificates with the development-only `trustme` package. They check TLS 1.2/1.3, HTTP/2 dashboard access, secure cookies, private CA trust, invalid certificates, and policy retention after TLS failures. They need no external certificate service.
+
 Browser checks use Chromium at desktop and mobile viewport sizes. Firefox, Safari, and real mobile devices are not verified. Generated reports, screenshots, databases, and caches stay outside Git.
 
 ## Measure locally
@@ -108,7 +112,7 @@ Development contracts and scope are recorded in [AGENTS.md](AGENTS.md) and the p
 
 ## Current limits
 
-- One local server, one admin, and one default project. Use localhost; this POC has no TLS or production hosting setup. Direct IP addresses and `localhost` are accepted hostnames.
+- One server, one admin, and one default project. Native HTTPS uses supplied certificate/key files; see the [HTTPS setup](crates/partly-server/README.md#https). Direct IPs, `localhost`, and one configured DNS hostname are accepted. Certificate issuance, renewal, and reverse-proxy TLS termination remain outside this setup.
 - API Keys are stored as plaintext in SQLite, by agreement for this POC. Anyone with the database or a backup can read them. Admin passwords use Argon2id.
 - SDK policies live in memory. A running SDK keeps its last good policy during an outage; a new process needs a successful connection before evaluation. Revoking a key stops future downloads, not already loaded rules.
 - Polling is included. SSE, HA, RBAC, other languages, persistent SDK snapshots, and licensing are deferred.

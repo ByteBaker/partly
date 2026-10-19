@@ -11,6 +11,24 @@ cargo build --release --locked -p partly-server
 
 These are also the default values. `--db` is relative to the current working directory. Its parent directory must exist. Stop with Ctrl+C. Restart with the same path to reuse the data. Admin sessions last up to 12 hours and are cleared on restart.
 
+## HTTPS
+
+The executable can serve HTTPS directly using Rustls. Supply a PEM certificate chain and its matching private key:
+
+```sh
+./target/release/partly serve --host 0.0.0.0 --port 8443 --db ./partly.db \
+  --tls-cert ./certs/fullchain.pem --tls-key ./certs/privkey.pem \
+  --hostname flags.example.com
+```
+
+Open `https://flags.example.com:8443` and use the same URL in the SDK. The DNS name must point to the server, and the certificate must cover that name. `--hostname` allows one extra DNS name, without a scheme or port; direct IP addresses and `localhost` remain accepted. Binding `0.0.0.0` listens on all IPv4 interfaces; keep the default `127.0.0.1` for local access only.
+
+Both TLS flags are required together. The certificate file contains the server certificate first, followed by intermediate certificates. The private key must be unencrypted PEM. Invalid files or mismatched keys stop startup. TLS supports versions 1.2 and 1.3, with HTTP/1.1 and HTTP/2. The TLS listener does not also accept plaintext HTTP, redirect it, or fall back after an error. With neither TLS flag, the existing HTTP mode remains available.
+
+Use a certificate trusted by browsers and the SDK. For a private or local CA, trust its root in the browser and pass its PEM bundle through SDK `.ca_bundle("./certs/ca.pem")`; see the [SDK HTTPS guide](../../sdks/python/README.md#https-and-private-certificate-authorities). TLS keys stay on the server and must not be supplied to the SDK. Certificate files are ignored by Git.
+
+Certificates are read at startup. Obtain and renew them outside Partly, then restart the process to load replacements. Automatic certificate issuance and renewal are not included. HTTPS session cookies include `Secure`; HTTP session cookies keep the local development behavior.
+
 ## Setup and storage
 
 When the file is missing, Partly serves setup without creating it. Valid setup exclusively creates a file and writes the schema, hashed admin password, default project, and two environments in one SQLite transaction. Concurrent submissions cannot create two admins. A failed attempt removes only the file that attempt created.
@@ -47,7 +65,7 @@ New keys are 27 characters: `pk_` plus 24 random ASCII letters and digits, gener
 
 ## HTTP contract
 
-All admin writes require `X-Partly-Request: dashboard`. Login sets an HttpOnly, SameSite=Strict session cookie. The server rejects cross-site browser API requests, provides no cross-origin access, and accepts only direct IPs or `localhost` as hostnames. This is a local HTTP POC, not a reverse-proxy or public hosting configuration.
+All admin writes require `X-Partly-Request: dashboard`. Login sets an HttpOnly, SameSite=Strict session cookie, with Secure added in HTTPS mode. The server rejects cross-site browser API requests and provides no cross-origin access. It accepts direct IPs, `localhost`, and the optional configured `--hostname`. Origin checks use the actual listener's HTTP or HTTPS scheme and support HTTP/2 authority. Forwarded headers cannot change the scheme or allowed hostname; TLS termination at a reverse proxy is not configured by this option.
 
 | Method and path | Access and result |
 | --- | --- |
