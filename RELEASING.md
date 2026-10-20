@@ -71,11 +71,11 @@ Notices are tracked. After dependency or target changes, regenerate them from th
 cargo install cargo-about --version 0.9.2 --locked
 cargo fetch --locked
 cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-server/Cargo.toml --target x86_64-unknown-linux-musl --target aarch64-apple-darwin licenses/third-party.hbs --output-file THIRD_PARTY_NOTICES.txt
-cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path sdks/python/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdks/python/THIRD_PARTY_NOTICES.txt
+cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path sdk/python/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/python/THIRD_PARTY_NOTICES.txt
 ```
 
 Review changes and diagnostics: cargo-about 0.9.2 can exit successfully after a clarification checksum mismatch. CI rejects that diagnostic and stale notices. Recheck upstream license checksums in `licenses/about.toml` when upgrading affected dependencies. Generated notices do not replace a review of dependency terms.
 
-Release builds pin Rust 1.98.1. When changing compilers, update both the workflow pin and `sdks/python/RUST_STDLIB_NOTICES.html` from that compiler's `share/doc/rust/COPYRIGHT-library.html`. CI verifies an exact match. Local builds also need matching compiler notices before redistribution.
+Release builds pin Rust 1.98.1. When changing compilers, update both the workflow pin and `sdk/python/RUST_STDLIB_NOTICES.html` from that compiler's `share/doc/rust/COPYRIGHT-library.html`. CI verifies an exact match. Local builds also need matching compiler notices before redistribution.
 
 The Linux server archive includes its build runner's musl copyright file. Inspect it when validating the first Linux artifact; macOS checks do not verify it. Separately installed Python dependencies carry their own notices.

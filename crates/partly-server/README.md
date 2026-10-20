@@ -25,7 +25,7 @@ Use `https://flags.example.com:8443` in the browser and SDK. Point that DNS name
 
 - Supply both TLS flags. The certificate PEM must list the server certificate first, then intermediates. The matching private key must be unencrypted PEM.
 - Invalid TLS configuration stops startup. HTTPS supports TLS 1.2/1.3 and HTTP/1.1/2, with no plaintext fallback or redirect. Omit both TLS flags for local HTTP.
-- For a private certificate authority, trust its root in the browser and configure the [SDK CA bundle](../../sdks/python/README.md#https-and-private-certificate-authorities). Keep the private key on the server.
+- For a private certificate authority, trust its root in the browser and configure the [SDK CA bundle](../../sdk/python/README.md#https-and-private-certificate-authorities). Keep the private key on the server.
 - Obtain and renew certificates externally, then restart Partly to load them.
 
 ## Setup and storage

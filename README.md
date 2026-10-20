@@ -29,7 +29,7 @@ Use regular CPython 3.10 or newer. In another terminal, from the repository root
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install 'maturin>=1.9.4,<2'
-maturin build --release --locked --manifest-path sdks/python/Cargo.toml --out target/wheels
+maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels
 python -m pip install target/wheels/partly_sdk-0.1.0a1-*.whl
 ```
 
@@ -48,7 +48,7 @@ python examples/python/quickstart.py
 ## Guides
 
 - [Server: HTTPS, backups, and password recovery](crates/partly-server/README.md)
-- [Python SDK](sdks/python/README.md) and [examples](examples/python/README.md)
+- [Python SDK](sdk/python/README.md) and [examples](examples/python/README.md)
 - [Evaluation rules and percentage consistency](crates/partly-core/README.md)
 - [Development checks and release preparation](RELEASING.md)
 

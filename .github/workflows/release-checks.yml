@@ -39,7 +39,7 @@ jobs:
           cache: pip
           cache-dependency-path: |
             requirements-dev.txt
-            sdks/python/pyproject.toml
+            sdk/python/pyproject.toml
       - name: Install build and test tools
         run: |
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
@@ -48,7 +48,7 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Build and install the SDK and server
         run: |
-          maturin build --release --locked --manifest-path sdks/python/Cargo.toml --out target/wheels
+          maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels
           python -m pip install target/wheels/*.whl
           cargo build --release --locked -p partly-server
       - name: Lint and test Rust
@@ -83,11 +83,11 @@ jobs:
           cargo install cargo-about --version 0.9.2 --locked
           cargo fetch --locked
           cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-server/Cargo.toml --target x86_64-unknown-linux-musl --target aarch64-apple-darwin licenses/third-party.hbs --output-file THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/server-licenses.log"
-          cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path sdks/python/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdks/python/THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/sdk-licenses.log"
+          cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path sdk/python/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/python/THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/sdk-licenses.log"
           if grep -q 'failed to validate all files specified in clarification' "$RUNNER_TEMP/"*-licenses.log; then
             exit 1
           fi
-          git diff --exit-code -- THIRD_PARTY_NOTICES.txt sdks/python/THIRD_PARTY_NOTICES.txt
+          git diff --exit-code -- THIRD_PARTY_NOTICES.txt sdk/python/THIRD_PARTY_NOTICES.txt
 
   artifacts:
     needs: checks
@@ -121,7 +121,7 @@ jobs:
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
           rustup default "$RUST_TOOLCHAIN"
           rustup target add "$BINARY_TARGET"
-          cmp "$(rustc --print sysroot)/share/doc/rust/COPYRIGHT-library.html" sdks/python/RUST_STDLIB_NOTICES.html
+          cmp "$(rustc --print sysroot)/share/doc/rust/COPYRIGHT-library.html" sdk/python/RUST_STDLIB_NOTICES.html
       - name: Install the Linux static linker
         if: runner.os == 'Linux'
         run: |
@@ -142,8 +142,8 @@ jobs:
       - name: Prepare the SDK source distribution
         run: |
           python -m pip install maturin==1.15.0
-          cargo fetch --locked --manifest-path sdks/python/Cargo.toml
-          CARGO_NET_OFFLINE=true maturin sdist --manifest-path sdks/python/Cargo.toml --out dist
+          cargo fetch --locked --manifest-path sdk/python/Cargo.toml
+          CARGO_NET_OFFLINE=true maturin sdist --manifest-path sdk/python/Cargo.toml --out dist
           python scripts/prepare_sdist.py dist/*.tar.gz target/release-source
       - name: Build the ABI3 wheel from its source distribution
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
@@ -165,7 +165,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/partly-package"
           cp "target/$BINARY_TARGET/release/partly" LICENSE LICENSING.md NOTICE THIRD_PARTY_NOTICES.txt "$RUNNER_TEMP/partly-package/"
           cp crates/partly-core/LICENSE "$RUNNER_TEMP/partly-package/LICENSE-APACHE"
-          cp sdks/python/RUST_STDLIB_NOTICES.html "$RUNNER_TEMP/partly-package/"
+          cp sdk/python/RUST_STDLIB_NOTICES.html "$RUNNER_TEMP/partly-package/"
           if [ "$RUNNER_OS" = Linux ]; then
             cp /usr/share/doc/musl-dev/copyright "$RUNNER_TEMP/partly-package/MUSL_NOTICES.txt"
           fi
@@ -191,7 +191,7 @@ jobs:
             cmp "$notice" "$RUNNER_TEMP/partly-unpacked/$notice"
           done
           cmp crates/partly-core/LICENSE "$RUNNER_TEMP/partly-unpacked/LICENSE-APACHE"
-          cmp sdks/python/RUST_STDLIB_NOTICES.html "$RUNNER_TEMP/partly-unpacked/RUST_STDLIB_NOTICES.html"
+          cmp sdk/python/RUST_STDLIB_NOTICES.html "$RUNNER_TEMP/partly-unpacked/RUST_STDLIB_NOTICES.html"
           if [ "$RUNNER_OS" = Linux ]; then
             cmp /usr/share/doc/musl-dev/copyright "$RUNNER_TEMP/partly-unpacked/MUSL_NOTICES.txt"
           fi

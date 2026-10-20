@@ -6,7 +6,7 @@ Read this file and the relevant package READMEs before changing the project. The
 
 - Prepare the smallest complete self-hosted alpha. Avoid speculative abstractions, extra services, and features added only for future customers.
 - Control plane: Rust, Axum, embedded SQLite, and a vanilla HTML/CSS/JavaScript dashboard bundled into one executable. No required Docker, external database, or frontend runtime.
-- SDK: Python only for now, with shared Rust evaluation through PyO3 and Maturin. No browser SDK or frontend application example.
+- SDK order: Python, Rust, Go, then Node.js. Python is implemented with shared Rust evaluation through PyO3 and Maturin; the other language SDKs are next. No browser SDK or frontend application example.
 - Flags return boolean decisions through four rollout modes: everyone, percentage, custom rules, or nobody. Evaluate one flat `context` dictionary; percentage selection uses its stable `id`. Custom rules use plain context keys, with AND within groups and OR between groups. Keep rules inside each flag for now; no reusable audiences, stored profiles, variants, or evaluation-result LRU.
 - Keep the Rust evaluator independent of HTTP, storage, and language bindings.
 - Release preparation is authorized: versioning, package metadata, binaries, wheels, checks, and operational basics. The PyPI name is `partly-sdk`; `partly.sh` URLs are placeholders until deployed. The user selected ELv2 for the control plane/dashboard and Apache-2.0 for the SDK, shared evaluator, and Python integration examples; see LICENSING.md. Describe the server as source-available and the SDK as open source. Preserve these boundaries and include the relevant license texts and notices in release artifacts. The public repository remains undecided; do not publish without a confirmed destination. Enterprise features, HA, billing, and premium activation are deferred. SSE is optional.
@@ -28,7 +28,7 @@ Read this file and the relevant package READMEs before changing the project. The
 
 ## Quality and documentation
 
-- Keep the separation between the Rust core, control plane, Python SDK, examples, and tests. Add files and language folders when needed, not as empty placeholders.
+- Keep shared code under `crates/` and language-specific SDK implementations under `sdk/<language>` (`python`, `rust`, `go`, `node`). Keep application examples under `examples/<language>`. Add folders when implementing them, not as empty placeholders.
 - Keep the blue Console design: compact layout, white and neutral surfaces, restrained blue accents, clear borders, readable controls, and keyboard accessibility. Avoid gradients, decorative shadows, and generic AI-style decoration.
 - Use direct tool labels instead of slogans, decorative section labels, or repeated technical metadata. Keep the default project internal. Environment names are labels; do not give production special UI treatment or show environment warning banners. Align Create flag and Generate key in the same page-header position; use deliberate creation dialogs.
 - Preserve the Partly logo. Keep the brand, environment selector, and tab ribbon together in a sticky header. Success feedback must not move or resize existing content when it appears or disappears. Use existing space beside the affected item or an anchored tooltip, with short labels such as Copied, Saved, or Created. Never insert a message row or page banner for success feedback.

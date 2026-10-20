@@ -8,7 +8,7 @@ Follow the [root setup guide](../../README.md) to create `new_checkout`, generat
 python examples/python/quickstart.py
 ```
 
-It prints `Use the new checkout` or `Use the current checkout`. Reuse the client across requests in your application and close it at shutdown. See the [SDK guide](../../sdks/python/README.md) for refresh, context, and errors.
+It prints `Use the new checkout` or `Use the current checkout`. Reuse the client across requests in your application and close it at shutdown. See the [SDK guide](../../sdk/python/README.md) for refresh, context, and errors.
 
 ## Check a larger rollout
 

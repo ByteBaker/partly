@@ -8,7 +8,7 @@ From the repository root, with a virtual environment active:
 
 ```sh
 python -m pip install 'maturin>=1.9.4,<2'
-maturin build --release --locked --manifest-path sdks/python/Cargo.toml --out target/wheels
+maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels
 python -m pip install target/wheels/partly_sdk-0.1.0a1-*.whl
 ```
 
@@ -118,7 +118,7 @@ Dashboard rules match all conditions within a group and any group within a flag.
 Install the wheel before testing. From the repository root:
 
 ```sh
-python -m pytest -q sdks/python/tests tests/e2e/test_sdk.py tests/e2e/test_https.py
+python -m pytest -q sdk/python/tests tests/e2e/test_sdk.py tests/e2e/test_https.py
 ```
 
 Tests exercise both the native boundary and the real control plane. See [development checks](../../RELEASING.md#build-and-verify) for browser and full-workspace checks.
