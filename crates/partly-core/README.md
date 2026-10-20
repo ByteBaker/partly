@@ -1,6 +1,6 @@
 # Partly core
 
-This crate validates policy documents and evaluates flags. It has no HTTP, SQLite, or Python dependency. The server and the Python native extension use the same model.
+Shared policy validation and flag evaluation for the server and Python SDK. No HTTP, storage, or Python dependencies.
 
 ## Policy format
 
@@ -26,13 +26,15 @@ This crate validates policy documents and evaluates flags. It has no HTTP, SQLit
 }
 ```
 
-Flag, project, and environment keys contain 1–64 lowercase ASCII letters, digits, underscores, or hyphens. Percentages are whole numbers from 0 to 100. Unknown document fields, wrong types, and unsupported schema versions are rejected. An empty `flags` object is valid. Policy documents are limited to 1 MiB, shared with the server and SDK through `MAX_POLICY_BYTES`.
+Flag, project, and environment keys use 1–64 lowercase ASCII letters, digits, `_`, or `-`. Percentages are integers from 0 to 100. Unknown fields, wrong types, and unsupported schema versions are rejected. Empty `flags` is valid. Policies are limited to 1 MiB (`MAX_POLICY_BYTES`).
 
-Use `Policy::from_json()` to parse and validate downloaded bytes once. For direct flag JSON, use `validate_json_number_limits()` on the original bytes as well as normal deserialization; this prevents large integer literals from being silently rounded. `evaluate(flag_key, &context)` returns `Result<Decision, EvaluationError>`. Context is a flat map of plain string keys to strings, numbers, or booleans. Nulls, arrays, and nested objects are not supported. Percentage mode requires `context["id"]`: a nonblank string of 1–256 UTF-8 bytes. Other modes only require their rule fields.
+`Policy::from_json()` parses and validates a policy once. For standalone flag JSON, also run `validate_json_number_limits()` on the original bytes to prevent rounded integer literals. `evaluate(flag_key, &context)` returns `Result<Decision, EvaluationError>`.
+
+Context is a flat map of string keys to strings, numbers, or booleans. Nulls, arrays, and nested objects are rejected. Percentage mode requires a nonblank `id` of 1–256 UTF-8 bytes; other modes only need their rule fields.
 
 ## Custom rules
 
-All conditions inside a group must match; any group may match. Empty groups and empty rulesets are invalid. With `action: "enable"`, a match enables the feature and a non-match disables it. `action: "disable"` reverses those decisions. Missing or wrongly typed required fields are errors for either action, never implicit decisions.
+All conditions within a group must match; any group may match. Groups and rulesets cannot be empty. `action: "enable"` enables matches and disables non-matches; `"disable"` reverses this. Missing or wrongly typed required fields always return errors.
 
 | Operators | Type | Comparison |
 | --- | --- | --- |
@@ -42,11 +44,11 @@ All conditions inside a group must match; any group may match. Empty groups and 
 | `regex` | String | Pattern search; add `^` and `$` to match the whole string |
 | `is` | Boolean | Equals literal true or false |
 
-Strings are case-sensitive, without trimming or normalization. Types are never converted. Numeric `18` equals `18.0`; string `"18"` and boolean `true` are not numbers. Integer comparisons preserve precision, including values beyond 2^53. Integer rule values and context values must be between −2^63 and 2^64−1; larger integer literals are rejected instead of rounded. Floating-point values must be finite.
+Strings are case-sensitive, with no trimming, normalization, or type conversion. Numeric `18` equals `18.0`; `"18"` and `true` are not numbers. Integers retain precision, including beyond 2^53, and must fit between −2^63 and 2^64−1. Out-of-range literals are rejected. Floats must be finite.
 
-Regex patterns use Rust's `regex` syntax. Look-around, backreferences, and inline case-insensitive flags are rejected. Patterns compile when accepting the policy, not on each evaluation. Invalid or overly large patterns cannot be accepted.
+Rust regex patterns compile when accepting the policy. Invalid or oversized patterns, look-around, backreferences, and inline case-insensitive flags are rejected.
 
-Every required field in the selected flag is checked before matching, even if another group would already match. Errors identify the flag and key, without including context values. Wrong types also identify the operator, expected type, and actual type. Conditions in other flags do not require their context fields.
+All required fields in the selected flag are checked before matching, even if another group matches. Errors identify the flag and key, plus operator and types for type errors, without context values. Other flags' fields are not required.
 
 ## Stable percentage selection
 
@@ -58,7 +60,7 @@ The version 1 hash input is:
 
 Compute SHA-256. Read the first four digest bytes as an unsigned big-endian integer, then take the remainder after division by 10,000. Percentage mode selects the subject when this bucket is less than `percentage * 100`.
 
-The flag key is immutable in the dashboard. Identical flag keys and context IDs use the same bucket across environments. Neither rollout percentage nor policy revision enters the hash, so raising a percentage keeps previously selected users. Adding more users does not change existing decisions.
+Flag keys are immutable. The same flag key and ID use the same bucket across environments. Percentage and revision are excluded from the hash: increasing rollout keeps selected users, and adding users leaves existing decisions unchanged.
 
 Fixed vectors:
 
@@ -68,7 +70,7 @@ Fixed vectors:
 | `new_checkout` | `user-123` | 4195 |
 | `checkout` | `用户-1` | 8114 |
 
-Percentages describe a share of possible hash buckets. Small samples do not always match the percentage exactly. No user list or profile is stored.
+Percentages describe hash buckets, not exact user counts. Small samples may differ. No user list is stored.
 
 ```sh
 cargo test -p partly-core
@@ -76,4 +78,4 @@ cargo test -p partly-core
 
 ## License
 
-The shared evaluator is licensed under the [Apache License 2.0](LICENSE). It can be used separately from the ELv2 control plane. Preserve the included license and attribution notices when redistributing it.
+[Apache-2.0](LICENSE), independent of the server's ELv2 license. Preserve the license and attribution notices when redistributing.

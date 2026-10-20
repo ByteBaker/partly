@@ -1,25 +1,25 @@
 # Partly
 
-Partly is a self-hosted feature flag tool. One Rust executable includes the dashboard and SQLite. No Docker, Node.js, or external database is needed to run it.
+Partly is a self-hosted feature flag tool: one Rust executable with a dashboard and SQLite. No Docker or external services required.
 
-Manage flags by environment: on, off, percentage rollout, or custom rules. The Python SDK evaluates them locally and keeps working during server outages after its first successful connection.
+Turn features on or off, roll them out by percentage, or match custom rules. The Python SDK evaluates flags locally; user context stays in your application.
 
 **Alpha:** `0.1.0-alpha.1` (Python: `0.1.0a1`). Public downloads are not available yet.
 
 ## Run locally
 
-Building needs Rust 1.89 or newer and a C compiler. From the repository root:
+Requires Rust 1.89+ and a C compiler. From the repository root:
 
 ```sh
 cargo build --release --locked -p partly-server
 ./target/release/partly serve --host 127.0.0.1 --port 8080 --db ./partly.db
 ```
 
-1. Open <http://127.0.0.1:8080> and create an admin account with a password of at least 12 characters.
-2. In **Development**, create a flag named `new_checkout` and choose **Enabled for everyone**.
-3. In **Key Management**, generate a named API Key and copy it.
+1. Open <http://127.0.0.1:8080> and create an admin account (password: at least 12 characters).
+2. In **Development**, create `new_checkout` with **Enabled for everyone**.
+3. Under **Key Management**, generate and copy an API Key.
 
-The database is created after setup. Restart with the same path to keep your data. For remote access, follow the [HTTPS setup](crates/partly-server/README.md#https).
+Setup creates the database. Reuse its path on restart. For remote access, [configure HTTPS](crates/partly-server/README.md#https).
 
 ## Try Python
 
@@ -33,24 +33,22 @@ maturin build --release --locked --manifest-path sdks/python/Cargo.toml --out ta
 python -m pip install target/wheels/partly_sdk-0.1.0a1-*.whl
 ```
 
-In [quickstart.py](examples/python/quickstart.py), replace `YOUR_API_KEY` with your key. The default URL points to the local server. Then run:
+Replace `YOUR_API_KEY` in [quickstart.py](examples/python/quickstart.py), then run:
 
 ```sh
 python examples/python/quickstart.py
 ```
 
-The example initializes one client, checks `new_checkout`, and closes the client. The [SDK guide](sdks/python/README.md) covers refresh, custom rules, and error handling.
-
 ## Alpha limits
 
 - One server and one admin. API Keys are stored as plaintext in SQLite and backups; keep these files private.
-- Policies stay in SDK memory. A new application process needs the server to initialize; a running client keeps its last accepted policy during an outage.
-- Initial release targets are macOS ARM64 and Linux x86_64. Linux artifacts still need verification. See [release status](RELEASING.md).
+- Policies stay in SDK memory. Running clients keep working during outages; new processes need the server to initialize.
+- Release targets: macOS ARM64 and Linux x86_64. Linux artifacts still need verification.
 
 ## Guides
 
 - [Server: HTTPS, backups, and password recovery](crates/partly-server/README.md)
-- [Python SDK and examples](examples/python/README.md)
+- [Python SDK](sdks/python/README.md) and [examples](examples/python/README.md)
 - [Evaluation rules and percentage consistency](crates/partly-core/README.md)
 - [Development checks and release preparation](RELEASING.md)
 

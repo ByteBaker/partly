@@ -1,36 +1,30 @@
 # Python examples
 
-Start with [quickstart.py](quickstart.py). It builds one client, downloads the policy, checks one flag locally, and closes the client. Initialization or evaluation errors stop the example with a clear message. The dashboard's **Docs** screen serves this exact file.
+Start with [quickstart.py](quickstart.py), also shown in the dashboard's **Docs** tab. It initializes a client, checks one flag, handles errors, and closes the client.
 
-1. Build and run Partly and install the Python wheel using the [root README](../../README.md).
-2. In **Development**, select **Create flag**, enter `new_checkout`, choose **Percentage of users**, and set 50.
-3. In **Key Management**, select **Generate key**, enter a name, generate the key, then select **Copy**.
-4. In `quickstart.py`, replace `YOUR_API_KEY` with that key and set `CONTROL_PLANE_URL` to your server address.
-5. With your virtual environment active, run from the repository root:
+Follow the [root setup guide](../../README.md) to create `new_checkout`, generate an API Key, and install the SDK. Set the URL and key constants in `quickstart.py`, then run from the repository root:
 
 ```sh
 python examples/python/quickstart.py
 ```
 
-The example prints `Use the new checkout` or `Use the current checkout`. Replace the flag name and context with your application data. Context stays local. Keep `context["id"]` stable for percentage rollouts. The URL and API Key are ordinary Python constants; the SDK does not require environment variables.
-
-In your application, reuse the client across requests and close it during shutdown. It polls for policy changes every 30 seconds. See the [SDK README](../../sdks/python/README.md) for manual refresh, custom rules, and specific error types.
+It prints `Use the new checkout` or `Use the current checkout`. Reuse the client across requests in your application and close it at shutdown. See the [SDK guide](../../sdks/python/README.md) for refresh, context, and errors.
 
 ## Check a larger rollout
 
-[rollout.py](rollout.py) evaluates 10,000 stable IDs and prints a total instead of listing every user:
+[rollout.py](rollout.py) checks 10,000 stable IDs and prints totals. Set `new_checkout` to **Percentage of users: 50** in the same environment as the API Key. In Bash, with the virtual environment active:
 
-```sh
+```bash
 export PARTLY_URL=http://127.0.0.1:8080
 read -r -s PARTLY_SDK_KEY
 export PARTLY_SDK_KEY
 python examples/python/rollout.py
 ```
 
-Paste the key at the `read` prompt and press Enter. This optional diagnostic uses environment variables for convenience. It uses `new_checkout` by default; `PARTLY_FLAG` can select a different existing flag. A 50% rollout selects roughly half the users, not exactly 5,000. The same flag and ID produce the same result when the policy is unchanged. Adding users does not change earlier users' decisions.
+Paste the key when `read` waits, then press Enter. Only this diagnostic uses environment variables; `PARTLY_FLAG` optionally selects another flag. Expect roughly 5,000 selected users. Adding users does not change earlier decisions.
 
-The last line normally reads `Policy updated: False`, showing an unchanged manual refresh. Both examples are run by the end-to-end tests and close the client in `finally`.
+`Policy updated: False` means the manual refresh found no change. End-to-end tests run both examples.
 
 ## License
 
-The examples use the [Apache License 2.0](LICENSE), so you can adapt them in proprietary or open-source applications. Preserve the required license and attribution notices when redistributing them.
+[Apache-2.0](LICENSE). Preserve license and attribution notices when redistributing.
