@@ -11,5 +11,5 @@
     "build": "node build.js",
     "test": "node --test"
   },
-  "files": ["index.js", "index.d.ts", "partly.node", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "RUST_STDLIB_NOTICES.html"]
+  "files": ["index.js", "index.d.ts", "native", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "RUST_STDLIB_NOTICES.html"]
 }

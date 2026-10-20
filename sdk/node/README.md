@@ -2,7 +2,13 @@
 
 Async HTTP downloads with local Rust evaluation through Node-API. Supports server-side Node.js 22+; not browsers.
 
-## Build locally
+## Install a release archive
+
+Install the `.tgz` for your platform with `npm install ./partly-node-<version>-<platform>.tgz`, then import from `partly-sdk`. It includes the native library; consumers do not need Rust or this checkout. Supported targets are macOS ARM64 and Linux x86_64. The tarballs are platform-specific; npm publishing remains separate.
+
+The Linux archive requires glibc 2.34 or newer. It does not run on Alpine.
+
+## Build from source
 
 Requires Rust and a C compiler:
 
@@ -13,7 +19,7 @@ node examples/node/quickstart.js
 
 Replace the constants in [the example](../../examples/node/quickstart.js) first. It loads the local SDK. The package is private until its public name and distribution are confirmed.
 
-The build creates `sdk/node/partly.node` for the current platform. No npm dependencies are needed. Prebuilt public packages are not available yet.
+The build creates `sdk/node/native/<platform>-<arch>/partly.node`. No npm dependencies are needed.
 
 ## Client contract
 
@@ -41,4 +47,4 @@ node --test sdk/node/test/*.test.js
 python -m pytest -q tests/e2e/test_sdk_contract.py -k node
 ```
 
-[Apache-2.0](LICENSE). Local builds support macOS and Linux; only macOS ARM64 has been verified locally.
+[Apache-2.0](LICENSE).

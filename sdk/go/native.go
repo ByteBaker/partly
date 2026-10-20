@@ -4,7 +4,9 @@
 package partly
 
 /*
-#cgo LDFLAGS: -L${SRCDIR}/../../target/release -lpartly_ffi
+#cgo LDFLAGS: -lpartly_ffi
+#cgo darwin,arm64 LDFLAGS: -L${SRCDIR}/native/darwin_arm64
+#cgo linux,amd64 LDFLAGS: -L${SRCDIR}/native/linux_amd64
 #cgo darwin LDFLAGS: -framework Security -framework CoreFoundation
 #cgo linux LDFLAGS: -ldl -lpthread -lm
 #include <stdint.h>

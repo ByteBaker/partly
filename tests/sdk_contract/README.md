@@ -21,7 +21,9 @@ python -m pytest -q tests/e2e/test_sdk_contract.py -k node
 
 The default server is `target/debug/partly`; `PARTLY_BINARY` can select an absolute path. The normal `python -m pytest` run also includes this contract.
 
-Python uses the installed wheel. Rust builds against `sdk/rust`; Go uses a local module replacement for `sdk/go`; Node.js loads the package entry from `sdk/node`. The fixture builds the Go static library and Node native extension first. Go builds use `-a` because its build cache does not track changes to the Rust archive. No published package can silently replace a missing local Rust, Go, or Node.js SDK.
+Python uses the installed wheel. Rust builds against `sdk/rust`; Go uses a local module replacement for `sdk/go`; Node.js loads the package entry from `sdk/node`. The fixture builds the Go static library and Node native extension first. Go builds use `-a` because its build cache does not track changes to the Rust archive.
+
+To verify release packages, set `PARTLY_SDK_PACKAGES` to the output of `scripts/package_sdks.py`. The same contracts then run against extracted crates, a standalone Go archive, and an npm-installed Node tarball in temporary application directories. Missing archives or native libraries fail normally.
 
 ## What it checks
 

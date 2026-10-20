@@ -2,15 +2,20 @@
 
 Async policy downloads through Reqwest and rustls; local decisions through `partly-core`. Reuse one client in a Tokio application.
 
-## Use locally
+## Use a release archive
 
-Until the package is published, use a path dependency:
+Requires Rust 1.89+. Until publication, extract the `partly-core` and `partly-rust` `.crate` archives into `third_party`, then use:
 
 ```toml
 [dependencies]
-partly = { package = "partly-rust", path = "/path/to/partly/sdk/rust" }
+partly = { package = "partly-rust", version = "=0.1.0-alpha.1", path = "third_party/partly-rust-0.1.0-alpha.1" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[patch.crates-io]
+partly-core = { path = "third_party/partly-core-0.1.0-alpha.1" }
 ```
+
+The archives build without this checkout. For development inside the repository, use `sdk/rust` as the dependency path.
 
 ```rust
 use partly::{Client, Context, Decision};
@@ -47,4 +52,4 @@ cargo test -p partly-rust
 python -m pytest -q tests/e2e/test_sdk_contract.py -k rust
 ```
 
-[Apache-2.0](LICENSE). Public distribution and cross-platform release checks remain pending.
+[Apache-2.0](LICENSE).

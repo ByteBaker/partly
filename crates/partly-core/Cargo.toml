@@ -5,8 +5,11 @@
 name = "partly-core"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
 license = "Apache-2.0"
+description = "Shared policy validation and local feature flag evaluation for Partly"
+readme = "README.md"
+rust-version = "1.89"
 
 [dependencies]
 serde.workspace = true

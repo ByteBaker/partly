@@ -3,7 +3,7 @@
 Create `new_checkout` and an API Key in the same environment. Replace the constants in [main.go](main.go), then run from the repository root:
 
 ```sh
-cargo build --release --locked -p partly-ffi
+sh sdk/go/build.sh
 cd examples/go
 go run -a .
 ```

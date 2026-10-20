@@ -9,10 +9,12 @@ import select
 import shutil
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 import trustme
@@ -22,12 +24,12 @@ DRIVERS = ROOT / "tests/sdk_contract"
 
 
 class Driver:
-    def __init__(self, command, directory):
+    def __init__(self, command, directory, *, cwd=ROOT):
         self.log_path = directory / "driver.log"
         self.log = self.log_path.open("wb")
         self.process = subprocess.Popen(
             command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log,
-            cwd=ROOT, bufsize=0,
+            cwd=cwd, bufsize=0,
         )
 
     def fail(self, reason):
@@ -74,19 +76,83 @@ class Driver:
         self.log.close()
 
 
+def packaged_driver(language, directory, packages):
+    """Use only extracted packages and copied drivers in a fresh application directory."""
+    def check_notices(package, *, compiled=False):
+        assert "Apache License" in (package / "LICENSE").read_text()
+        names = ["NOTICE", "THIRD_PARTY_NOTICES.txt"]
+        if compiled:
+            names.append("RUST_STDLIB_NOTICES.html")
+        for name in names:
+            assert (package / name).stat().st_size > 0, f"Missing packaged notice: {name}"
+
+    def unpack(pattern):
+        archives = list(packages.glob(pattern))
+        assert len(archives) == 1, f"Expected one {pattern} in {packages}"
+        with tarfile.open(archives[0]) as archive:
+            root = archive.getnames()[0].split("/")[0]
+            archive.extractall(directory, filter="data")
+        return directory / root
+
+    if language == "python":
+        entry = directory / "driver.py"
+        shutil.copy2(DRIVERS / "python/driver.py", entry)
+        return [sys.executable, "-I", str(entry)]
+    if language == "rust":
+        core = unpack("partly-core-*.crate")
+        sdk = unpack("partly-rust-*.crate")
+        assert "Apache License" in (core / "LICENSE").read_text()
+        assert (core / "NOTICE").stat().st_size > 0
+        check_notices(sdk)
+        application = directory / "rust"
+        shutil.copytree(DRIVERS / "rust", application)
+        manifest = application / "Cargo.toml"
+        manifest.write_text(manifest.read_text().replace(
+            'path = "../../../sdk/rust"', f"path = {json.dumps(str(sdk))}",
+        ) + f'\n[patch.crates-io]\npartly-core = {{ path = {json.dumps(str(core))} }}\n')
+        shutil.copy2(sdk / "Cargo.lock", application / "Cargo.lock")
+        target = directory.parent / "packaged-rust-target"
+        subprocess.run(["cargo", "build", "--offline", "--target-dir", str(target)], cwd=application, check=True,
+                       stdout=subprocess.DEVNULL, timeout=300)
+        return [str(target / "debug/partly-sdk-contract")]
+    if language == "go":
+        sdk = unpack("partly-go-*.tar.gz")
+        check_notices(sdk, compiled=True)
+        application = directory / "go"
+        shutil.copytree(DRIVERS / "go", application)
+        manifest = application / "go.mod"
+        manifest.write_text(manifest.read_text().replace("../../../sdk/go", json.dumps(str(sdk))))
+        entry = application / "driver"
+        subprocess.run(["go", "build", "-a", "-o", str(entry), "."], cwd=application,
+                       check=True, stdout=subprocess.DEVNULL, timeout=300)
+        return [str(entry)]
+    archives = list(packages.glob("partly-node-*.tgz"))
+    assert len(archives) == 1, f"Expected one Node package in {packages}"
+    subprocess.run(["npm", "install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund",
+                    "--prefix", str(directory), str(archives[0])],
+                   cwd=directory, check=True, stdout=subprocess.DEVNULL, timeout=120)
+    check_notices(directory / "node_modules/partly-sdk", compiled=True)
+    entry = directory / "driver.mjs"
+    entry.write_text((DRIVERS / "node/driver.mjs").read_text().replace('"../../../sdk/node"', '"partly-sdk"'))
+    return ["node", str(entry)]
+
+
 @pytest.fixture
 def driver(language, tmp_path):
     tool = {"python": sys.executable, "rust": "cargo", "go": "go", "node": "node"}[language]
     if not shutil.which(tool):
         pytest.fail(f"{language}: required tool not found: {tool}", pytrace=False)
-    if language in ("rust", "go"):
+    packages = os.environ.get("PARTLY_SDK_PACKAGES")
+    if packages:
+        command = packaged_driver(language, tmp_path, Path(packages).resolve())
+    elif language in ("rust", "go"):
         if language == "rust":
             target = ROOT / "target"
             build = ["cargo", "build", "--locked", "--offline", "--manifest-path", str(DRIVERS / "rust/Cargo.toml"),
                      "--target-dir", str(target)]
             command = [str(target / "debug/partly-sdk-contract")]
         else:
-            subprocess.run(["cargo", "build", "--locked", "--release", "-p", "partly-ffi"],
+            subprocess.run(["sh", str(ROOT / "sdk/go/build.sh")],
                            cwd=ROOT, check=True, capture_output=True, timeout=120)
             command = [str(tmp_path / "go-driver")]
             build = ["go", "build", "-a", "-o", command[0], "."]
@@ -100,7 +166,7 @@ def driver(language, tmp_path):
         subprocess.run(["node", str(ROOT / "sdk/node/build.js")],
                        cwd=ROOT, check=True, capture_output=True, timeout=120)
         command = ["node", str(DRIVERS / "node/driver.mjs")]
-    instance = Driver(command, tmp_path)
+    instance = Driver(command, tmp_path, cwd=tmp_path if packages else ROOT)
     try:
         yield instance
     finally:

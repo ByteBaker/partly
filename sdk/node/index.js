@@ -7,7 +7,7 @@ const https = require("node:https");
 const tls = require("node:tls");
 const { readFile } = require("node:fs/promises");
 const { once } = require("node:events");
-const native = require("./partly.node");
+const native = require(`./native/${process.platform}-${process.arch}/partly.node`);
 
 class PartlyError extends Error {
   constructor(message) { super(message); this.name = new.target.name; }

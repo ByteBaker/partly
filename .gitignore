@@ -26,3 +26,5 @@ htmlcov/
 
 node_modules/
 *.node
+/sdk/go/native/
+/sdk/node/native/

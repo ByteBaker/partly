@@ -34,7 +34,7 @@ tokio = {{ version = "1", features = ["macros", "rt-multi-thread"] }}
         build = ["cargo", "build", "--offline", "--target-dir", str(target)]
         command = [str(target / "debug/quickstart")]
     elif language == "go":
-        subprocess.run(["cargo", "build", "--release", "--locked", "-p", "partly-ffi"],
+        subprocess.run(["sh", str(ROOT / "sdk/go/build.sh")],
                        cwd=ROOT, check=True, capture_output=True, timeout=120)
         (tmp_path / "go.mod").write_text((ROOT / "examples/go/go.mod").read_text().replace(
             "../../sdk/go", json.dumps(str(ROOT / "sdk/go"))))

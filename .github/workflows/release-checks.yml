@@ -42,11 +42,11 @@ jobs:
             sdk/python/pyproject.toml
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.1"
+          go-version: "1.22.12"
           cache: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.10.0"
+          node-version: "22.0.0"
           package-manager-cache: false
       - name: Install build and test tools
         run: |
@@ -59,7 +59,7 @@ jobs:
           maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels
           python -m pip install target/wheels/*.whl
           cargo build --release --locked -p partly-server
-          cargo build --release --locked -p partly-ffi
+          sh sdk/go/build.sh
           cargo build --locked -p partly-sdk-contract
           node sdk/node/build.js
       - name: Lint and test Rust
@@ -76,6 +76,11 @@ jobs:
           npm exec --yes --package typescript@5.9.3 -- tsc --noEmit --strict --lib ES2022 sdk/node/index.d.ts
           test -z "$(gofmt -l sdk/go examples/go tests/sdk_contract/go)"
           (cd sdk/go && go vet ./... && go test -a -race ./...)
+      - name: Check the minimum Rust compiler
+        if: matrix.python == '3.12'
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          PYO3_PYTHON="$(command -v python)" cargo +1.89.0 check --locked --workspace --all-targets
       - name: Test the installed SDK and dashboard
         run: python -m pytest -q
       - name: Check Firefox and WebKit
@@ -133,6 +138,14 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.22.12"
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.0.0"
+          package-manager-cache: false
       - name: Install the Rust target
         env:
           BINARY_TARGET: ${{ matrix.binary-target }}
@@ -179,6 +192,13 @@ jobs:
         run: |
           python -m pip install twine
           python -m twine check --strict dist/*
+      - name: Build and test standalone SDK packages
+        env:
+          BINARY_TARGET: ${{ matrix.binary-target }}
+        run: |
+          python -m pip install -r requirements-dev.txt dist/*.whl
+          python scripts/package_sdks.py --output dist
+          PARTLY_BINARY="$PWD/target/$BINARY_TARGET/release/partly" PARTLY_SDK_PACKAGES="$PWD/dist" python -m pytest -q tests/e2e/test_sdk_contract.py
       - name: Package the server and checksums
         env:
           BINARY_TARGET: ${{ matrix.binary-target }}

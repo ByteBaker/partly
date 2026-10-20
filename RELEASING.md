@@ -7,16 +7,25 @@ Current candidate: `0.1.0-alpha.1` (Python: `0.1.0a1`). Update the workspace ver
 | Artifact | Target | Status |
 | --- | --- | --- |
 | Server | macOS ARM64 | Packaged HTTPS smoke passed locally |
-| Server | Linux x86_64, static musl | Workflow configured; Linux run pending |
-| Python SDK | macOS ARM64, CPython 3.10+ | Wheel and source archive built locally |
-| Python SDK | Linux x86_64, manylinux2014, CPython 3.10+ | Workflow configured; Linux run pending |
-| Rust, Go, Node.js SDKs | macOS ARM64 | Local clients and shared contracts implemented; public packaging pending |
+| Server | Linux x86_64, static musl | No dynamic dependencies; packaged HTTPS smoke passed under emulation |
+| Python SDK | macOS ARM64, CPython 3.10+ | Built from source archive; installed-wheel smoke passed |
+| Python SDK | Linux x86_64, manylinux2014, CPython 3.10+ | Cross-built from source archive; installed-wheel smoke passed under emulation |
+| Rust, Go, Node.js SDKs | macOS ARM64 | Standalone packages passed all 11 shared contract checks |
+| Rust, Go, Node.js SDKs | Linux x86_64 | Built and tested outside the checkout under emulation |
 
 ABI3 allows one wheel per platform to support regular CPython 3.10+. CI covers 3.10, 3.12, and 3.14. Windows, Linux ARM64, Intel macOS, Alpine Python, and free-threaded Python are outside this release. The Linux wheel requires glibc; the server is static.
 
-Browser coverage: the full suite in Chromium, six focused dashboard tests each in Firefox and WebKit. Safari releases and physical mobile devices are untested.
+The prebuilt Linux Node.js addon requires glibc 2.34+. Go consumers need cgo and a C compiler. Neither prebuilt package requires a Rust toolchain.
 
-Local macOS ARM64 checks: 204 Python 3.12/application tests (including all four SDK contracts, examples, and native rebuild regression), 20 Rust tests, 8 Go tests with the race detector, and 3 Node.js tests pass. Formatting, Ruff, Clippy, and Go vet pass; the Python wheel was rebuilt and installed for these tests. Earlier Node type checks, dependency audits, source-archive checks, Firefox/WebKit tests, and extracted-server checks remain the baseline. Python 3.10/3.14 runtime checks and Linux remain pending for this change.
+Browser coverage on macOS: the full suite in Chromium, six focused dashboard tests each in Firefox and WebKit. Linux Chromium crashed inside QEMU before running a dashboard test; a native Linux CI run remains required. Safari releases and physical mobile devices are untested.
+
+Local macOS ARM64 checks: 204 Python 3.12/application tests (including all four SDK contracts, examples, and native rebuild regression), 20 Rust tests, 8 Go race tests, and 3 Node.js tests pass. Formatting, Ruff, Clippy, Go vet, dependency audits, package metadata, and release smoke checks pass.
+
+Minimum-version checks: Rust 1.89 builds every workspace target; Go 1.22.12 and Node.js 22.0.0 pass their unit and shared contract tests. CPython 3.10.20 and 3.14.7 each pass 108 SDK/HTTPS tests with the same ABI3 wheel.
+
+Linux x86_64 checks ran on Ubuntu 24.04 under QEMU: 159 backend/Python tests, 20 Rust tests, 8 Go race tests, and 3 Node.js tests pass. The extracted static server and installed manylinux2014 wheel pass the HTTPS release smoke test outside the checkout. Compiler workarounds were needed under emulation; Go vet crashed there and remains covered by macOS and the configured native Linux CI job.
+
+All four packaged SDKs pass their shared contract scenarios on Linux. The Go full-contract test reused the client from its passing refresh-validation test after emulated compiler/linker crashes; the test assertions and Go runtime settings were unchanged.
 
 ## Build and verify
 
@@ -30,7 +39,7 @@ python -m ruff check .
 PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo test --locked --workspace
 PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo build --locked -p partly-server -p partly-sdk-contract
-cargo build --release --locked -p partly-ffi
+sh sdk/go/build.sh
 node sdk/node/build.js
 (cd sdk/go && go vet ./... && go test -a -race ./...)
 node --test sdk/node/test/*.test.js
@@ -41,7 +50,16 @@ python -m pytest -q
 
 Tests use temporary servers and databases. `PARTLY_BINARY` selects an absolute executable path. `PARTLY_BROWSER=firefox` or `webkit` selects an installed browser for focused checks. Test reports and screenshots stay outside Git.
 
-The SDK expansion branch includes the [four-language contract](tests/sdk_contract/README.md) in the default test run. All four language contracts must pass before committing. The suite also runs the minimal application examples. Go links a local Rust static library; use `-a` for Go build, run, and test commands after rebuilding Rust because Go's cache does not track changes to that archive. Node.js loads a local Node-API extension. Public Rust/Go/Node.js distribution is a separate release step.
+The [four-language contract](tests/sdk_contract/README.md) and minimal examples run in the default suite. All must pass before committing. Go links a bundled Rust static library; use `-a` after replacing it because Go's cache does not track archive changes.
+
+Build standalone SDK packages and run the same contracts outside the checkout (Python 3.12+):
+
+```sh
+python scripts/package_sdks.py --output target/sdk-packages
+PARTLY_SDK_PACKAGES="$PWD/target/sdk-packages" python -m pytest -q tests/e2e/test_sdk_contract.py
+```
+
+The output contains two Rust `.crate` files, a Go archive with its static library, and a Node npm tarball with its native extension. Go and Node archives target the build machine; build both macOS ARM64 and Linux x86_64. Consumers do not need Rust for those prebuilt archives. During development only, `--allow-dirty` tests uncommitted packaging changes. Publishing to registries remains a separate step.
 
 Optional: `python tests/benchmark.py` measures a release build's size, startup, sampled memory, and Python evaluation including binding overhead. It is not a load test.
 
@@ -89,4 +107,4 @@ Review changes and diagnostics: cargo-about 0.9.2 can exit successfully after a 
 
 Release builds pin Rust 1.98.1. When changing compilers, update the workflow pin and the `RUST_STDLIB_NOTICES.html` files under `sdk/python`, `sdk/go`, and `sdk/node` from that compiler's `share/doc/rust/COPYRIGHT-library.html`. CI verifies an exact match. Local builds also need matching compiler notices before redistribution.
 
-The Linux server archive includes its build runner's musl copyright file. Inspect it when validating the first Linux artifact; macOS checks do not verify it. Separately installed Python dependencies carry their own notices.
+The Linux server archive includes its build runner's musl copyright file; the archive smoke check compares it with that source file. Separately installed Python dependencies carry their own notices.

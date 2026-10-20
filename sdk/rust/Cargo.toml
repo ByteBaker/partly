@@ -5,8 +5,11 @@
 name = "partly-rust"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
 license = "Apache-2.0"
+description = "Async policy downloads and local feature flag evaluation for Partly"
+readme = "README.md"
+rust-version = "1.89"
 
 [lib]
 name = "partly"

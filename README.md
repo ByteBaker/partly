@@ -43,7 +43,7 @@ python examples/python/quickstart.py
 
 - One server and one admin. API Keys are stored as plaintext in SQLite and backups; keep these files private.
 - Policies stay in SDK memory. Running clients keep working during outages; new processes need the server to initialize.
-- Release targets: macOS ARM64 and Linux x86_64. Linux artifacts still need verification.
+- Release targets: macOS ARM64 and Linux x86_64. See [verified coverage](RELEASING.md).
 
 ## Guides
 
