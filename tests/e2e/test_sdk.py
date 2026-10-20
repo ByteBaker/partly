@@ -183,7 +183,7 @@ async def test_dashboard_python_example(server, admin, tmp_path, scenario, expec
     assert key not in (stdout + stderr).decode()
     if scenario in ("enabled", "disabled"):
         assert process.returncode == 0, stderr.decode()
-        assert stdout.decode().splitlines() == [expected]
+        assert stdout.decode().splitlines() == [expected, expected]
     else:
         assert process.returncode != 0
         assert expected in stderr.decode()
@@ -207,6 +207,7 @@ async def test_quickstart_evaluates_locally_and_closes(server, admin, monkeypatc
     await example["main"]()
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert "Use the new checkout" in captured.out
+    assert captured.out.splitlines() == ["Use the new checkout", "Use the new checkout"]
+    assert len(clients) == 1
     assert clients[0]._http.is_closed
     assert clients[0]._poll_task.done()

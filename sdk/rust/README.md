@@ -1,6 +1,6 @@
 # Partly Rust SDK
 
-Async policy downloads through Reqwest and rustls; local decisions through `partly-core`. Reuse one client in a Tokio application.
+Async policy downloads through Reqwest and rustls; local decisions through `partly-core`. Initialize one client at application startup, before accepting requests. Store it in application state, pass it to request handlers, and close it at shutdown. Use `Arc<Client>` to share ownership between tasks.
 
 ## Use a release archive
 
@@ -18,20 +18,14 @@ partly-core = { path = "third_party/partly-core-0.1.0-alpha.1" }
 The archives build without this checkout. For development inside the repository, use `sdk/rust` as the dependency path.
 
 ```rust
-use partly::{Client, Context, Decision};
+use partly::{Client, Context, Decision, Error};
 
-let client = Client::builder()
-    .url("http://127.0.0.1:8080")
-    .secret_key("YOUR_API_KEY")
-    .build()?;
-client.init().await?;
-let context = Context::from([("id".into(), "user-123".into())]);
-let decision = client.evaluate("new_checkout", &context)?;
-println!("Enabled: {}", decision == Decision::Enabled);
-client.close().await?;
+fn checkout(client: &Client, context: &Context) -> Result<bool, Error> {
+    Ok(client.evaluate("new_checkout", context)? == Decision::Enabled)
+}
 ```
 
-The [runnable quickstart](../../examples/rust/quickstart.rs) also closes the client when evaluation fails.
+The [runnable quickstart](../../examples/rust/quickstart.rs) shows startup with the URL and API Key, two requests sharing one initialized client, error handling, and shutdown. Handlers do not initialize or refresh the client.
 
 ## Client contract
 

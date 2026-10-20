@@ -1,6 +1,6 @@
 # Partly Node.js SDK
 
-Async HTTP downloads with local Rust evaluation through Node-API. Supports server-side Node.js 22+; not browsers.
+Async HTTP downloads with local Rust evaluation through Node-API. Supports server-side Node.js 22+; not browsers. Await `init()` once at application startup, before accepting requests. Keep the client in application state and pass it to handlers for local `evaluate()` calls; close it at application shutdown.
 
 ## Install a release archive
 

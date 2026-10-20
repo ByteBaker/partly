@@ -14,6 +14,7 @@ Read this file and the relevant package READMEs before changing the project. The
 ## Contracts to preserve
 
 - Building a client makes no network calls. `init()`, `refresh()`, and network cleanup are async; initialization failure raises an error. Never block the application's event loop with network work.
+- Examples must separate application startup, request handling, and shutdown. Initialize once before accepting requests, keep the client and its policy in application state, and reuse it for local evaluations. Do not put initialization, refresh, or cleanup in request handlers.
 - Preserve the Rust URL parser's typed error and source. Keep malformed URL errors separate from allowed-origin validation, and do not include supplied URLs or credentials in diagnostics.
 - Flag evaluation is local. Return explicit enabled/disabled decisions; raise specific errors for unknown flags, unavailable policy, or invalid required context. Never silently allow or deny an undefined flag.
 - Custom rules are authored in the dashboard and evaluated in Rust. Each condition uses exactly `k`, `op`, and `v`; `k` names a context key. Number operators: `le`, `lt`, `ge`, `gt`, `eq`. String operators: `prefix`, `suffix`, `contains`, `matches` (exact equality), `regex`. Boolean operator: `is`. All string operations are case-sensitive and types are never implicitly converted. No SDK callbacks or free-form code.

@@ -16,6 +16,8 @@ Requires regular CPython 3.10+, Rust, and a C compiler. A matching prebuilt whee
 
 ## Use a reusable client
 
+Await `init()` once in your application's startup hook, before accepting requests. Keep the client in application state and pass it to handlers. It holds the downloaded policy and refreshes it in the background; handlers only call `evaluate()`. Close it at application shutdown.
+
 Create `new_checkout` and an API Key in the same environment, then replace the constants below:
 
 ```python
@@ -25,6 +27,9 @@ from partly import Client, Decision
 CONTROL_PLANE_URL = "http://127.0.0.1:8080"
 API_KEY = "YOUR_API_KEY"
 
+def checkout(client, context):
+    return client.evaluate("new_checkout", context=context) is Decision.ENABLED
+
 async def main():
     client = (
         Client.builder()
@@ -33,11 +38,11 @@ async def main():
         .build()
     )
     try:
-        await client.init()
-        decision = client.evaluate("new_checkout", context={"id": "user-123"})
-        print("Enabled:", decision is Decision.ENABLED)
+        await client.init()  # Application startup.
+        for user_id in ("user-123", "user-456"):
+            print("Enabled:", checkout(client, {"id": user_id}))
     finally:
-        await client.aclose()
+        await client.aclose()  # Application shutdown.
 
 asyncio.run(main())
 ```
@@ -52,7 +57,7 @@ See the [runnable quickstart](../../examples/python/quickstart.py) for error han
 | `await refresh()` | Returns `True` for an accepted full policy, `False` for an unchanged response; errors preserve the policy and ETag |
 | `await aclose()` | Stops polling and closes connections; safe to repeat, including after failed initialization |
 
-Defaults: poll 30 seconds after each refresh; timeout 5 seconds for the entire download; maximum policy size 1 MiB. Change timing with builder `.poll_interval(seconds)` and `.timeout(seconds)`, using finite positive values. Validation runs outside the application event loop. Repeated successful `init()` calls do not add pollers.
+Defaults: poll 30 seconds after each refresh; timeout 5 seconds for the entire download; maximum policy size 1 MiB. Change timing with builder `.poll_interval(seconds)` and `.timeout(seconds)`, using finite positive values. Validation runs outside the application event loop. After initialization, policy updates use background polling or `refresh()`.
 
 Background errors are logged under `partly` and exposed in `client.last_refresh_error`; a successful refresh clears it. Running clients retain their policy during outages, but a new process needs a successful initial download. A closed client can still evaluate its last policy, but cannot reconnect or accept updates.
 

@@ -1,6 +1,6 @@
 # Python examples
 
-Start with [quickstart.py](quickstart.py), also shown in the dashboard's **Docs** tab. It initializes a client, checks one flag, handles errors, and closes the client.
+Start with [quickstart.py](quickstart.py), also shown in the dashboard's **Docs** tab. It initializes one client at startup, passes it to a local `checkout` handler for two example requests, and closes it at shutdown.
 
 Follow the [root setup guide](../../README.md) to create `new_checkout`, generate an API Key, and install the SDK. Set the URL and key constants in `quickstart.py`, then run from the repository root:
 
@@ -8,7 +8,7 @@ Follow the [root setup guide](../../README.md) to create `new_checkout`, generat
 python examples/python/quickstart.py
 ```
 
-It prints `Use the new checkout` or `Use the current checkout`. Reuse the client across requests in your application and close it at shutdown. See the [SDK guide](../../sdk/python/README.md) for refresh, context, and errors.
+It prints `Use the new checkout` or `Use the current checkout` for each request. In a web application, await `init()` in the startup hook and keep the client in application state. Request handlers call `evaluate()` on that client; they do not initialize, refresh, or close it. Close it in the shutdown hook. See the [SDK guide](../../sdk/python/README.md) for refresh, context, and errors.
 
 ## Check a larger rollout
 

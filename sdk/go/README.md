@@ -1,6 +1,6 @@
 # Partly Go SDK
 
-Go handles HTTP and polling; a statically linked Rust library evaluates policies. Reuse one client across goroutines.
+Go handles HTTP and polling; a statically linked Rust library evaluates policies. Call `Init` once during application startup, then keep the client in application state and reuse it across handlers and goroutines. Request handlers only call `Evaluate`; call `Close` at application shutdown.
 
 ## Use a release archive
 

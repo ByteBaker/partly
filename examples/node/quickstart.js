@@ -7,14 +7,21 @@ const { Client, Decision } = require("../../sdk/node");
 const CONTROL_PLANE_URL = "http://127.0.0.1:8080";
 const API_KEY = "YOUR_API_KEY";
 
+function checkout(client, context) {
+  const decision = client.evaluate("new_checkout", context);
+  return decision === Decision.ENABLED ? "Use the new checkout" : "Use the current checkout";
+}
+
 async function main() {
   const client = Client.builder().url(CONTROL_PLANE_URL).secretKey(API_KEY).build();
   try {
-    await client.init();
-    const decision = client.evaluate("new_checkout", { id: "user-123" });
-    console.log(decision === Decision.ENABLED ? "Use the new checkout" : "Use the current checkout");
+    await client.init(); // Application startup, before accepting requests.
+    // Two example requests reuse the initialized client and its policy.
+    for (const id of ["user-123", "user-456"]) {
+      console.log(checkout(client, { id }));
+    }
   } finally {
-    await client.close();
+    await client.close(); // Application shutdown.
   }
 }
 

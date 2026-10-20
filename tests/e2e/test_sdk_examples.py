@@ -53,7 +53,7 @@ tokio = {{ version = "1", features = ["macros", "rt-multi-thread"] }}
         save_flag(admin, enabled=enabled)
         result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=10)
         assert result.returncode == 0, result.stderr
-        assert result.stdout.strip() == expected
+        assert result.stdout.splitlines() == [expected, expected]
         assert key not in result.stdout + result.stderr
     assert admin.delete(f"/api/keys/{key_id}").status_code == 204
     result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=10)
