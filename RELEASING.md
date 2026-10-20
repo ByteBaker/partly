@@ -19,9 +19,9 @@ This candidate includes native HTTPS, verified async SDK connections, local rule
 
 ABI3 shares one wheel across compatible Python versions on one platform. It does not make a macOS wheel usable on Linux. CI checks Python 3.10, 3.12, and 3.14. Windows, Linux ARM64, Intel macOS, Alpine Python, and free-threaded Python are outside the first artifact set. The Linux server itself is static; the Linux Python wheel needs a compatible glibc-based system.
 
-The full browser suite runs in Chromium. Focused Firefox and WebKit tests cover rule editing, keyboard dropdown behavior, and environment navigation. These are not tests of Safari releases or physical mobile devices.
+The full browser suite runs in Chromium. Focused Firefox and WebKit tests cover rule editing, keyboard dropdown behavior, environment navigation, unsaved edits, browser history, and dropdown placement. These are not tests of Safari releases or physical mobile devices.
 
-Local candidate verification on macOS ARM64: 180 Python 3.12 tests, 162 SDK/server tests each on Python 3.10 and 3.14, 13 Rust tests, and three focused tests each in Firefox and WebKit. Formatting, lints, dependency audits, strict package metadata checks, and the isolated HTTPS artifact smoke pass. The Linux workflow has not run yet.
+Latest verification on macOS ARM64: 189 Python 3.12 tests, 13 Rust tests, and six focused tests each in Firefox and WebKit passed against the updated release binary. The extracted-server HTTPS smoke passed; archive checks also rejected missing notices and lost executable permissions. Formatting and lints pass. Earlier Python 3.10/3.14 runs each passed 162 SDK/server tests; those versions, dependency audits, and strict package metadata checks were not rerun for this test-coverage update. The Linux workflow has not run yet.
 
 ## Build and verify
 
@@ -44,13 +44,13 @@ Tests use temporary servers and databases. Set `PARTLY_BINARY` to an absolute ex
 
 For a small local benchmark, build the release server and wheel, then run `python tests/benchmark.py`. It reports executable size, startup time, sampled memory, and Python evaluation time including the native call. It is not a load test or a comparison with other tools.
 
-`.github/workflows/release-checks.yml` runs on pushes, pull requests, and manual dispatch. It checks formatting, lints, Rust and Python tests, dependency advisories, and browser behavior before building artifacts. The artifact jobs build the wheel from its source distribution, check package metadata, and run the packaged binary and installed SDK together in a clean environment outside the checkout. That smoke test uses verified HTTPS, creates a flag and key, checks refresh, and stops the server with SIGTERM.
+`.github/workflows/release-checks.yml` runs on pushes, pull requests, and manual dispatch. It checks formatting, lints, Rust and Python tests, dependency advisories, and browser behavior before building artifacts. The artifact jobs build the wheel from its source distribution and check package metadata. They extract the final server archive, verify its executable permission and bundled notices, and run that executable with the installed SDK in a clean environment outside the checkout. That smoke test uses verified HTTPS, creates a flag and key, checks refresh, and stops the server with SIGTERM.
 
 The workflow uploads archives, wheels, the source distribution, and `SHA256SUMS` as workflow artifacts. It does not create a GitHub release, upload to PyPI, or use publishing credentials. A workflow file is not proof of a successful Linux build: require a green run on the exact release commit before distributing its artifacts.
 
 Maturin removes unrelated workspace members from its source archive but keeps their lockfile entries. `scripts/prepare_sdist.py` prunes that archived lockfile offline and verifies that every retained dependency version and checksum is unchanged. The wheel then builds from the extracted archive with `--locked`. The repository lockfile is never modified by this step. Both the release helper and artifact job use Python 3.12+.
 
-To check a built package locally, create a fresh virtual environment outside the checkout, install the exact wheel plus `trustme` and `packaging`, copy `scripts/release_smoke.py` there, and run:
+To check a built package locally, extract the final server archive and verify its notices. Create a fresh virtual environment outside the checkout, install the exact wheel plus `trustme` and `packaging`, copy `scripts/release_smoke.py` there, and run against the extracted executable:
 
 ```sh
 python -I release_smoke.py /absolute/path/to/partly

@@ -73,9 +73,11 @@ def test_https_setup_cookies_origins_and_hostname(tls_server):
         assert admin.get("/api/status", headers={"Host": f"partly.test:{server.port}"}).status_code == 200
         assert admin.get("/api/status", headers={"Host": f"partly.test:{server.port}", "Origin": f"https://partly.test:{server.port}"}).status_code == 200
         assert admin.get("/api/status", headers={"Host": "unknown.example", "X-Forwarded-Host": "partly.test"}).status_code == 421
+        old_cookie = f"partly_session={admin.cookies['partly_session']}"
         logout = admin.post("/api/logout", headers={"Origin": server.url})
         assert logout.status_code == 204 and "Secure" in logout.headers["set-cookie"]
         assert admin.get("/api/environments").status_code == 401
+        assert admin.get("/api/environments", headers={"Cookie": old_cookie}).status_code == 401
         signed_in = admin.post("/api/login", json=credentials, headers={"Origin": server.url})
         assert signed_in.status_code == 200 and "Secure" in signed_in.headers["set-cookie"]
         assert admin.get("/api/environments").status_code == 200

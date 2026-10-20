@@ -5,6 +5,7 @@ import asyncio
 import os
 import runpy
 import sys
+from contextlib import closing
 
 import httpx
 import pytest
@@ -108,9 +109,21 @@ async def test_polling_and_example(server, admin):
             f"Enabled for {enabled:,} of 10,000 users ({enabled / 10_000:.1%}).",
             "Policy updated: False",
         ]
+        snapshot, etag = client._snapshot, client._etag
+        previous = client.evaluate("new_checkout", context={"id": "u"})
         server.stop()
         await asyncio.wait_for(wait_until(lambda: client.last_refresh_error is not None), timeout=3)
-        assert client.evaluate("new_checkout", context={"id": "u"}) in (Decision.ENABLED, Decision.DISABLED)
+        assert client._snapshot is snapshot and client._etag == etag
+        assert client.evaluate("new_checkout", context={"id": "u"}) is previous
+        server.start()
+        expected = Decision.DISABLED if previous is Decision.ENABLED else Decision.ENABLED
+        with closing(server.admin(setup=False)) as restored_admin:
+            save_flag(restored_admin, flag={"mode": "disabled" if expected is Decision.DISABLED else "enabled"})
+        await asyncio.wait_for(wait_until(
+            lambda: client.evaluate("new_checkout", context={"id": "u"}) is expected
+            and client.last_refresh_error is None,
+        ), timeout=3)
+        assert client._etag != etag
     finally:
         await client.aclose()
 

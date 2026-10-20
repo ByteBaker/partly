@@ -1,11 +1,14 @@
 # Copyright 2026 ByteBaker
 # SPDX-License-Identifier: Elastic-2.0
 
+import asyncio
 import os
 import re
 
 from conftest import PASSWORD, ROOT
 from playwright.sync_api import expect, sync_playwright
+
+from partly import Client, Decision
 
 
 def launch_browser(playwright):
@@ -268,6 +271,67 @@ def test_flag_modal_types_rules_and_in_place_saves(server, admin):
         expect(modal.get_by_label("Flag key", exact=True)).to_have_value("eligible")
         page.on("dialog", lambda dialog: dialog.accept())
         browser.close()
+
+
+async def test_dashboard_rules_and_key_drive_sdk_refresh(server, admin):
+    def create_in_dashboard():
+        with sync_playwright() as playwright:
+            browser = launch_browser(playwright)
+            try:
+                page = browser.new_page()
+                login(page, server)
+                page.get_by_role("button", name="Create flag", exact=True).click()
+                modal = page.get_by_role("dialog", name="Create a flag")
+                modal.get_by_label("Flag key", exact=True).fill("eligible")
+                choose(page, modal.get_by_label("Rollout mode for new flag"), "custom")
+                age = modal.locator(".condition").first
+                age.get_by_label("Context key", exact=True).fill("age")
+                choose(page, age.get_by_label("Operator", exact=True), "ge")
+                age.get_by_label("Comparison value", exact=True).fill("18")
+                modal.get_by_role("button", name="+ AND condition", exact=True).click()
+                verified = modal.locator(".condition").nth(1)
+                verified.get_by_label("Context key", exact=True).fill("verified")
+                choose(page, verified.get_by_label("Operator", exact=True), "is")
+                verified.get_by_role("radio", name="True", exact=True).check()
+                modal.get_by_role("button", name="Create flag", exact=True).click()
+                expect(modal).to_be_hidden()
+                page.get_by_role("tab", name="Key Management").click()
+                create_key(page, "SDK application")
+                return page.get_by_label("API Key for SDK application", exact=True).input_value()
+            finally:
+                browser.close()
+
+    def edit_in_dashboard():
+        with sync_playwright() as playwright:
+            browser = launch_browser(playwright)
+            try:
+                page = browser.new_page()
+                login(page, server)
+                age = page.locator('.flag-row[data-key="eligible"] .condition').first
+                age.get_by_label("Comparison value", exact=True).fill("30")
+                page.get_by_role("button", name="Save eligible", exact=True).click()
+                expect(page.get_by_role("status")).to_have_text("Saved")
+            finally:
+                browser.close()
+
+    # Each browser session stays in its worker thread; the SDK uses this event loop.
+    secret = await asyncio.to_thread(create_in_dashboard)
+    client = Client.builder().url(server.url).secret_key(secret).poll_interval(3600).build()
+    eligible = {"age": 25, "verified": True}
+    try:
+        await client.init()
+        assert client.evaluate("eligible", context=eligible) is Decision.ENABLED
+        assert client.evaluate("eligible", context={"age": 17, "verified": True}) is Decision.DISABLED
+        assert client.evaluate("eligible", context={"age": 25, "verified": False}) is Decision.DISABLED
+        assert await client.refresh() is False
+        await asyncio.to_thread(edit_in_dashboard)
+        assert client.evaluate("eligible", context=eligible) is Decision.ENABLED
+        assert await client.refresh() is True
+        assert client.evaluate("eligible", context=eligible) is Decision.DISABLED
+        assert client.evaluate("eligible", context={"age": 35, "verified": True}) is Decision.ENABLED
+        assert await client.refresh() is False
+    finally:
+        await client.aclose()
 
 
 def test_unsaved_navigation_reload_and_modal_protection(server, admin):

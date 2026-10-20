@@ -52,8 +52,10 @@ def test_delayed_setup_and_restart(server):
         assert client.get("/api/environments/development/keys").json()["keys"][0]["secret"] == key
         assert client.get("/api/environments/development/flags").json()["new_checkout"]["percentage"] == 25
         assert key not in (server.directory / "server.log").read_text()
+        old_cookie = f"partly_session={client.cookies['partly_session']}"
         assert client.post("/api/logout").status_code == 204
         assert client.get("/api/environments").status_code == 401
+        assert client.get("/api/environments", headers={"Cookie": old_cookie}).status_code == 401
 
 
 def test_concurrent_setup_creates_only_one_admin(server):

@@ -89,6 +89,37 @@ def test_password_reset_requires_offline_database_and_preserves_flags_keys(serve
     assert new_password not in (server.directory / "server.log").read_text()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="Release targets use Unix database link counts")
+@pytest.mark.parametrize("running", [True, False])
+def test_hard_linked_database_is_rejected_without_changes(server, admin, running):
+    save_flag(admin, percentage=37)
+    make_key(admin)
+    original = server.db.read_bytes()
+    alias = server.directory / "hardlink.db"
+    alias.hardlink_to(server.db)
+    assert alias.samefile(server.db)
+    if not running:
+        server.stop()
+    for path in (alias, server.db):
+        reset = command("reset-password", "--db", path, password="replacement-password-123\n")
+        assert reset.returncode != 0 and "hard links" in reset.stderr
+        second = command("serve", "--port", 0, "--db", path)
+        assert second.returncode != 0 and "hard links" in second.stderr
+        assert server.db.read_bytes() == original
+    assert not Path(f"{alias}.lock").exists()
+    if running:
+        assert admin.get("/api/environments").status_code == 200
+        assert admin.post("/api/login", json={"username": "admin", "password": PASSWORD}).status_code == 200
+        server.stop()
+    alias.unlink()
+    reset = command("reset-password", "--db", server.db, password="replacement-password-123\n")
+    assert reset.returncode == 0, reset.stderr
+    server.start()
+    assert admin.post("/api/login", json={"username": "admin", "password": "replacement-password-123"}).status_code == 200
+    assert admin.get("/api/environments/development/flags").json()["new_checkout"]["percentage"] == 37
+    assert len(admin.get("/api/environments/development/keys").json()["keys"]) == 1
+
+
 @pytest.mark.parametrize("password", ["short\n", "x" * 1025, "first-password\nsecond-password\n"])
 def test_invalid_reset_password_preserves_database(server, admin, password):
     server.stop()
@@ -108,9 +139,10 @@ def test_reset_rejects_invalid_database_without_changing_it(tmp_path):
 
 
 @pytest.mark.skipif(os.name != "posix", reason="SIGTERM is a Unix service signal")
+@pytest.mark.parametrize("shutdown_signal", [signal.SIGINT, signal.SIGTERM], ids=["sigint", "sigterm"])
 @pytest.mark.parametrize("https", [False, True])
 @pytest.mark.parametrize("stalled_body", [False, True])
-def test_sigterm_stops_cleanly_and_releases_database(tmp_path, https, stalled_body):
+def test_shutdown_stops_cleanly_and_releases_database(tmp_path, https, stalled_body, shutdown_signal):
     options = {}
     if https:
         ca = trustme.CA()
@@ -139,7 +171,7 @@ def test_sigterm_stops_cleanly_and_releases_database(tmp_path, https, stalled_bo
             # The interim response proves the server has started reading this body.
             assert connection.recv(4096).startswith(b"HTTP/1.1 100 Continue")
             connection.sendall(b"{")
-        server.process.send_signal(signal.SIGTERM)
+        server.process.send_signal(shutdown_signal)
         # Keep the incomplete request open until the process has fully exited.
         assert server.process.wait(timeout=5) == 0
         if connection is not None:

@@ -41,6 +41,8 @@ The alpha schema is v1, defined in `001_initial.sql`. Flags store their rollout 
 
 Database operations and password hashing run on blocking worker threads, away from the HTTP event loop. Password hashing does not hold the database mutex. One process serializes its SQLite work through a small storage boundary. A persistent `<database>.lock` sidecar prevents another Partly server or password reset from opening the same database concurrently. Keep it in place; the OS releases its lock when the process exits. No HA behavior or alternative storage adapter is included.
 
+On supported Unix targets, databases with multiple hard links are rejected because each path would use a different lock and journal. Remove extra hard links or use an independent copy. Symbolic links resolve to the original database lock.
+
 ## Password recovery
 
 Stop the server before changing or recovering the admin password. From a terminal with access to the database, run:

@@ -64,6 +64,19 @@ fn lock_database(path: &Path) -> Result<File, ApiError> {
     let canonical = path
         .canonicalize()
         .map_err(|error| ApiError::internal(format!("Cannot resolve database path: {error}")))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = std::fs::metadata(&canonical).map_err(|error| {
+            ApiError::internal(format!("Cannot inspect database links: {error}"))
+        })?;
+        // Hard links share database data but use different lock and journal paths.
+        if metadata.nlink() > 1 {
+            return Err(ApiError::conflict(
+                "Databases with hard links are unsupported; remove extra hard links or use an independent copy",
+            ));
+        }
+    }
     let mut lock_path = canonical.into_os_string();
     lock_path.push(".lock");
     let mut options = OpenOptions::new();

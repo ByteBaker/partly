@@ -102,6 +102,27 @@ async def test_304_skips_parsing_and_initial_304_fails(monkeypatch):
         await cold.aclose()
 
 
+async def test_mismatched_304_keeps_policy_and_etag():
+    tags = []
+    def handler(request):
+        tags.append(request.headers.get("if-none-match"))
+        if len(tags) == 1:
+            return httpx.Response(200, headers={"etag": '"good"'}, json=POLICY)
+        return httpx.Response(304, headers={"etag": '"different"'})
+    client = mocked(handler)
+    try:
+        await client.init()
+        snapshot = client._snapshot
+        with pytest.raises(InvalidPolicyError) as caught:
+            await client.refresh()
+        assert tags == [None, '"good"']
+        assert client._snapshot is snapshot and client._etag == '"good"'
+        assert client.last_refresh_error is caught.value
+        assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
+    finally:
+        await client.aclose()
+
+
 async def test_init_refresh_are_async_and_repeated_init_starts_one_poller():
     entered = asyncio.Event()
     release = asyncio.Event()
@@ -295,6 +316,44 @@ async def test_timeout_cancellation_retry_and_scope_validation():
         state["scope"] = True
         with pytest.raises(InvalidPolicyError): await client.refresh()
         assert client._snapshot.environment == "development"
+        assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
+    finally:
+        await client.aclose()
+
+
+async def test_streaming_body_timeout_closes_response_and_keeps_policy():
+    class SlowStream(httpx.AsyncByteStream):
+        started = False
+        closed = False
+
+        async def __aiter__(self):
+            self.started = True
+            body = json.dumps({**POLICY, "flags": {}}).encode()
+            yield body[:16]
+            for offset in range(16, len(body), 16):
+                await asyncio.sleep(0.02)
+                yield body[offset:offset + 16]
+
+        async def aclose(self):
+            self.closed = True
+
+    stream = SlowStream()
+    calls = 0
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(200, headers={"etag": '"good"'}, json=POLICY)
+        return httpx.Response(200, headers={"etag": '"slow"'}, stream=stream)
+    client = mocked(handler, timeout=0.05)
+    try:
+        await client.init()
+        snapshot = client._snapshot
+        with pytest.raises(RefreshError) as caught:
+            await client.refresh()
+        assert stream.started and stream.closed
+        assert client._snapshot is snapshot and client._etag == '"good"'
+        assert client.last_refresh_error is caught.value
         assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
     finally:
         await client.aclose()
