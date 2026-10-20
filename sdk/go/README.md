@@ -13,6 +13,8 @@ replace partly.sh/sdk/go => ./third_party/partly-go
 
 The archive includes its Rust library under `native/`; consumers do not need Rust or the Partly checkout. Supported targets are macOS ARM64 and Linux x86_64. Public module hosting is still pending.
 
+Go 1.22 is the compatibility minimum. Use a supported Go release with current security patches for production; CI builds and scans with Go 1.27.3.
+
 ## Build from source
 
 Requires Go 1.22+, Rust, and a C compiler. From the repository root:

@@ -1,0 +1,50 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
+name: Set up Partly checks
+description: Install the shared development toolchains and Python dependencies.
+inputs:
+  go-version:
+    description: Go compiler; older versions are only used for compatibility checks.
+    default: "1.27.3"
+  node-version:
+    description: Node.js runtime; use the latest patch unless checking compatibility.
+    default: "22"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.14"
+        cache: pip
+        cache-dependency-path: |
+          requirements-dev.txt
+          sdk/python/pyproject.toml
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: false
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+        package-manager-cache: false
+    - shell: bash
+      run: |
+        rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
+        rustup default "$RUST_TOOLCHAIN"
+        python -m pip install -r requirements-dev.txt
+        python - <<'PY'
+        import subprocess
+        import sys
+        import tomllib
+        from pathlib import Path
+
+        project = tomllib.loads(Path("sdk/python/pyproject.toml").read_text())["project"]
+        subprocess.run([sys.executable, "-m", "pip", "install", *project["dependencies"]], check=True)
+        PY
+        echo "PYO3_PYTHON=$(command -v python)" >> "$GITHUB_ENV"
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        shared-key: checks
+        save-if: ${{ github.job == 'analysis' || github.job == 'build' || github.job == 'tests' }}

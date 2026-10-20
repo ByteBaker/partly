@@ -37,6 +37,7 @@ class ClientBuilder {
     const options = { ...this.#options };
     let url;
     try { url = new URL(options.url); } catch { throw new TypeError("Supply an HTTP(S) control-plane URL"); }
+    // eslint-disable-next-line no-control-regex -- Reject URL control characters before the parser normalizes them.
     if (typeof options.url !== "string" || /[\s\x00-\x20\x7f\\@]/u.test(options.url) ||
         !["http:", "https:"].includes(url.protocol) || !url.hostname ||
         url.username || url.password || url.pathname !== "/" || /[?#]/u.test(options.url)) {

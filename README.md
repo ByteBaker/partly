@@ -1,10 +1,12 @@
-# Partly
+<h1><img src="docs/images/logo.svg" alt="" width="28" height="32"> Partly</h1>
 
 Partly is a self-hosted feature flag tool: one Rust executable with a dashboard and SQLite. No Docker or external services required.
 
 Turn features on or off, roll them out by percentage, or match custom rules. The Python, Rust, Go, and Node.js SDKs evaluate flags locally; user context stays in your application.
 
 **Alpha:** `0.1.0-alpha.1` (Python: `0.1.0a1`). Public downloads are not available yet.
+
+![Partly dashboard showing percentage rollout and custom rules in Development](docs/images/dashboard.png)
 
 ## Run locally
 
@@ -23,14 +25,14 @@ Setup creates the database. Reuse its path on restart. For remote access, [confi
 
 ## Try Python
 
-Use regular CPython 3.10 or newer. In another terminal, from the repository root:
+Use regular CPython 3.14. In another terminal, from the repository root:
 
 ```sh
-python3 -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
 python -m pip install 'maturin>=1.9.4,<2'
-maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels
-python -m pip install target/wheels/partly_sdk-0.1.0a1-*.whl
+maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels -i python3.14
+python -m pip install target/wheels/partly_sdk-0.1.0a1-cp314-cp314-*.whl
 ```
 
 Replace `YOUR_API_KEY` in [quickstart.py](examples/python/quickstart.py), then run:

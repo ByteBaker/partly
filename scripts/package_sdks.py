@@ -1,7 +1,7 @@
 # Copyright 2026 ByteBaker
 # SPDX-License-Identifier: Elastic-2.0
 
-"""Build standalone Rust crates and host-platform Go/Node archives (Python 3.12+)."""
+"""Build standalone Rust crates and host-platform Go/Node archives (Python 3.14)."""
 
 import argparse
 import json
@@ -9,16 +9,18 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def build(output, *, allow_dirty=False):
-    output.mkdir(parents=True, exist_ok=True)
+def build(output: Path, *, allow_dirty: bool = False) -> None:
     version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+    package = json.loads((ROOT / "sdk/node/package.json").read_text())
+    if package["version"] != version:
+        raise ValueError("sdk/node/package.json version must match Cargo.toml before packaging")
+    output.mkdir(parents=True, exist_ok=True)
     go_os, go_arch = subprocess.check_output(["go", "env", "GOOS", "GOARCH"], text=True).split()
     if (go_os, go_arch) not in {("darwin", "arm64"), ("linux", "amd64")}:
         raise ValueError("Release packages support macOS ARM64 and Linux x86_64")
@@ -47,7 +49,6 @@ def build(output, *, allow_dirty=False):
     ).strip()
     with tempfile.TemporaryDirectory(prefix="partly-node-package-") as temporary:
         stage = Path(temporary)
-        package = json.loads((ROOT / "sdk/node/package.json").read_text())
         for name in ("package.json", "README.md", *package["files"]):
             if name != "native":
                 shutil.copy2(ROOT / "sdk/node" / name, stage / name)

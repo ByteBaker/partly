@@ -1,18 +1,18 @@
 # Copyright 2026 ByteBaker
 # SPDX-License-Identifier: Elastic-2.0
 
-name: Release checks and artifacts
+name: Release artifacts
 
 on:
   push:
-  pull_request:
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -20,85 +20,57 @@ env:
   RUST_TOOLCHAIN: "1.98.1"
 
 jobs:
-  checks:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  compatibility:
+    name: Minimum versions and other browsers
+    needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.10", "3.12", "3.14"]
     env:
       PARTLY_BINARY: ${{ github.workspace }}/target/release/partly
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-          cache-dependency-path: |
-            requirements-dev.txt
-            sdk/python/pyproject.toml
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: ./.github/actions/setup
         with:
           go-version: "1.22.12"
-          cache: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
           node-version: "22.0.0"
-          package-manager-cache: false
-      - name: Install build and test tools
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: test-inputs
+          path: target
+      - name: Install test inputs and check minimum toolchains
         run: |
-          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
-          rustup default "$RUST_TOOLCHAIN"
-          python -m pip install -r requirements-dev.txt
-          python -m playwright install --with-deps chromium
-      - name: Build and install the SDK and server
-        run: |
-          maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels
+          rm -rf target/wheels
+          tar -xzf target/test-inputs.tar.gz
           python -m pip install target/wheels/*.whl
-          cargo build --release --locked -p partly-server
-          sh sdk/go/build.sh
-          cargo build --locked -p partly-sdk-contract
-          node sdk/node/build.js
-      - name: Lint and test Rust
-        if: matrix.python == '3.12'
-        run: |
-          export PYO3_PYTHON="$(command -v python)"
-          cargo fmt --all --check
-          cargo clippy --locked --workspace --all-targets -- -D warnings
-          cargo test --locked --workspace
-          python -m ruff check .
-          node --check crates/partly-server/dashboard/app.js
-          node --check crates/partly-server/dashboard/dropdown.js
-          node --test sdk/node/test/*.test.js
-          npm exec --yes --package typescript@5.9.3 -- tsc --noEmit --strict --lib ES2022 sdk/node/index.d.ts
-          test -z "$(gofmt -l sdk/go examples/go tests/sdk_contract/go)"
-          (cd sdk/go && go vet ./... && go test -a -race ./...)
-      - name: Check the minimum Rust compiler
-        if: matrix.python == '3.12'
-        run: |
+          cargo fetch --locked
           rustup toolchain install 1.89.0 --profile minimal
-          PYO3_PYTHON="$(command -v python)" cargo +1.89.0 check --locked --workspace --all-targets
-      - name: Test the installed SDK and dashboard
-        run: python -m pytest -q
+          cargo +1.89.0 check --locked --workspace --all-targets
+          (cd sdk/go && go test -a -race ./...)
+          node --test sdk/node/test/*.test.js
+          python -m pytest -q tests/e2e/test_sdk_contract.py
       - name: Check Firefox and WebKit
-        if: matrix.python == '3.12'
         run: |
           python -m playwright install --with-deps firefox webkit
-          PARTLY_BROWSER=firefox python -m pytest -q tests/e2e/test_dashboard.py -k 'flag_modal_types_rules_and_in_place_saves or custom_dropdown_keyboard_commit_cancel_and_modal_escape or environment_dropdown_only_navigates_after_commit or unsaved_navigation_reload_and_modal_protection or browser_back_preserves_dirty_edits_and_forward_keeps_environment or dropdown_popup_fits_viewport_without_layout_shift_and_cancels_on_move'
-          PARTLY_BROWSER=webkit python -m pytest -q tests/e2e/test_dashboard.py -k 'flag_modal_types_rules_and_in_place_saves or custom_dropdown_keyboard_commit_cancel_and_modal_escape or environment_dropdown_only_navigates_after_commit or unsaved_navigation_reload_and_modal_protection or browser_back_preserves_dirty_edits_and_forward_keeps_environment or dropdown_popup_fits_viewport_without_layout_shift_and_cancels_on_move'
-      - name: Audit Rust and installed Python dependencies
-        if: matrix.python == '3.12'
-        run: |
-          cargo install cargo-audit --locked
-          cargo audit
-          python -m pip install pip-audit
-          python -m pip freeze --exclude partly-sdk > "$RUNNER_TEMP/audit-requirements.txt"
-          python -m pip_audit --no-deps --disable-pip -r "$RUNNER_TEMP/audit-requirements.txt"
+          for browser in firefox webkit; do
+            PARTLY_BROWSER="$browser" python -m pytest -q tests/e2e/test_dashboard.py -k 'flag_modal_types_rules_and_in_place_saves or custom_dropdown_keyboard_commit_cancel_and_modal_escape or environment_dropdown_only_navigates_after_commit or unsaved_navigation_reload_and_modal_protection or browser_back_preserves_dirty_edits_and_forward_keeps_environment or dropdown_popup_fits_viewport_without_layout_shift_and_cancels_on_move'
+          done
+
+  notices:
+    name: Dependency licenses
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
       - name: Check dependency notices
-        if: matrix.python == '3.12'
         run: |
           cargo install cargo-about --version 0.9.2 --locked
           cargo fetch --locked
@@ -114,7 +86,7 @@ jobs:
           git diff --exit-code -- THIRD_PARTY_NOTICES.txt sdk/*/THIRD_PARTY_NOTICES.txt
 
   artifacts:
-    needs: checks
+    needs: [build, compatibility, notices]
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -137,14 +109,14 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.22.12"
+          go-version: "1.27.3"
           cache: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.0.0"
+          node-version: "22"
           package-manager-cache: false
       - name: Install the Rust target
         env:
@@ -179,7 +151,7 @@ jobs:
           cargo fetch --locked --manifest-path sdk/python/Cargo.toml
           CARGO_NET_OFFLINE=true maturin sdist --manifest-path sdk/python/Cargo.toml --out dist
           python scripts/prepare_sdist.py dist/*.tar.gz target/release-source
-      - name: Build the ABI3 wheel from its source distribution
+      - name: Build the CPython 3.14 wheel from its source distribution
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           maturin-version: v1.15.0
@@ -187,7 +159,7 @@ jobs:
           target: ${{ matrix.wheel-target }}
           manylinux: ${{ matrix.manylinux }}
           working-directory: target/release-source
-          args: --release --locked --compatibility pypi --out ../../dist -i python3.12
+          args: --release --locked --compatibility pypi --out ../../dist -i python3.14
       - name: Check package metadata
         run: |
           python -m pip install twine

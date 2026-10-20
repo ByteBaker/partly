@@ -1,7 +1,7 @@
 # Copyright 2026 ByteBaker
 # SPDX-License-Identifier: Elastic-2.0
 
-target-version = "py310"
+target-version = "py314"
 
 [lint]
 select = ["E4", "E9", "F", "B", "I", "ASYNC"]

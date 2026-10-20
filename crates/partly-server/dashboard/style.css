@@ -12,10 +12,12 @@
 * { box-sizing: border-box; }
 html { scroll-padding-top: 10rem; }
 body { margin: 0; }
-[hidden] { display: none !important; }
+[hidden] {
+  /* biome-ignore lint/complexity/noImportantStyles: Hidden state must override component display rules. */
+  display: none !important;
+}
 h1, h2, h3, p { margin: 0; }
-button, input { font: inherit; }
-button, input { min-height: 36px; border: 1px solid var(--control); border-radius: 3px; background: var(--surface); color: var(--text); }
+button, input { font: inherit; min-height: 36px; border: 1px solid var(--control); border-radius: 3px; background: var(--surface); color: var(--text); }
 input { min-width: 0; max-width: 100%; padding: 7px 10px; }
 .select-control { position: relative; display: block; min-width: 0; }
 .select-control::after { content: ''; position: absolute; right: 14px; top: calc(50% - 5px); width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); pointer-events: none; }
@@ -195,8 +197,7 @@ dialog::backdrop { background: rgb(19 32 52 / 38%); }
   .key-secret { flex-basis: 100%; }
   .key-controls > button:last-child { margin-left: auto; }
   .code-heading { padding: 12px; gap: 10px; }
-  .docs-language { gap: 4px; }
-  .docs-language { font-size: 0; }
+  .docs-language { gap: 4px; font-size: 0; }
   .code-heading > button { margin-left: auto; }
   .code-example { padding: 12px; font-size: 12px; }
   .icon-button { width: 42px; }

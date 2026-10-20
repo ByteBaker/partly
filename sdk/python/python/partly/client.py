@@ -7,6 +7,7 @@ import math
 import os
 import ssl
 from enum import Enum
+from typing import Never, Self
 from urllib.parse import urlsplit
 
 import certifi
@@ -21,7 +22,7 @@ class Decision(Enum):
     ENABLED = "enabled"
     DISABLED = "disabled"
 
-    def __bool__(self):
+    def __bool__(self) -> Never:
         raise TypeError("Compare explicitly with Decision.ENABLED or Decision.DISABLED")
 
 
@@ -42,34 +43,34 @@ class ClientClosedError(PartlyError):
 
 
 class ClientBuilder:
-    def __init__(self):
-        self._url = None
-        self._secret_key = None
+    def __init__(self) -> None:
+        self._url: str | None = None
+        self._secret_key: str | None = None
         self._interval = 30.0
         self._timeout = 5.0
-        self._ca_bundle = None
+        self._ca_bundle: str | os.PathLike[str] | None = None
 
-    def url(self, value: str):
+    def url(self, value: str) -> Self:
         self._url = value
         return self
 
-    def secret_key(self, value: str):
+    def secret_key(self, value: str) -> Self:
         self._secret_key = value
         return self
 
-    def poll_interval(self, seconds: float):
+    def poll_interval(self, seconds: float) -> Self:
         self._interval = seconds
         return self
 
-    def timeout(self, seconds: float):
+    def timeout(self, seconds: float) -> Self:
         self._timeout = seconds
         return self
 
-    def ca_bundle(self, path: str | os.PathLike[str]):
+    def ca_bundle(self, path: str | os.PathLike[str]) -> Self:
         self._ca_bundle = path
         return self
 
-    def build(self):
+    def build(self) -> "Client":
         if not isinstance(self._url, str) or any(ord(c) <= 32 or ord(c) == 127 for c in self._url):
             raise ValueError("Supply a control-plane URL without whitespace or control characters")
         parsed = urlsplit(self._url)
@@ -103,19 +104,19 @@ class ClientBuilder:
 class Client:
     """Reuse one client per application process and event loop."""
 
-    def __init__(self, url: str, secret_key: str, interval: float, timeout: float, ca_bundle: str | None = None):
+    def __init__(self, url: str, secret_key: str, interval: float, timeout: float, ca_bundle: str | None = None) -> None:
         self._url = url
         self._secret_key = secret_key
         self._interval = interval
         self._timeout = timeout
         self._ca_bundle = ca_bundle
-        self._http = None
-        self._snapshot = None
-        self._etag = None
+        self._http: httpx.AsyncClient | None = None
+        self._snapshot: Snapshot | None = None
+        self._etag: str | None = None
         self._lock = asyncio.Lock()
-        self._poll_task = None
+        self._poll_task: asyncio.Task[None] | None = None
         self._closed = False
-        self.last_refresh_error = None
+        self.last_refresh_error: PartlyError | None = None
 
     @classmethod
     def builder(cls) -> ClientBuilder:
@@ -156,7 +157,7 @@ class Client:
             raise TypeError("flag_key must be a string")
         return Decision.ENABLED if snapshot.evaluate(flag_key, context) else Decision.DISABLED
 
-    def _check_open(self):
+    def _check_open(self) -> None:
         if self._closed:
             raise ClientClosedError("This client is closed; build a new client")
 
@@ -187,6 +188,7 @@ class Client:
         return True
 
     async def _request(self) -> tuple[bytes, str] | None:
+        assert self._http is not None, "init must configure HTTP before downloading"
         headers = {"Authorization": f"Bearer {self._secret_key}"}
         if self._etag is not None:
             headers["If-None-Match"] = self._etag
@@ -210,7 +212,7 @@ class Client:
                     raise InvalidPolicyError("Policy exceeds the 1 MiB POC limit")
             return bytes(body), etag
 
-    async def _poll(self):
+    async def _poll(self) -> None:
         while True:
             await asyncio.sleep(self._interval)
             try:

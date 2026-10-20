@@ -1,19 +1,18 @@
 # Copyright 2026 ByteBaker
 # SPDX-License-Identifier: Elastic-2.0
 
-"""Prune the SDK sdist lockfile and extract its verified source (Python 3.12+)."""
+"""Prune the SDK sdist lockfile and extract its verified source (Python 3.14)."""
 
 import argparse
 import io
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 from pathlib import Path
 
-import tomllib
 
-
-def pinned_packages(lock):
+def pinned_packages(lock: bytes) -> dict[tuple[str, str, str | None], str | None]:
     packages = tomllib.loads(lock.decode())["package"]
     return {
         (package["name"], package["version"], package.get("source")): package.get("checksum")
@@ -21,7 +20,7 @@ def pinned_packages(lock):
     }
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
     parser.add_argument("source", type=Path, help="New directory for the extracted SDK source")

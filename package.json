@@ -1,0 +1,19 @@
+{
+  "name": "partly-development",
+  "private": true,
+  "license": "Elastic-2.0",
+  "workspaces": ["sdk/node"],
+  "scripts": {
+    "lint": "eslint . --max-warnings 0 && biome lint crates/partly-server/dashboard/style.css --error-on-warnings && html-validate 'crates/partly-server/dashboard/*.html'",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@eslint/js": "10.0.1",
+    "eslint": "10.13.0",
+    "globals": "17.13.0",
+    "html-validate": "11.17.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0"
+  }
+}

@@ -18,13 +18,14 @@ from pathlib import Path
 
 import httpx
 import trustme
+from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
 import partly
 from partly import Client, Decision
 
 
-async def exercise(url, bundle, verify):
+async def exercise(url: str, bundle: Path, verify: ssl.SSLContext) -> None:
     async with httpx.AsyncClient(
         base_url=url, verify=verify, trust_env=False, timeout=10,
         headers={"X-Partly-Request": "dashboard", "Origin": url},
@@ -55,20 +56,23 @@ async def exercise(url, bundle, verify):
             await client.aclose()
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=Path, help="Built Partly executable")
     args = parser.parse_args()
+    assert sys.implementation.name == "cpython" and sys.version_info[:2] == (3, 14)
     assert Path(partly.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()), "SDK must be installed in this environment"
     distribution = importlib.metadata.distribution("partly-sdk")
+    assert SpecifierSet(distribution.metadata["Requires-Python"]) == SpecifierSet(">=3.14,<3.15")
     sdk_version = Version(distribution.version)
     expression = distribution.metadata["License-Expression"] or ""
     assert "Apache-2.0" in expression and "Elastic-2.0" not in expression
     for name in ("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "RUST_STDLIB_NOTICES.html"):
         assert name in distribution.metadata.get_all("License-File", [])
         files = [path for path in distribution.files or [] if str(path).endswith(f".dist-info/licenses/{name}")]
-        assert len(files) == 1 and files[0].locate().stat().st_size > 0, f"Missing packaged notice: {name}"
-    assert "Elastic License 2.0" not in distribution.read_text("licenses/LICENSE")
+        assert len(files) == 1 and Path(files[0].locate()).stat().st_size > 0, f"Missing packaged notice: {name}"
+    license_text = distribution.read_text("licenses/LICENSE")
+    assert license_text is not None and "Elastic License 2.0" not in license_text
     with tempfile.TemporaryDirectory(prefix="partly-release-") as directory:
         work = Path(directory)
         binary = work / "partly"

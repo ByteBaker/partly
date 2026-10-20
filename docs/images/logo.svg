@@ -1,0 +1,6 @@
+<!-- Copyright 2026 ByteBaker
+     SPDX-License-Identifier: Elastic-2.0 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 25" fill="#285de0">
+  <rect y="1.5" width="9" height="22"/>
+  <rect x="12" y="5.5" width="9" height="14" opacity=".65"/>
+</svg>

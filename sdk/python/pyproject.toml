@@ -13,11 +13,13 @@ readme = "README.md"
 # The native extension also includes MIT-licensed dependencies.
 license = "Apache-2.0 AND MIT"
 license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "RUST_STDLIB_NOTICES.html"]
-requires-python = ">=3.10"
+requires-python = ">=3.14,<3.15"
 dependencies = ["httpx>=0.27,<1", "certifi"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Rust",
 ]
 

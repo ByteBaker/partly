@@ -7,7 +7,7 @@ const notice = $('notice');
 let noticeReset;
 const route = location.pathname.match(/^\/environments\/(development|production)\/(flags|keys|docs)\/?$/);
 const environment = route?.[1] || 'development';
-const screen = route?.[2] || 'flags';
+const currentScreen = route?.[2] || 'flags';
 const trackers = new Map();
 let setupRequired = false;
 let unloading = false;
@@ -422,11 +422,11 @@ for (const [id, options, value, label] of [
 document.querySelector('.brand').href = `/environments/${environment}/flags`;
 $('environment').addEventListener('change', async () => {
   const target = $('environment').value; $('environment').setValue(environment);
-  if (target !== environment) await navigate(`/environments/${target}/${screen}`);
+  if (target !== environment) await navigate(`/environments/${target}/${currentScreen}`);
 });
 const tabs = [...$('screens').querySelectorAll('[role=tab]')];
 for (const [index, tab] of tabs.entries()) {
-  const active = tab.id === `${screen}-tab`; tab.setAttribute('aria-selected', String(active)); tab.tabIndex = active ? 0 : -1; $(tab.getAttribute('aria-controls')).hidden = !active;
+  const active = tab.id === `${currentScreen}-tab`; tab.setAttribute('aria-selected', String(active)); tab.tabIndex = active ? 0 : -1; $(tab.getAttribute('aria-controls')).hidden = !active;
   const go = focus => { if (!active) return navigate(`/environments/${environment}/${tab.id.split('-')[0]}`, focus); };
   tab.addEventListener('click', () => go(false));
   tab.addEventListener('keydown', event => {
@@ -464,7 +464,7 @@ $('logout').addEventListener('click', async () => {
 $('auth-form').addEventListener('submit', event => {
   event.preventDefault(); action($('auth-submit'), async () => {
     await api(setupRequired ? '/setup' : '/login', 'POST', { username: $('username').value, password: $('password').value });
-    $('password').value = ''; location.replace(`/environments/${environment}/${screen}`);
+    $('password').value = ''; location.replace(`/environments/${environment}/${currentScreen}`);
   });
 });
 async function boot() {
@@ -479,13 +479,13 @@ async function boot() {
     $('password').minLength = setupRequired ? 12 : 1; $('password').autocomplete = setupRequired ? 'new-password' : 'current-password'; $('setup-note').hidden = !setupRequired;
     $('username').focus(); return;
   }
-  $('create-flag').hidden = screen !== 'flags';
-  $('generate-key').hidden = screen !== 'keys';
-  $('screen-title').textContent = $(`${screen}-tab`).textContent; document.title = `Partly · ${$('screen-title').textContent} · ${environment}`;
-  if (screen === 'flags') {
+  $('create-flag').hidden = currentScreen !== 'flags';
+  $('generate-key').hidden = currentScreen !== 'keys';
+  $('screen-title').textContent = $(`${currentScreen}-tab`).textContent; document.title = `Partly · ${$('screen-title').textContent} · ${environment}`;
+  if (currentScreen === 'flags') {
     const flags = await api(`/environments/${environment}/flags`);
     for (const [key, flag] of Object.entries(flags)) $('flags').append(flagRow(key, flag)); updateFlagCount();
-  } else if (screen === 'keys') {
+  } else if (currentScreen === 'keys') {
     const result = await api(`/environments/${environment}/keys`); result.keys.forEach(addKey); keyEmptyState();
   } else {
     const response = await fetch('/docs/python.py'); if (!response.ok) throw new Error('Could not load the Python example. Reload to try again.');
@@ -493,6 +493,6 @@ async function boot() {
     highlightPython(docsSource);
     $('copy-example').disabled = false;
   }
-  if (sessionStorage.getItem('partly-focus-tab')) { sessionStorage.removeItem('partly-focus-tab'); $(`${screen}-tab`).focus(); }
+  if (sessionStorage.getItem('partly-focus-tab')) { sessionStorage.removeItem('partly-focus-tab'); $(`${currentScreen}-tab`).focus(); }
 }
 action(null, boot).finally(() => { $('loading').hidden = true; });

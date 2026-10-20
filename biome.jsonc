@@ -1,0 +1,15 @@
+// Copyright 2026 ByteBaker
+// SPDX-License-Identifier: Elastic-2.0
+
+{
+  "files": { "includes": ["crates/partly-server/dashboard/*.css"] },
+  "formatter": { "enabled": false },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      // Rules are grouped by separate components whose selectors do not overlap.
+      "style": { "noDescendingSpecificity": "off" }
+    }
+  }
+}

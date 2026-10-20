@@ -1,6 +1,8 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Elastic-2.0
 
+/* exported createDropdown, closeDropdown */
+
 "use strict";
 
 const dropdownMenu = document.createElement('div');

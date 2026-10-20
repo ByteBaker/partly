@@ -1,0 +1,77 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.98.1"
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  analysis:
+    name: Analyze ${{ matrix.language }}
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [rust, go]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # Clippy includes compiler checks; a separate cargo check repeats them.
+      - name: Check Rust targets with Clippy
+        if: matrix.language == 'rust'
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Run Go vet and Staticcheck
+        if: matrix.language == 'go'
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
+          for module in sdk/go examples/go tests/sdk_contract/go; do
+            (cd "$module" && go vet ./... && staticcheck ./...)
+          done
+
+  security:
+    name: Vulnerability checks
+    needs: lint
+    uses: ./.github/workflows/vulnerabilities.yml
+
+  ci:
+    name: PR checks
+    if: always()
+    needs: [lint, analysis, security]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every prerequisite to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          results = json.loads(os.environ["RESULTS"])
+          failed = [name for name, job in results.items() if job["result"] != "success"]
+          if failed:
+              raise SystemExit("Required checks did not pass: " + ", ".join(failed))
+          PY
