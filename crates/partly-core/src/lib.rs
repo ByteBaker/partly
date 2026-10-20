@@ -687,6 +687,24 @@ mod tests {
     }
 
     #[test]
+    fn json_floats_preserve_their_numeric_value() {
+        let policy = Policy::from_json(
+            br#"{"schema_version":1,"project":"default","environment":"development","revision":1,
+            "flags":{"checkout":{"mode":"custom","action":"enable","groups":[[
+                {"k":"value","op":"eq","v":1.0000000000000001e18}
+            ]]}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            policy.evaluate(
+                "checkout",
+                &context(json!({"value": 1_000_000_000_000_000_128_u64}))
+            ),
+            Ok(Decision::Enabled)
+        );
+    }
+
+    #[test]
     fn numeric_literals_outside_supported_range_are_rejected_without_rounding() {
         for literal in [
             "-9223372036854775809",

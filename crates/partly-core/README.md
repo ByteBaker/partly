@@ -1,6 +1,6 @@
 # Partly core
 
-Shared policy validation and flag evaluation for the server and Python SDK. No HTTP, storage, or Python dependencies.
+Shared policy validation and flag evaluation for the server and all language SDKs. No HTTP, storage, or Python dependencies.
 
 ## Policy format
 

@@ -1,0 +1,13 @@
+[
+  ["le", 18, 18, 19, true, "number", "boolean"],
+  ["lt", 18, 17, 18, true, "number", "boolean"],
+  ["ge", 18, 18, 17, true, "number", "boolean"],
+  ["gt", 18, 19, 18, true, "number", "boolean"],
+  ["eq", 18, 18.0, 19, "18", "number", "string"],
+  ["prefix", "Pro", "Project", "project", 1, "string", "number"],
+  ["suffix", "@company.com", "sam@company.com", "sam@COMPANY.COM", 1, "string", "number"],
+  ["contains", "Beta", "Try Beta now", "Try beta now", 1, "string", "number"],
+  ["matches", "pro", "pro", "professional", 1, "string", "number"],
+  ["regex", "^user-[0-9]+$", "user-42", "User-42", 1, "string", "number"],
+  ["is", true, true, false, 1, "boolean", "number"]
+]

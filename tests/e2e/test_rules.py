@@ -4,7 +4,7 @@
 """Exercise saved rules through the real server and installed native SDK."""
 
 import pytest
-from conftest import make_key
+from conftest import RULE_CASES, make_key
 
 from partly import Client, ContextTypeError, Decision, InvalidContextError, RefreshError
 
@@ -26,26 +26,13 @@ def client_for(server, secret):
 
 
 async def test_all_typed_operators_through_saved_policy(server, admin):
-    cases = [
-        ("le", 18, 18, 19, True, "number", "boolean"),
-        ("lt", 18, 17, 18, True, "number", "boolean"),
-        ("ge", 18, 18, 17, True, "number", "boolean"),
-        ("gt", 18, 19, 18, True, "number", "boolean"),
-        ("eq", 18, 18.0, 19, "18", "number", "string"),
-        ("prefix", "Pro", "Project", "project", 1, "string", "number"),
-        ("suffix", "@company.com", "sam@company.com", "sam@COMPANY.COM", 1, "string", "number"),
-        ("contains", "Beta", "Try Beta now", "Try beta now", 1, "string", "number"),
-        ("matches", "pro", "pro", "professional", 1, "string", "number"),
-        ("regex", "^user-[0-9]+$", "user-42", "User-42", 1, "string", "number"),
-        ("is", True, True, False, 1, "boolean", "number"),
-    ]
-    for op, value, *_ in cases:
+    for op, value, *_ in RULE_CASES:
         create_flag(admin, f"rule_{op}", custom([[{"k": "value", "op": op, "v": value}]]))
     _, secret = make_key(admin)
     client = client_for(server, secret)
     try:
         await client.init()
-        for op, _, matched, unmatched, wrong, expected_type, actual_type in cases:
+        for op, _, matched, unmatched, wrong, expected_type, actual_type in RULE_CASES:
             key = f"rule_{op}"
             assert client.evaluate(key, context={"value": matched}) is Decision.ENABLED
             assert client.evaluate(key, context={"value": unmatched}) is Decision.DISABLED

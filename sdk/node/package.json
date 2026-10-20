@@ -1,0 +1,15 @@
+{
+  "name": "partly-sdk",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "Local feature flag evaluation with a shared Rust core",
+  "license": "Apache-2.0",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "build": "node build.js",
+    "test": "node --test"
+  },
+  "files": ["index.js", "index.d.ts", "partly.node", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt", "RUST_STDLIB_NOTICES.html"]
+}

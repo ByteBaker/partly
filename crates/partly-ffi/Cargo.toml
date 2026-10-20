@@ -1,0 +1,17 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "partly-ffi"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+partly-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true

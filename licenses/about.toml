@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Elastic-2.0
 
 # Prefer MIT where upstream explicitly offers a choice.
-accepted = ["MIT", "Apache-2.0", "ISC", "BSD-3-Clause", "Zlib", "Unicode-3.0", "Apache-2.0 WITH LLVM-exception"]
+accepted = ["MIT", "Apache-2.0", "ISC", "BSD-3-Clause", "Zlib", "Unicode-3.0", "Apache-2.0 WITH LLVM-exception", "CDLA-Permissive-2.0"]
 ignore-dev-dependencies = true
 ignore-build-dependencies = false
 # Partly's own license files are distributed separately.

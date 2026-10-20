@@ -123,6 +123,8 @@ python -m pytest -q sdk/python/tests tests/e2e/test_sdk.py tests/e2e/test_https.
 
 Tests exercise both the native boundary and the real control plane. See [development checks](../../RELEASING.md#build-and-verify) for browser and full-workspace checks.
 
+The [shared SDK contract](../../tests/sdk_contract/README.md) runs the same end-to-end scenarios for each language.
+
 ## License
 
 The SDK and evaluator use [Apache-2.0](LICENSE), including use in proprietary applications. Preserve the packaged license and notices; dependencies keep their own terms. The server's ELv2 restrictions do not apply to the SDK.

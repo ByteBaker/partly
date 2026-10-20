@@ -40,6 +40,14 @@ jobs:
           cache-dependency-path: |
             requirements-dev.txt
             sdk/python/pyproject.toml
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.1"
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.10.0"
+          package-manager-cache: false
       - name: Install build and test tools
         run: |
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
@@ -51,6 +59,9 @@ jobs:
           maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels
           python -m pip install target/wheels/*.whl
           cargo build --release --locked -p partly-server
+          cargo build --release --locked -p partly-ffi
+          cargo build --locked -p partly-sdk-contract
+          node sdk/node/build.js
       - name: Lint and test Rust
         if: matrix.python == '3.12'
         run: |
@@ -61,6 +72,10 @@ jobs:
           python -m ruff check .
           node --check crates/partly-server/dashboard/app.js
           node --check crates/partly-server/dashboard/dropdown.js
+          node --test sdk/node/test/*.test.js
+          npm exec --yes --package typescript@5.9.3 -- tsc --noEmit --strict --lib ES2022 sdk/node/index.d.ts
+          test -z "$(gofmt -l sdk/go examples/go tests/sdk_contract/go)"
+          (cd sdk/go && go vet ./... && go test -a -race ./...)
       - name: Test the installed SDK and dashboard
         run: python -m pytest -q
       - name: Check Firefox and WebKit
@@ -84,10 +99,14 @@ jobs:
           cargo fetch --locked
           cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-server/Cargo.toml --target x86_64-unknown-linux-musl --target aarch64-apple-darwin licenses/third-party.hbs --output-file THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/server-licenses.log"
           cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path sdk/python/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/python/THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/sdk-licenses.log"
+          for language in rust node; do
+            cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path "sdk/$language/Cargo.toml" --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file "sdk/$language/THIRD_PARTY_NOTICES.txt" 2>&1 | tee "$RUNNER_TEMP/$language-licenses.log"
+          done
+          cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-ffi/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/go/THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/go-licenses.log"
           if grep -q 'failed to validate all files specified in clarification' "$RUNNER_TEMP/"*-licenses.log; then
             exit 1
           fi
-          git diff --exit-code -- THIRD_PARTY_NOTICES.txt sdk/python/THIRD_PARTY_NOTICES.txt
+          git diff --exit-code -- THIRD_PARTY_NOTICES.txt sdk/*/THIRD_PARTY_NOTICES.txt
 
   artifacts:
     needs: checks
@@ -121,7 +140,9 @@ jobs:
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
           rustup default "$RUST_TOOLCHAIN"
           rustup target add "$BINARY_TARGET"
-          cmp "$(rustc --print sysroot)/share/doc/rust/COPYRIGHT-library.html" sdk/python/RUST_STDLIB_NOTICES.html
+          for language in python go node; do
+            cmp "$(rustc --print sysroot)/share/doc/rust/COPYRIGHT-library.html" "sdk/$language/RUST_STDLIB_NOTICES.html"
+          done
       - name: Install the Linux static linker
         if: runner.os == 'Linux'
         run: |

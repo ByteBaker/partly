@@ -10,16 +10,17 @@ Current candidate: `0.1.0-alpha.1` (Python: `0.1.0a1`). Update the workspace ver
 | Server | Linux x86_64, static musl | Workflow configured; Linux run pending |
 | Python SDK | macOS ARM64, CPython 3.10+ | Wheel and source archive built locally |
 | Python SDK | Linux x86_64, manylinux2014, CPython 3.10+ | Workflow configured; Linux run pending |
+| Rust, Go, Node.js SDKs | macOS ARM64 | Local clients and shared contracts implemented; public packaging pending |
 
 ABI3 allows one wheel per platform to support regular CPython 3.10+. CI covers 3.10, 3.12, and 3.14. Windows, Linux ARM64, Intel macOS, Alpine Python, and free-threaded Python are outside this release. The Linux wheel requires glibc; the server is static.
 
 Browser coverage: the full suite in Chromium, six focused dashboard tests each in Firefox and WebKit. Safari releases and physical mobile devices are untested.
 
-Latest local checks (macOS ARM64): 189 Python 3.12 tests, 13 Rust tests, both focused browser suites, extracted-archive HTTPS smoke, and lints passed. Archive checks rejected missing notices and lost executable permissions. Python 3.10/3.14, dependency audits, and strict package metadata checks need rerunning after the latest test updates. Linux remains unverified.
+Local macOS ARM64 checks: 204 Python 3.12/application tests (including all four SDK contracts, examples, and native rebuild regression), 20 Rust tests, 8 Go tests with the race detector, and 3 Node.js tests pass. Formatting, Ruff, Clippy, and Go vet pass; the Python wheel was rebuilt and installed for these tests. Earlier Node type checks, dependency audits, source-archive checks, Firefox/WebKit tests, and extracted-server checks remain the baseline. Python 3.10/3.14 runtime checks and Linux remain pending for this change.
 
 ## Build and verify
 
-Follow the [root setup guide](README.md), then run from the repository root with the virtual environment active. Node.js is needed only for JavaScript syntax checks:
+Follow the [root setup guide](README.md), then run from the repository root with the virtual environment active. The full suite also needs Go and Node.js (locally tested with Go 1.27.1 and Node.js 26.10.0):
 
 ```sh
 python -m pip install -r requirements-dev.txt
@@ -28,13 +29,19 @@ cargo fmt --all --check
 python -m ruff check .
 PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo test --locked --workspace
 PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo clippy --locked --workspace --all-targets -- -D warnings
-cargo build --locked -p partly-server
+cargo build --locked -p partly-server -p partly-sdk-contract
+cargo build --release --locked -p partly-ffi
+node sdk/node/build.js
+(cd sdk/go && go vet ./... && go test -a -race ./...)
+node --test sdk/node/test/*.test.js
 node --check crates/partly-server/dashboard/app.js
 node --check crates/partly-server/dashboard/dropdown.js
 python -m pytest -q
 ```
 
 Tests use temporary servers and databases. `PARTLY_BINARY` selects an absolute executable path. `PARTLY_BROWSER=firefox` or `webkit` selects an installed browser for focused checks. Test reports and screenshots stay outside Git.
+
+The SDK expansion branch includes the [four-language contract](tests/sdk_contract/README.md) in the default test run. All four language contracts must pass before committing. The suite also runs the minimal application examples. Go links a local Rust static library; use `-a` for Go build, run, and test commands after rebuilding Rust because Go's cache does not track changes to that archive. Node.js loads a local Node-API extension. Public Rust/Go/Node.js distribution is a separate release step.
 
 Optional: `python tests/benchmark.py` measures a release build's size, startup, sampled memory, and Python evaluation including binding overhead. It is not a load test.
 
@@ -72,10 +79,14 @@ cargo install cargo-about --version 0.9.2 --locked
 cargo fetch --locked
 cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-server/Cargo.toml --target x86_64-unknown-linux-musl --target aarch64-apple-darwin licenses/third-party.hbs --output-file THIRD_PARTY_NOTICES.txt
 cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path sdk/python/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/python/THIRD_PARTY_NOTICES.txt
+for language in rust node; do
+  cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path "sdk/$language/Cargo.toml" --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file "sdk/$language/THIRD_PARTY_NOTICES.txt"
+done
+cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-ffi/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/go/THIRD_PARTY_NOTICES.txt
 ```
 
 Review changes and diagnostics: cargo-about 0.9.2 can exit successfully after a clarification checksum mismatch. CI rejects that diagnostic and stale notices. Recheck upstream license checksums in `licenses/about.toml` when upgrading affected dependencies. Generated notices do not replace a review of dependency terms.
 
-Release builds pin Rust 1.98.1. When changing compilers, update both the workflow pin and `sdk/python/RUST_STDLIB_NOTICES.html` from that compiler's `share/doc/rust/COPYRIGHT-library.html`. CI verifies an exact match. Local builds also need matching compiler notices before redistribution.
+Release builds pin Rust 1.98.1. When changing compilers, update the workflow pin and the `RUST_STDLIB_NOTICES.html` files under `sdk/python`, `sdk/go`, and `sdk/node` from that compiler's `share/doc/rust/COPYRIGHT-library.html`. CI verifies an exact match. Local builds also need matching compiler notices before redistribution.
 
 The Linux server archive includes its build runner's musl copyright file. Inspect it when validating the first Linux artifact; macOS checks do not verify it. Separately installed Python dependencies carry their own notices.

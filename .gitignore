@@ -23,3 +23,6 @@ htmlcov/
 *.pem
 *.key
 *.crt
+
+node_modules/
+*.node

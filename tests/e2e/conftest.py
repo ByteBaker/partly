@@ -1,6 +1,7 @@
 # Copyright 2026 ByteBaker
 # SPDX-License-Identifier: Elastic-2.0
 
+import json
 import os
 import signal
 import socket
@@ -13,6 +14,7 @@ import httpx
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+RULE_CASES = json.loads((ROOT / "tests/sdk_contract/rules.json").read_text())
 PASSWORD = "local-test-password"
 ADMIN_HEADERS = {"X-Partly-Request": "dashboard"}
 

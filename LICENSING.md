@@ -2,15 +2,15 @@
 
 Copyright 2026 ByteBaker.
 
-Partly's control plane and dashboard are **source-available under the Elastic License 2.0 (ELv2)**. The SDK, shared evaluator, and Python examples are **open source under Apache-2.0**.
+Partly's control plane and dashboard are **source-available under the Elastic License 2.0 (ELv2)**. The SDKs, shared evaluator, native bindings, and application examples are **open source under Apache-2.0**.
 
 | Scope | License |
 | --- | --- |
 | Control plane, dashboard, and other project files unless listed below | [Elastic License 2.0](LICENSE), SPDX `Elastic-2.0` |
-| `crates/partly-core/` | [Apache License 2.0](crates/partly-core/LICENSE), SPDX `Apache-2.0` |
-| `sdk/python/` | [Apache License 2.0](sdk/python/LICENSE), SPDX `Apache-2.0` |
+| `crates/partly-core/` and `crates/partly-ffi/` | [Apache License 2.0](crates/partly-core/LICENSE), SPDX `Apache-2.0` |
+| `sdk/` (all language packages) | [Apache License 2.0](sdk/python/LICENSE), SPDX `Apache-2.0` |
 | Shared workspace build metadata: `Cargo.toml` and `Cargo.lock` | [Apache License 2.0](crates/partly-core/LICENSE), SPDX `Apache-2.0` |
-| `examples/python/` and application integration snippets in the READMEs and dashboard docs | [Apache License 2.0](examples/python/LICENSE), SPDX `Apache-2.0` |
+| `examples/` and application integration snippets in the READMEs and dashboard docs | [Apache License 2.0](examples/python/LICENSE), SPDX `Apache-2.0` |
 
 The exceptions apply to those components even when they are bundled into the control-plane executable. Each third-party component keeps its original license; the Partly licenses do not replace those terms. License texts and notices themselves retain their applicable terms.
 
@@ -26,7 +26,7 @@ This alpha has no premium activation or subscription requirement. Future premium
 
 ## Using the SDK and examples
 
-The Python SDK and its embedded Rust evaluator use Apache-2.0 so applications can use them under their own license, including proprietary licenses. Preserve the required license and attribution notices when redistributing these components. The server's ELv2 restrictions do not apply to these Apache-licensed components.
+The SDKs and their shared Rust evaluator use Apache-2.0 so applications can use them under their own license, including proprietary licenses. Preserve the required license and attribution notices when redistributing these components. The server's ELv2 restrictions do not apply to these Apache-licensed components.
 
 ## Redistributing packages
 

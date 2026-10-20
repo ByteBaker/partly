@@ -2,7 +2,7 @@
 
 Partly is a self-hosted feature flag tool: one Rust executable with a dashboard and SQLite. No Docker or external services required.
 
-Turn features on or off, roll them out by percentage, or match custom rules. The Python SDK evaluates flags locally; user context stays in your application.
+Turn features on or off, roll them out by percentage, or match custom rules. The Python, Rust, Go, and Node.js SDKs evaluate flags locally; user context stays in your application.
 
 **Alpha:** `0.1.0-alpha.1` (Python: `0.1.0a1`). Public downloads are not available yet.
 
@@ -48,10 +48,10 @@ python examples/python/quickstart.py
 ## Guides
 
 - [Server: HTTPS, backups, and password recovery](crates/partly-server/README.md)
-- [Python SDK](sdk/python/README.md) and [examples](examples/python/README.md)
+- SDK guides: [Python](sdk/python/README.md), [Rust](sdk/rust/README.md), [Go](sdk/go/README.md), [Node.js](sdk/node/README.md)
 - [Evaluation rules and percentage consistency](crates/partly-core/README.md)
 - [Development checks and release preparation](RELEASING.md)
 
 ## License
 
-The control plane and dashboard are source-available under **Elastic License 2.0**. The Python SDK, shared evaluator, and Python examples use **Apache-2.0**. See [licensing details](LICENSING.md).
+The control plane and dashboard are source-available under **Elastic License 2.0**. The SDKs, shared evaluator, native bindings, and application examples use **Apache-2.0**. See [licensing details](LICENSING.md).
