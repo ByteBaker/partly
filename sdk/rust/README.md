@@ -36,6 +36,7 @@ The [runnable quickstart](../../examples/rust/quickstart.rs) also closes the cli
 ## Client contract
 
 - `build()` validates settings without network access. `init().await` downloads the first policy and starts one poller; failed initialization can be retried.
+- Malformed URLs return `Error::UrlParse(UrlParseError)` with the original parser error, also available through `std::error::Error::source()`. Valid URLs that violate the allowed origin format return `Error::Configuration`. Neither error includes the supplied URL or API Key.
 - `evaluate()` returns `Result<Decision, Error>`. Match `Error::Evaluation(EvaluationError::ContextType { .. })` for wrong context types. Unknown flags and missing policy are separate errors.
 - `refresh().await` returns `true` for an accepted policy, `false` for an unchanged response. Failures preserve the policy and ETag.
 - `close().await` cancels downloads and stops polling. Repeated calls are safe. The last policy remains available for evaluation, but the client cannot reconnect.

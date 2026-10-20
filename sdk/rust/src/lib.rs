@@ -12,9 +12,12 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::watch, task::JoinHandle};
+pub use url::ParseError as UrlParseError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Invalid control-plane URL: {0}")]
+    UrlParse(#[from] UrlParseError),
     #[error("Invalid client configuration: {0}")]
     Configuration(&'static str),
     #[error("No policy loaded; await init first")]
@@ -73,9 +76,7 @@ impl ClientBuilder {
         self
     }
     pub fn build(self) -> Result<Client, Error> {
-        let bad_url =
-            || Error::Configuration("supply an HTTP(S) origin without credentials or a path");
-        let url = Url::parse(&self.url).map_err(|_| bad_url())?;
+        let url = Url::parse(&self.url)?;
         if self.url.chars().any(|c| c <= ' ' || c == '\u{7f}')
             || self.url.contains(['\\', '@'])
             || !matches!(url.scheme(), "http" | "https")
@@ -86,7 +87,9 @@ impl ClientBuilder {
             || url.fragment().is_some()
             || url.path() != "/"
         {
-            return Err(bad_url());
+            return Err(Error::Configuration(
+                "control-plane URL must be an HTTP(S) origin without credentials, a path, query, or fragment",
+            ));
         }
         if self.key.is_empty() || !self.key.bytes().all(|b| (33..=126).contains(&b)) {
             return Err(Error::Configuration(
@@ -105,7 +108,7 @@ impl ClientBuilder {
         Ok(Client {
             inner: Arc::new(Inner {
                 config: self,
-                endpoint: url.join("api/policy").map_err(|_| bad_url())?,
+                endpoint: url.join("api/policy")?,
                 http: Mutex::new(None),
                 accepted: RwLock::new(None),
                 serial: tokio::sync::Mutex::new(()),

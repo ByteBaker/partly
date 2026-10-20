@@ -1,7 +1,7 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
-use partly::{Client, Context, Error};
+use partly::{Client, Context, Error, UrlParseError};
 use std::time::Duration;
 
 #[test]
@@ -41,6 +41,49 @@ fn build_validates_without_a_runtime_or_network() {
         .timeout(Duration::ZERO)
         .build()
         .is_err());
+}
+
+#[test]
+fn url_parse_errors_preserve_their_type_and_source_without_credentials() {
+    use std::error::Error as _;
+
+    for (url, expected) in [
+        ("not-a-url", UrlParseError::RelativeUrlWithoutBase),
+        ("http://", UrlParseError::EmptyHost),
+        (
+            "https://user:private-url-secret@host:invalid",
+            UrlParseError::InvalidPort,
+        ),
+    ] {
+        let error = Client::builder()
+            .url(url)
+            .secret_key("private-api-key")
+            .build()
+            .err()
+            .expect("invalid URL must fail");
+        assert!(matches!(&error, Error::UrlParse(cause) if *cause == expected));
+        let source = error.source().unwrap();
+        assert_eq!(source.downcast_ref::<UrlParseError>(), Some(&expected));
+        let details = format!("{error} {error:?} {source} {source:?}");
+        assert!(!details.contains("private-url-secret"));
+        assert!(!details.contains("private-api-key"));
+        assert!(!details.contains("HTTP(S)"));
+    }
+    for url in [
+        "ftp://host",
+        "https://host/path",
+        "https://user:private-url-secret@host",
+    ] {
+        let error = Client::builder()
+            .url(url)
+            .secret_key("key")
+            .build()
+            .err()
+            .expect("unsupported origin must fail");
+        assert!(matches!(error, Error::Configuration(_)));
+        assert!(error.source().is_none());
+        assert!(!format!("{error} {error:?}").contains("private-url-secret"));
+    }
 }
 
 #[tokio::test]
