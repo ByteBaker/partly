@@ -1,6 +1,6 @@
 # Go quickstart
 
-Follow the [server setup](../../README.md#run-locally) to create `new_checkout` and an app that selects it. Replace the URL, environment, application ID, and API Key in [main.go](main.go), then run from the repository root:
+Follow the [server setup](../../README.md#build-locally) to create `new_checkout` and an app that selects it. Replace the URL, environment, application ID, and API Key in [main.go](main.go), then run from the repository root:
 
 ```sh
 sh sdk/go/build.sh

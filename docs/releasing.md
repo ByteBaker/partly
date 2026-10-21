@@ -27,7 +27,7 @@ Earlier candidates passed Rust, Python, Go race, Node.js, packaging, and HTTPS s
 
 ## Build and verify
 
-Follow the [server setup](../README.md#run-locally) and [Python SDK build](../sdk/python/README.md#build-locally), then run from the repository root with that virtual environment active. The full suite also needs Go and Node.js (locally tested with Go 1.27.3 and Node.js 26.10.0):
+Follow the [server setup](../README.md#build-locally) and [Python SDK build](../sdk/python/README.md#build-locally), then run from the repository root with that virtual environment active. The full suite also needs Go and Node.js (locally tested with Go 1.27.3 and Node.js 26.10.0):
 
 ```sh
 python -m pip install -r config/requirements-dev.txt

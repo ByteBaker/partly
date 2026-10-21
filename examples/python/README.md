@@ -2,7 +2,7 @@
 
 Start with [quickstart.py](quickstart.py), also shown in the dashboard's **Docs** tab. It initializes one client at startup, passes it to a local `checkout` handler for two example requests, and closes it at shutdown.
 
-Follow the [server setup](../../README.md#run-locally) to create `new_checkout` and an app that selects it, then [install the Python SDK](../../sdk/python/README.md#build-locally). Set the URL, environment, application ID, and API Key constants in `quickstart.py`, then run from the repository root:
+Follow the [server setup](../../README.md#build-locally) to create `new_checkout` and an app that selects it, then [install the Python SDK](../../sdk/python/README.md#build-locally). Set the URL, environment, application ID, and API Key constants in `quickstart.py`, then run from the repository root:
 
 ```sh
 python examples/python/quickstart.py

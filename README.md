@@ -8,9 +8,9 @@ Turn features on or off, roll them out by percentage, or match custom rules. The
 
 ![Partly dashboard showing percentage rollout and custom rules in Development](docs/images/dashboard.png)
 
-## Run locally
+## Build locally
 
-Requires Rust 1.89+ and a C compiler. From the repository root:
+Building from source requires Rust 1.89+ and a C compiler. Running the compiled executable needs neither. From the repository root:
 
 ```sh
 cargo build --release --locked -p partly-server
@@ -50,8 +50,11 @@ Self-hosted capabilities, reviewed October 2026. Linked sources describe each to
 | Boolean flags | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Percentage rollouts | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Context-based targeting | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Audit logs for flag changes | ✅ | ✅ [Git history](https://docs.flipt.io/v2/introduction#git-native) | ❌ (external history) | ✅ [Basic; advanced in Enterprise](https://docs.getunleash.io/support/oss-comparison#governance-and-security) | ✅ [Audit logs](https://www.flagsmith.com/role-based-access-change-control-security) |
 | Non-boolean flag values | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Local backend evaluation | ✅ | ✅ | ✅ (by provider) | ✅ | ✅ (opt-in) |
+
+GO Feature Flag relies on the configuration store's history or [change notifications](https://gofeatureflag.org/docs/concepts/notifier) sent to an external system for a retained audit trail.
 
 Deployment details: [Flipt](https://docs.flipt.io/v2/introduction), [GO Feature Flag](https://gofeatureflag.org/docs/concepts/architecture), [Unleash](https://docs.getunleash.io/deploy/configuring-unleash), [Flagsmith](https://docs.flagsmith.com/deployment-self-hosting/hosting-guides/manual-installation).
 
