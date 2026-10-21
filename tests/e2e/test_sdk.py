@@ -9,7 +9,7 @@ from contextlib import closing
 
 import httpx
 import pytest
-from conftest import ROOT, make_key, save_flag
+from conftest import ROOT, make_key, save_flag, scope_for
 
 from partly import (
     AuthenticationError,
@@ -17,13 +17,14 @@ from partly import (
     Decision,
     FlagNotFoundError,
     InvalidContextError,
+    KeyRevokedError,
     PolicyNotReadyError,
     RefreshError,
 )
 
 
 def client_for(server, key, interval=60):
-    return Client.builder().url(server.url).secret_key(key).poll_interval(interval).timeout(1).build()
+    return Client.builder().url(server.url).environment(scope_for(key)[0]).application_id(scope_for(key)[1]).secret_key(key).poll_interval(interval).timeout(1).build()
 
 
 async def wait_until(predicate):
@@ -62,7 +63,13 @@ async def test_real_sdk_rollout_refresh_and_outage(server, admin):
         admin.delete(f"/api/keys/{key_id}")
         with pytest.raises(AuthenticationError):
             await client.refresh()
-        assert client.evaluate("new_checkout", context={"id": "u"}) is Decision.ENABLED
+        with pytest.raises(KeyRevokedError):
+            client.evaluate("new_checkout", context={"id": "u"})
+        assert client._snapshot is None and client._etag is None
+        await client.aclose()
+        _, key = make_key(admin)
+        client = client_for(server, key)
+        await client.init()
         server.stop()
         with pytest.raises(RefreshError):
             await client.refresh()
@@ -93,7 +100,7 @@ async def test_polling_and_example(server, admin):
         save_flag(admin, percentage=50)
         process = await asyncio.create_subprocess_exec(
             sys.executable, str(ROOT / "examples/python/rollout.py"),
-            env={**os.environ, "PARTLY_URL": server.url, "PARTLY_SDK_KEY": key},
+            env={**os.environ, "PARTLY_URL": server.url, "PARTLY_SDK_KEY": key, "PARTLY_ENVIRONMENT": scope_for(key)[0], "PARTLY_APPLICATION_ID": scope_for(key)[1]},
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await process.communicate()
@@ -172,7 +179,7 @@ async def test_dashboard_python_example(server, admin, tmp_path, scenario, expec
     script = tmp_path / "quickstart.py"
     script.write_text(response.text.replace(
         'CONTROL_PLANE_URL = "http://127.0.0.1:8080"', f"CONTROL_PLANE_URL = {url!r}",
-    ).replace('API_KEY = "YOUR_API_KEY"', f"API_KEY = {api_key!r}"))
+    ).replace('YOUR_APPLICATION_ID', scope_for(key)[1]).replace('API_KEY = "YOUR_API_KEY"', f"API_KEY = {api_key!r}"))
     if scenario == "offline":
         server.stop()
     process = await asyncio.create_subprocess_exec(
@@ -203,7 +210,7 @@ async def test_quickstart_evaluates_locally_and_closes(server, admin, monkeypatc
 
     monkeypatch.setattr(Client, "init", init_then_stop_server)
     example = runpy.run_path(str(ROOT / "examples/python/quickstart.py"))
-    example["main"].__globals__.update(CONTROL_PLANE_URL=server.url, API_KEY=key)
+    example["main"].__globals__.update(CONTROL_PLANE_URL=server.url, API_KEY=key, APPLICATION_ID=scope_for(key)[1])
     await example["main"]()
     captured = capsys.readouterr()
     assert captured.err == ""

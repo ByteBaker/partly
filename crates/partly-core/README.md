@@ -7,6 +7,7 @@ Shared policy validation and flag evaluation for the server and all language SDK
 ```json
 {
   "schema_version": 1,
+  "application_id": "app_example",
   "project": "default",
   "environment": "development",
   "revision": 1,
@@ -26,7 +27,7 @@ Shared policy validation and flag evaluation for the server and all language SDK
 }
 ```
 
-Flag, project, and environment keys use 1–64 lowercase ASCII letters, digits, `_`, or `-`. Percentages are integers from 0 to 100. Unknown fields, wrong types, and unsupported schema versions are rejected. Empty `flags` is valid. Policies are limited to 1 MiB (`MAX_POLICY_BYTES`).
+Flag, project, environment, and application keys use 1–64 lowercase ASCII letters, digits, `_`, or `-`. Percentages are integers from 0 to 100. Unknown fields, wrong types, and unsupported schema versions are rejected. Empty `flags` is valid. Policies are limited to 1 MiB (`MAX_POLICY_BYTES`).
 
 `Policy::from_json()` parses and validates a policy once. For standalone flag JSON, also run `validate_json_number_limits()` on the original bytes to prevent rounded integer literals. `evaluate(flag_key, &context)` returns `Result<Decision, EvaluationError>`.
 
@@ -79,3 +80,5 @@ cargo test -p partly-core
 ## License
 
 [Apache-2.0](LICENSE), independent of the server's ELv2 license. Preserve the license and attribution notices when redistributing.
+
+Policy `application_id` identifies the selected application. SDKs verify it and the environment against their required builder settings on every full download, including initialization.

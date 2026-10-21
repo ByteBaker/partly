@@ -12,6 +12,8 @@ async def main() -> None:
     client = (
         Client.builder()
         .url(os.environ.get("PARTLY_URL", "http://127.0.0.1:8080"))
+        .environment(os.environ["PARTLY_ENVIRONMENT"])
+        .application_id(os.environ["PARTLY_APPLICATION_ID"])
         .secret_key(os.environ["PARTLY_SDK_KEY"])
         .build()
     )

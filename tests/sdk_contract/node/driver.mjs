@@ -10,7 +10,7 @@ const errors = {
   InvalidContextError: "invalid_context",
   ContextTypeError: "context_type",
   PolicyNotReadyError: "policy_not_ready",
-  AuthenticationError: "authentication",
+  KeyRevokedError: "key_revoked", AuthenticationError: "authentication",
   InvalidPolicyError: "invalid_policy",
   RefreshError: "refresh",
   ClientClosedError: "client_closed",
@@ -24,7 +24,7 @@ try {
     try {
       switch (command.op) {
         case "build": {
-          const builder = Client.builder().url(command.url).secretKey(command.key)
+          const builder = Client.builder().url(command.url).environment(command.environment).applicationId(command.application_id).secretKey(command.key)
             .pollInterval(command.interval).timeout(command.timeout);
           if (command.ca_bundle) builder.caBundle(command.ca_bundle);
           client = builder.build();

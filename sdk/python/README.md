@@ -27,6 +27,8 @@ import asyncio
 from partly import Client, Decision
 
 CONTROL_PLANE_URL = "http://127.0.0.1:8080"
+ENVIRONMENT = "development"
+APPLICATION_ID = "YOUR_APPLICATION_ID"
 API_KEY = "YOUR_API_KEY"
 
 def checkout(client, context):
@@ -36,6 +38,8 @@ async def main():
     client = (
         Client.builder()
         .url(CONTROL_PLANE_URL)
+        .environment(ENVIRONMENT)
+        .application_id(APPLICATION_ID)
         .secret_key(API_KEY)
         .build()
     )
@@ -56,7 +60,7 @@ See the [runnable quickstart](../../examples/python/quickstart.py) for error han
 | `build()` | Validates configuration without network calls |
 | `await init()` | Downloads and validates the first policy, then starts one background poller; failures raise and can be retried |
 | `evaluate(key, context=...)` | Evaluates the accepted policy locally |
-| `await refresh()` | Returns `True` for an accepted full policy, `False` for an unchanged response; errors preserve the policy and ETag |
+| `await refresh()` | Returns `True` for an accepted full policy, `False` for an unchanged response; ordinary errors preserve the policy and ETag; confirmed revocation clears them |
 | `await aclose()` | Stops polling and closes connections; safe to repeat, including after failed initialization |
 
 Defaults: poll 30 seconds after each refresh; timeout 5 seconds for the entire download; maximum policy size 1 MiB. Change timing with builder `.poll_interval(seconds)` and `.timeout(seconds)`, using finite positive values. Validation runs outside the application event loop. After initialization, policy updates use background polling or `refresh()`.
@@ -75,6 +79,8 @@ from partly import Client
 client = (
     Client.builder()
     .url("https://partly.example.com:8443")
+    .environment("development")
+    .application_id("YOUR_APPLICATION_ID")
     .secret_key("YOUR_API_KEY")
     .ca_bundle("/path/to/company-ca.pem")
     .build()
@@ -135,3 +141,9 @@ The [shared SDK contract](../../tests/sdk_contract/README.md) runs the same end-
 ## License
 
 The SDK and evaluator use [Apache-2.0](LICENSE), including use in proprietary applications. Preserve the packaged license and notices; dependencies keep their own terms. The server's ELv2 restrictions do not apply to the SDK.
+
+## Application scope and revocation
+
+Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.environment("development").application_id("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
+
+A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `KeyRevokedError` (an `AuthenticationError` subclass). Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh reaches the server.

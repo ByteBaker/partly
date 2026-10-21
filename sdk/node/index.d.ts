@@ -16,12 +16,15 @@ export class ContextTypeError extends InvalidContextError {
 }
 export class PolicyNotReadyError extends PartlyError {}
 export class AuthenticationError extends PartlyError {}
+export class KeyRevokedError extends AuthenticationError {}
 export class InvalidPolicyError extends PartlyError {}
 export class RefreshError extends PartlyError {}
 export class ClientClosedError extends PartlyError {}
 export class ClientBuilder {
   url(value: string): this;
   secretKey(value: string): this;
+  environment(value: string): this;
+  applicationId(value: string): this;
   pollInterval(seconds: number): this;
   timeout(seconds: number): this;
   caBundle(path: string): this;

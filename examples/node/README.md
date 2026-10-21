@@ -10,3 +10,5 @@ node examples/node/quickstart.js
 The example loads the local SDK, awaits initialization at application startup, then passes the same client to `checkout` for two example requests. Keep the client in application state and share it with request handlers. Handlers only evaluate; close the client at application shutdown, including after failures. See the [SDK guide](../../sdk/node/README.md).
 
 The end-to-end suite runs this source for enabled, disabled, and rejected-key cases.
+
+In **Apps & Keys**, create an app in the chosen environment and select `new_checkout`. Copy its application ID and active API Key into the example. Use one initialized client for all requests.

@@ -23,7 +23,8 @@
     </div>
     <nav id="screens" class="screen-tabs" role="tablist" aria-label="Workspace screens" hidden>
       <button type="button" id="flags-tab" role="tab" aria-selected="true" aria-controls="flags-screen">Feature flags</button>
-      <button type="button" id="keys-tab" role="tab" aria-selected="false" aria-controls="keys-screen" tabindex="-1">Key Management</button>
+      <button type="button" id="apps-tab" role="tab" aria-selected="false" aria-controls="apps-screen" tabindex="-1">Apps &amp; Keys</button>
+      <button type="button" id="audits-tab" role="tab" aria-selected="false" aria-controls="audits-screen" tabindex="-1">Audits</button>
       <button type="button" id="docs-tab" role="tab" aria-selected="false" aria-controls="docs-screen" tabindex="-1">Docs</button>
     </nav>
   </header>
@@ -41,14 +42,19 @@
       <p id="setup-note" class="small muted" hidden>Your database is created when you finish setup.</p>
     </section>
     <section id="workspace" hidden>
-      <div class="workspace-heading"><h1 id="screen-title">Feature flags</h1><div class="header-actions"><button type="button" id="create-flag" class="primary">Create flag</button><button type="button" id="generate-key" class="primary" hidden>Generate key</button></div></div>
+      <div class="workspace-heading"><h1 id="screen-title">Feature flags</h1><div class="header-actions"><button type="button" id="create-flag" class="primary">Create flag</button><button type="button" id="create-app" class="primary" hidden>Create app</button></div></div>
       <section id="flags-screen" role="tabpanel" aria-labelledby="flags-tab">
         <div class="list-heading"><h2>Flags <span id="flag-count" class="count">0</span></h2></div>
         <div id="flags"></div>
       </section>
-      <section id="keys-screen" role="tabpanel" aria-labelledby="keys-tab" hidden>
-        <div id="keys"></div>
+      <section id="apps-screen" role="tabpanel" aria-labelledby="apps-tab" hidden>
+        <div id="apps"></div>
         <p class="hint">API Keys can read feature flags and rules. Use the UI to make changes.</p>
+      </section>
+      <section id="audits-screen" role="tabpanel" aria-labelledby="audits-tab" hidden>
+        <div id="audit-filters" class="audit-filters"></div>
+        <div id="audits"></div>
+        <button id="more-audits" type="button" hidden>Load older entries</button>
       </section>
       <section id="docs-screen" role="tabpanel" aria-labelledby="docs-tab" hidden>
         <div class="code-panel"><div class="code-heading"><span>quickstart.py</span><label class="docs-language" for="docs-language">Language<span class="select-control"><button id="docs-language" type="button" disabled>Python</button></span></label><button type="button" id="copy-example" class="icon-button" aria-label="Copy code" title="Copy code" disabled><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="8" y="8" width="12" height="13" rx="1"></rect><path d="M16 8V3H3v13h5"></path></svg></button></div><pre class="code-example" tabindex="0" aria-label="Complete Python example"><code id="docs-code">Loading example…</code></pre></div>
@@ -69,6 +75,13 @@
       <div class="dialog-content"><label for="key-name">Key name<input type="text" id="key-name" name="name" placeholder="e.g. Checkout service" maxlength="64" required></label><p id="key-dialog-error" class="notice error item-error" role="alert" hidden></p></div>
       <div class="dialog-actions"><button id="cancel-key" type="button">Cancel</button><button id="submit-key" class="primary" type="submit">Generate key</button></div>
     </form>
+  </dialog>
+  <dialog id="app-dialog" aria-labelledby="app-dialog-title" aria-describedby="app-dialog-context">
+    <div class="dialog-heading"><div><h2 id="app-dialog-title">Create app</h2><p id="app-dialog-context" class="muted"></p></div><button id="close-app" type="button" class="quiet" aria-label="Close app dialog">✕</button></div>
+    <form id="new-app"><div class="dialog-content"><label for="app-name">Application name<input type="text" id="app-name" name="name" maxlength="64" required></label><div id="app-flags"></div><p class="small muted">A Default API Key is generated when you create the app.</p><p id="app-dialog-error" class="notice error item-error" role="alert" hidden></p></div><div class="dialog-actions"><button id="cancel-app" type="button">Cancel</button><button type="submit" class="primary">Create app</button></div></form>
+  </dialog>
+  <dialog id="confirm-flag-dialog" class="confirm-dialog" aria-labelledby="confirm-flag-title">
+    <form id="confirm-flag-form"><div class="dialog-content"><h2 id="confirm-flag-title">Save flag changes?</h2><p id="flag-impact-description"></p><ul id="flag-impact-apps"></ul><label for="confirm-flag-input" id="confirm-flag-label">Type environment/flag_name to confirm</label><input type="text" id="confirm-flag-input" autocomplete="off" spellcheck="false" required><p id="confirm-flag-error" class="notice error item-error" role="alert" hidden></p></div><div class="dialog-actions"><button type="button" id="cancel-flag-confirmation">Keep editing</button><button type="submit" id="confirm-flag-submit" class="primary" disabled>Save changes</button></div></form>
   </dialog>
   <dialog id="discard-dialog" class="confirm-dialog" aria-labelledby="discard-title" aria-describedby="discard-description">
     <div class="dialog-content"><h2 id="discard-title">Discard your changes?</h2><p id="discard-description" class="muted">Your edits have not been saved. Keep editing or discard them to continue.</p></div><div class="dialog-actions"><button type="button" id="keep-editing" autofocus>Keep editing</button><button type="button" id="discard-changes" class="primary">Discard changes</button></div>

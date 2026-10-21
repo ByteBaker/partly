@@ -8,7 +8,7 @@ import subprocess
 from contextlib import contextmanager
 
 import test_sdk_contract as contract
-from conftest import ROOT, make_key
+from conftest import ROOT, make_key, scope_for
 
 NATIVE_SOURCE = r'''
 // Copyright 2026 ByteBaker
@@ -17,7 +17,7 @@ use std::ffi::{c_char, c_int, CString};
 
 #[no_mangle]
 pub unsafe extern "C" fn partly_snapshot_new(_: *const u8, _: usize, scope: *mut *mut c_char) -> *mut u8 {
-    *scope = CString::new("scope").unwrap().into_raw();
+    *scope = CString::new(r#"["default","development","APPLICATION_ID"]"#).unwrap().into_raw();
     Box::into_raw(Box::new(0))
 }
 #[no_mangle]
@@ -63,7 +63,7 @@ crate-type = ["staticlib"]
     run.mkdir()
 
     for decision in ("enabled", "disabled"):
-        native.write_text(NATIVE_SOURCE.replace("DECISION", decision))
+        native.write_text(NATIVE_SOURCE.replace("DECISION", decision).replace("APPLICATION_ID", scope_for(key)[1]))
         with contextmanager(contract.driver.__wrapped__)("go", run) as driver:
             assert driver.call("build", url=server.url, key=key, interval=3600, timeout=1) == {"ok": True}
             assert driver.call("init") == {"ok": True}

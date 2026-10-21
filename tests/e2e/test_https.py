@@ -11,7 +11,16 @@ from pathlib import Path
 import httpx
 import pytest
 import trustme
-from conftest import ADMIN_HEADERS, PASSWORD, ROOT, Server, make_key, save_flag
+from conftest import (
+    ADMIN_HEADERS,
+    PASSWORD,
+    ROOT,
+    Server,
+    keys,
+    make_key,
+    save_flag,
+    scope_for,
+)
 from playwright.sync_api import expect, sync_playwright
 from test_dashboard import create_flag, create_key, login
 
@@ -43,7 +52,7 @@ def tls_server(tmp_path, tls_files):
 
 
 def sdk_client(server, key, ca_bundle=None):
-    builder = Client.builder().url(server.url).secret_key(key).poll_interval(60).timeout(2)
+    builder = Client.builder().url(server.url).environment(scope_for(key)[0]).application_id(scope_for(key)[1]).secret_key(key).poll_interval(60).timeout(2)
     if ca_bundle is not None:
         builder.ca_bundle(ca_bundle)
     return builder.build()
@@ -66,10 +75,10 @@ def test_https_setup_cookies_origins_and_hostname(tls_server):
             {"Origin": server.url.replace("https:", "http:"), "X-Forwarded-Proto": "http"},
             {"Origin": server.url.replace("https:", "http:"), "Forwarded": f'proto=http;host="127.0.0.1:{server.port}"'},
         ]:
-            response = admin.post("/api/environments/development/keys", json={"name": "Rejected"}, headers=headers)
+            response = admin.post("/api/environments/development/apps", json={"name": "Rejected"}, headers=headers)
             assert response.status_code == 403
             assert response.headers["cache-control"] == "no-store"
-        assert len(admin.get("/api/environments/development/keys").json()["keys"]) == 1
+        assert len(keys(admin, "development")) == 1
         assert admin.get("/api/status", headers={"Host": f"partly.test:{server.port}"}).status_code == 200
         assert admin.get("/api/status", headers={"Host": f"partly.test:{server.port}", "Origin": f"https://partly.test:{server.port}"}).status_code == 200
         assert admin.get("/api/status", headers={"Host": "unknown.example", "X-Forwarded-Host": "partly.test"}).status_code == 421
@@ -132,7 +141,7 @@ async def test_https_sdk_trust_refresh_and_outage(tls_server, tls_files, monkeyp
 async def test_https_client_never_downgrades_to_plain_http(server, admin):
     _, key = make_key(admin)
     save_flag(admin, flag={"mode": "enabled"})
-    client = Client.builder().url(server.url.replace("http:", "https:")).secret_key(key).timeout(1).build()
+    client = Client.builder().url(server.url.replace("http:", "https:")).environment(scope_for(key)[0]).application_id(scope_for(key)[1]).secret_key(key).timeout(1).build()
     try:
         with pytest.raises(RefreshError):
             await client.init()
@@ -227,12 +236,12 @@ def test_https_dashboard_setup_login_flags_and_keys(tls_server):
             session = next(cookie for cookie in context.cookies() if cookie["name"] == "partly_session")
             assert session["secure"] and session["httpOnly"] and session["sameSite"] == "Strict"
             create_flag(page, "new_checkout", "enabled")
-            page.get_by_role("tab", name="Key Management").click()
+            page.get_by_role("tab", name="Apps & Keys").click()
             create_key(page, "HTTPS application")
-            expect(page.locator(".key-controls input")).to_have_value(re.compile(r"pk_[A-Za-z0-9]{24}"))
+            expect(page.locator(".key-controls input")).to_have_value(re.compile(r"pk_[A-Za-z0-9]{4}•+[A-Za-z0-9]{4}"))
             page.get_by_role("button", name="Sign out").click()
             expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
-            login(page, server, screen="keys")
+            login(page, server, screen="apps")
             expect(page.get_by_label("Name for HTTPS application", exact=True)).to_be_visible()
             assert writes
             for request in writes:

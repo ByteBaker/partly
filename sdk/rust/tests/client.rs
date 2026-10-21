@@ -8,6 +8,8 @@ use std::time::Duration;
 fn build_validates_without_a_runtime_or_network() {
     assert!(Client::builder()
         .url("https://127.0.0.1:1")
+        .environment("development")
+        .application_id("app_test")
         .secret_key("key")
         .build()
         .is_ok());
@@ -24,6 +26,8 @@ fn build_validates_without_a_runtime_or_network() {
         assert!(
             Client::builder()
                 .url(url)
+                .environment("development")
+                .application_id("app_test")
                 .secret_key("key")
                 .build()
                 .is_err(),
@@ -32,11 +36,15 @@ fn build_validates_without_a_runtime_or_network() {
     }
     assert!(Client::builder()
         .url("http://localhost")
+        .environment("development")
+        .application_id("app_test")
         .secret_key("key\n")
         .build()
         .is_err());
     assert!(Client::builder()
         .url("http://localhost")
+        .environment("development")
+        .application_id("app_test")
         .secret_key("key")
         .timeout(Duration::ZERO)
         .build()
@@ -57,6 +65,8 @@ fn url_parse_errors_preserve_their_type_and_source_without_credentials() {
     ] {
         let error = Client::builder()
             .url(url)
+            .environment("development")
+            .application_id("app_test")
             .secret_key("private-api-key")
             .build()
             .err()
@@ -76,6 +86,8 @@ fn url_parse_errors_preserve_their_type_and_source_without_credentials() {
     ] {
         let error = Client::builder()
             .url(url)
+            .environment("development")
+            .application_id("app_test")
             .secret_key("key")
             .build()
             .err()
@@ -90,6 +102,8 @@ fn url_parse_errors_preserve_their_type_and_source_without_credentials() {
 async fn lifecycle_errors_do_not_need_a_policy() {
     let client = Client::builder()
         .url("http://127.0.0.1:1")
+        .environment("development")
+        .application_id("app_test")
         .secret_key("key")
         .build()
         .unwrap();
@@ -120,6 +134,8 @@ async fn closing_cancels_an_initial_download_without_waiting_for_timeout() {
     let client = std::sync::Arc::new(
         Client::builder()
             .url(format!("http://{address}"))
+            .environment("development")
+            .application_id("app_test")
             .secret_key("key")
             .build()
             .unwrap(),
@@ -150,7 +166,7 @@ async fn invalid_policy_errors_redact_response_values_and_retain_policy_and_etag
 
     const SENTINEL: &str = "private-response-value";
     let policy = serde_json::json!({
-        "schema_version": 1, "project": "default", "environment": "development",
+        "schema_version": 1, "application_id": "app_test", "project": "default", "environment": "development",
         "revision": 1, "flags": {"flag": {"mode": "enabled"}}
     });
     let accepted_body = policy.to_string();
@@ -186,6 +202,8 @@ async fn invalid_policy_errors_redact_response_values_and_retain_policy_and_etag
     });
     let client = Client::builder()
         .url(format!("http://{address}"))
+        .environment("development")
+        .application_id("app_test")
         .secret_key("key")
         .poll_interval(Duration::from_millis(20))
         .timeout(Duration::from_secs(1))
@@ -224,4 +242,29 @@ async fn invalid_policy_errors_redact_response_values_and_retain_policy_and_etag
     );
     peer.abort();
     assert!(peer.await.unwrap_err().is_cancelled());
+}
+
+#[test]
+fn application_scope_is_required_and_validated() {
+    for value in ["", "Bad", "app name", "app\n"] {
+        assert!(Client::builder()
+            .url("http://localhost")
+            .secret_key("key")
+            .environment("development")
+            .application_id(value)
+            .build()
+            .is_err());
+        assert!(Client::builder()
+            .url("http://localhost")
+            .secret_key("key")
+            .environment(value)
+            .application_id("app_test")
+            .build()
+            .is_err());
+    }
+    assert!(Client::builder()
+        .url("http://localhost")
+        .secret_key("key")
+        .build()
+        .is_err());
 }

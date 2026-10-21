@@ -16,6 +16,7 @@ from .client import (
     ClientBuilder,
     ClientClosedError,
     Decision,
+    KeyRevokedError,
     PolicyNotReadyError,
     RefreshError,
 )
@@ -23,5 +24,5 @@ from .client import (
 __all__ = [
     "Client", "ClientBuilder", "Decision", "PartlyError", "AuthenticationError",
     "ClientClosedError", "ContextTypeError", "FlagNotFoundError", "InvalidContextError",
-    "InvalidPolicyError", "PolicyNotReadyError", "RefreshError",
+    "InvalidPolicyError", "PolicyNotReadyError", "RefreshError", "KeyRevokedError",
 ]

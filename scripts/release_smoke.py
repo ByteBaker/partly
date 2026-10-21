@@ -41,14 +41,15 @@ async def exercise(url: str, bundle: Path, verify: ssl.SSLContext) -> None:
             "key": "release_smoke", "mode": "enabled",
         })
         assert response.status_code == 201
-        response = await admin.post("/api/environments/development/keys", json={"name": "Release smoke"})
-        assert response.status_code == 200
-        client = Client.builder().url(url).secret_key(response.json()["secret"]).ca_bundle(bundle).build()
+        response = await admin.post("/api/environments/development/apps", json={"name": "Release smoke", "flags": ["release_smoke"]})
+        assert response.status_code == 201
+        client = Client.builder().url(url).environment("development").application_id(response.json()["id"]).secret_key(response.json()["keys"][0]["secret"]).ca_bundle(bundle).build()
         try:
             await client.init()
             assert client.evaluate("release_smoke", context={}) is Decision.ENABLED
             assert await client.refresh() is False
-            response = await admin.put("/api/environments/development/flags/release_smoke", json={"mode": "disabled"})
+            impact = await admin.get("/api/environments/development/flags/release_smoke/impact")
+            response = await admin.put("/api/environments/development/flags/release_smoke", json={"mode": "disabled"}, headers={"X-Partly-Confirm": "development/release_smoke", "X-Partly-Impact": impact.json()["token"]})
             assert response.status_code == 200
             assert await client.refresh() is True
             assert client.evaluate("release_smoke", context={}) is Decision.DISABLED

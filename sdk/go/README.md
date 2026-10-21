@@ -31,7 +31,7 @@ The build copies the Rust library into `sdk/go/native/<os>_<arch>/`. Build it fo
 
 ## Client contract
 
-Build with `NewClientBuilder().URL(url).SecretKey(key).Build()`. Construction does not contact the server.
+Build with `NewClientBuilder().URL(url).Environment(env).ApplicationID(appID).SecretKey(key).Build()`. Construction does not contact the server.
 
 | Method | Behavior |
 | --- | --- |
@@ -49,7 +49,7 @@ Use `errors.Is(err, partly.ErrFlagNotFound)` or the other exported `Err*` values
 
 Context accepts strings, booleans, standard integer and float types, and `json.Number`. Use integers or `json.Number` to preserve exact large values. Floats must be finite; pointers, structs, custom marshalers, and nested values are rejected. See [shared rules](../../crates/partly-core/README.md).
 
-Failed refreshes preserve the accepted policy and ETag. Closed clients can still evaluate that policy, but cannot reconnect. Native snapshots are released when no Go references remain.
+Ordinary failed refreshes preserve the accepted policy and ETag. Closed clients can still evaluate that policy, but cannot reconnect. Native snapshots are released when no Go references remain.
 
 ```sh
 cd sdk/go
@@ -57,3 +57,9 @@ go test -a -race ./...
 ```
 
 [Apache-2.0](LICENSE).
+
+## Application scope and revocation
+
+Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.Environment("development").ApplicationID("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
+
+A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `ErrKeyRevoked`. Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh reaches the server.

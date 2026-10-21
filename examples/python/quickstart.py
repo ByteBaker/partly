@@ -6,6 +6,8 @@ import asyncio
 from partly import Client, Decision, PartlyError
 
 CONTROL_PLANE_URL = "http://127.0.0.1:8080"
+ENVIRONMENT = "development"
+APPLICATION_ID = "YOUR_APPLICATION_ID"
 API_KEY = "YOUR_API_KEY"
 
 
@@ -18,6 +20,8 @@ async def main() -> None:
     client = (
         Client.builder()
         .url(CONTROL_PLANE_URL)
+        .environment(ENVIRONMENT)
+        .application_id(APPLICATION_ID)
         .secret_key(API_KEY)
         .build()
     )

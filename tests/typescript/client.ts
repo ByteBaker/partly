@@ -4,7 +4,7 @@
 import { Client, Context, Decision, PartlyError } from "../../sdk/node";
 
 async function lifecycle(): Promise<void> {
-  const client = Client.builder().url("https://partly.example.com").secretKey("key").build();
+  const client = Client.builder().url("https://partly.example.com").environment("development").applicationId("app_test").secretKey("key").build();
   try {
     await client.init();
     const context: Context = { id: "user-1", age: 21, verified: true };

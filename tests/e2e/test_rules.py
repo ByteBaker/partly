@@ -4,7 +4,7 @@
 """Exercise saved rules through the real server and installed native SDK."""
 
 import pytest
-from conftest import RULE_CASES, make_key
+from conftest import RULE_CASES, make_key, scope_for
 
 from partly import Client, ContextTypeError, Decision, InvalidContextError, RefreshError
 
@@ -22,7 +22,7 @@ def create_flag(admin, key, flag, environment="development"):
 
 
 def client_for(server, secret):
-    return Client.builder().url(server.url).secret_key(secret).poll_interval(3600).timeout(1).build()
+    return Client.builder().url(server.url).environment(scope_for(secret)[0]).application_id(scope_for(secret)[1]).secret_key(secret).poll_interval(3600).timeout(1).build()
 
 
 async def test_all_typed_operators_through_saved_policy(server, admin):

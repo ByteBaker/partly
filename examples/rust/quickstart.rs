@@ -4,6 +4,8 @@
 use partly::{Client, Context, Decision, Error};
 
 const CONTROL_PLANE_URL: &str = "http://127.0.0.1:8080";
+const ENVIRONMENT: &str = "development";
+const APPLICATION_ID: &str = "YOUR_APPLICATION_ID";
 const API_KEY: &str = "YOUR_API_KEY";
 
 fn checkout(client: &Client, context: &Context) -> Result<&'static str, Error> {
@@ -17,6 +19,8 @@ fn checkout(client: &Client, context: &Context) -> Result<&'static str, Error> {
 async fn main() -> Result<(), Error> {
     let client = Client::builder()
         .url(CONTROL_PLANE_URL)
+        .environment(ENVIRONMENT)
+        .application_id(APPLICATION_ID)
         .secret_key(API_KEY)
         .build()?;
     let result = async {

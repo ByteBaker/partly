@@ -22,7 +22,7 @@ impl Snapshot {
         self.0.flags.contains_key(key)
     }
     pub fn scope(&self) -> String {
-        json!([self.0.project, self.0.environment]).to_string()
+        json!([self.0.project, self.0.environment, self.0.application_id]).to_string()
     }
     pub fn evaluate(&self, bytes: &[u8]) -> String {
         #[derive(Deserialize)]
@@ -145,7 +145,7 @@ pub unsafe extern "C" fn partly_string_free(value: *mut c_char) {
 mod tests {
     use super::*;
     const POLICY: &[u8] =
-        br#"{"schema_version":1,"project":"default","environment":"development","revision":1,
+        br#"{"schema_version":1,"application_id":"app_test","project":"default","environment":"development","revision":1,
         "flags":{"flag":{"mode":"percentage","percentage":50}}}"#;
     #[test]
     fn boundary_preserves_errors_and_rejects_rounded_integers() {

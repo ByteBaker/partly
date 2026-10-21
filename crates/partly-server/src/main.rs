@@ -6,7 +6,7 @@ mod store;
 
 use axum::{
     body::{Body, Bytes},
-    extract::{ConnectInfo, DefaultBodyLimit, Path, State},
+    extract::{ConnectInfo, DefaultBodyLimit, Path, Query, State},
     http::{header, HeaderMap, HeaderValue, Method, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -130,6 +130,7 @@ impl From<rusqlite::Error> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        let revoked = self.0 == StatusCode::UNAUTHORIZED && self.1 == "key_revoked";
         let message = if self.0.is_server_error() {
             eprintln!("{}", self.1);
             "Storage operation failed. Check the server terminal.".to_owned()
@@ -137,6 +138,16 @@ impl IntoResponse for ApiError {
             self.1
         };
         let mut response = (self.0, Json(json!({"error": message}))).into_response();
+        if revoked {
+            response = (
+                self.0,
+                Json(json!({"error": "API Key revoked", "code": "key_revoked"})),
+            )
+                .into_response();
+            response
+                .headers_mut()
+                .insert("x-partly-error", HeaderValue::from_static("key_revoked"));
+        }
         if self.0 == StatusCode::TOO_MANY_REQUESTS {
             response
                 .headers_mut()
@@ -473,6 +484,11 @@ async fn save_flag(
     app.run(move |s| {
         s.authorize(&session(&headers))?;
         let flag: Flag = parse_flag(&headers, &body)?;
+        if !partly_core::valid_key(&key) {
+            return Err(ApiError::bad("Invalid flag key"));
+        }
+        flag.validate().map_err(ApiError::bad)?;
+        check_flag_confirmation(s, &headers, &env, &key)?;
         s.save_flag(&env, &key, &flag, false)?;
         Ok(Json(SavedFlag { key, flag }))
     })
@@ -486,22 +502,126 @@ async fn delete_flag(
 ) -> Result<StatusCode, ApiError> {
     app.run(move |s| {
         s.authorize(&session(&headers))?;
+        check_flag_confirmation(s, &headers, &env, &key)?;
         s.delete_flag(&env, &key)?;
         Ok(StatusCode::NO_CONTENT)
     })
     .await
 }
 
-async fn keys(
+fn flag_impact_value(s: &Store, env: &str, key: &str) -> Result<Value, ApiError> {
+    let apps = s.flag_impact(env, key)?;
+    let policy = s.policy(env)?;
+    let bytes = serde_json::to_vec(&json!({"flag": policy.flags.get(key), "applications": apps}))
+        .map_err(|_| ApiError::internal("Cannot encode impact"))?;
+    Ok(json!({"applications": apps, "token": format!("{:x}", Sha256::digest(bytes))}))
+}
+
+fn check_flag_confirmation(
+    s: &Store,
+    headers: &HeaderMap,
+    env: &str,
+    key: &str,
+) -> Result<(), ApiError> {
+    let impact = flag_impact_value(s, env, key)?;
+    if headers
+        .get("x-partly-confirm")
+        .and_then(|v| v.to_str().ok())
+        != Some(format!("{env}/{key}").as_str())
+    {
+        return Err(ApiError::bad("Confirm the exact environment/flag name"));
+    }
+    if headers.get("x-partly-impact").and_then(|v| v.to_str().ok()) != impact["token"].as_str() {
+        return Err(ApiError::conflict("The flag or its applications changed. Review the affected applications and confirm again."));
+    }
+    Ok(())
+}
+
+async fn flag_impact(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Path((env, key)): Path<(String, String)>,
+) -> Result<Json<Value>, ApiError> {
+    app.run(move |s| {
+        s.authorize(&session(&headers))?;
+        Ok(Json(flag_impact_value(s, &env, &key)?))
+    })
+    .await
+}
+
+async fn applications(
     State(app): State<App>,
     headers: HeaderMap,
     Path(env): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     app.run(move |s| {
         s.authorize(&session(&headers))?;
-        Ok(Json(json!({"keys": s.keys(&env)?})))
+        Ok(Json(json!({"applications": s.applications(&env)?})))
     })
     .await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApplicationInput {
+    name: String,
+    flags: Vec<String>,
+}
+
+async fn create_application(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Path(env): Path<String>,
+    Json(input): Json<ApplicationInput>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    app.run(move |s| {
+        s.authorize(&session(&headers))?;
+        Ok((
+            StatusCode::CREATED,
+            Json(json!(s.save_application(
+                &env,
+                None,
+                &input.name,
+                &input.flags
+            )?)),
+        ))
+    })
+    .await
+}
+
+async fn save_application(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Path((env, id)): Path<(String, String)>,
+    Json(input): Json<ApplicationInput>,
+) -> Result<Json<Value>, ApiError> {
+    app.run(move |s| {
+        s.authorize(&session(&headers))?;
+        Ok(Json(json!(s.save_application(
+            &env,
+            Some(&id),
+            &input.name,
+            &input.flags
+        )?)))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuditQuery {
+    before: Option<i64>,
+    action: Option<String>,
+    application_id: Option<String>,
+}
+
+async fn audits(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Path(env): Path<String>,
+    Query(query): Query<AuditQuery>,
+) -> Result<Json<Value>, ApiError> {
+    app.run(move |s| { s.authorize(&session(&headers))?; Ok(Json(json!({"audits": s.audits(&env, query.before, query.action.as_deref(), query.application_id.as_deref())?}))) }).await
 }
 
 #[derive(Deserialize)]
@@ -513,12 +633,12 @@ struct KeyName {
 async fn create_key(
     State(app): State<App>,
     headers: HeaderMap,
-    Path(env): Path<String>,
+    Path((env, id)): Path<(String, String)>,
     Json(input): Json<KeyName>,
 ) -> Result<Json<Value>, ApiError> {
     app.run(move |s| {
         s.authorize(&session(&headers))?;
-        Ok(Json(json!(s.create_key(&env, &input.name)?)))
+        Ok(Json(json!(s.create_key(&env, &id, &input.name)?)))
     })
     .await
 }
@@ -531,7 +651,7 @@ async fn rename_key(
 ) -> Result<StatusCode, ApiError> {
     app.run(move |s| {
         s.authorize(&session(&headers))?;
-        s.rename_key(&id, &input.name)?;
+        s.change_key(&id, Some(&input.name))?;
         Ok(StatusCode::NO_CONTENT)
     })
     .await
@@ -544,7 +664,7 @@ async fn revoke_key(
 ) -> Result<StatusCode, ApiError> {
     app.run(move |s| {
         s.authorize(&session(&headers))?;
-        s.revoke_key(&id)?;
+        s.change_key(&id, None)?;
         Ok(StatusCode::NO_CONTENT)
     })
     .await
@@ -558,8 +678,15 @@ async fn policy(State(app): State<App>, headers: HeaderMap) -> Result<Response, 
         .ok_or_else(ApiError::unauthorized)?
         .to_owned();
     app.run(move |s| {
-        let env = s.key_environment(&key)?;
-        let body = serde_json::to_vec(&s.policy(&env)?)
+        let env = headers
+            .get("x-partly-environment")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let application = headers
+            .get("x-partly-application")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let body = serde_json::to_vec(&s.app_policy(&key, env, application)?)
             .map_err(|_| ApiError::internal("Cannot encode policy"))?;
         let etag = format!("\"{:x}\"", Sha256::digest(&body));
         let matches = headers
@@ -593,7 +720,7 @@ async fn environment_dashboard(
     State(app): State<App>,
     Path((env, screen)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
-    if !matches!(screen.as_str(), "flags" | "keys" | "docs") {
+    if !matches!(screen.as_str(), "flags" | "apps" | "audits" | "docs") {
         return Err(ApiError::not_found("Unknown screen"));
     }
     app.run(move |s| s.environment(&env)).await?;
@@ -735,7 +862,17 @@ async fn serve(
             "/api/environments/{env}/flags/{key}",
             put(save_flag).delete(delete_flag),
         )
-        .route("/api/environments/{env}/keys", get(keys).post(create_key))
+        .route(
+            "/api/environments/{env}/flags/{key}/impact",
+            get(flag_impact),
+        )
+        .route(
+            "/api/environments/{env}/apps",
+            get(applications).post(create_application),
+        )
+        .route("/api/environments/{env}/apps/{id}", put(save_application))
+        .route("/api/environments/{env}/apps/{id}/keys", post(create_key))
+        .route("/api/environments/{env}/audits", get(audits))
         .route("/api/keys/{id}", put(rename_key).delete(revoke_key))
         .route("/api/policy", get(policy))
         .layer(DefaultBodyLimit::max(16 * 1024))

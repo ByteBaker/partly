@@ -13,7 +13,16 @@ from pathlib import Path
 import httpx
 import pytest
 import trustme
-from conftest import ADMIN_HEADERS, PASSWORD, ROOT, Server, make_key, save_flag
+from conftest import (
+    ADMIN_HEADERS,
+    PASSWORD,
+    ROOT,
+    Server,
+    keys,
+    make_key,
+    policy_headers,
+    save_flag,
+)
 
 
 def command(*arguments, password=None):
@@ -84,7 +93,7 @@ def test_password_reset_requires_offline_database_and_preserves_flags_keys(serve
     assert admin.post("/api/login", json={"username": "admin", "password": PASSWORD}).status_code == 401
     assert admin.post("/api/login", json={"username": "admin", "password": new_password}).status_code == 200
     with httpx.Client(base_url=server.url, trust_env=False) as sdk:
-        response = sdk.get("/api/policy", headers={"Authorization": f"Bearer {secret}"})
+        response = sdk.get("/api/policy", headers=policy_headers(secret))
         assert response.status_code == 200 and response.json()["flags"]["new_checkout"]["percentage"] == 37
     assert new_password not in (server.directory / "server.log").read_text()
 
@@ -117,7 +126,7 @@ def test_hard_linked_database_is_rejected_without_changes(server, admin, running
     server.start()
     assert admin.post("/api/login", json={"username": "admin", "password": "replacement-password-123"}).status_code == 200
     assert admin.get("/api/environments/development/flags").json()["new_checkout"]["percentage"] == 37
-    assert len(admin.get("/api/environments/development/keys").json()["keys"]) == 1
+    assert len(keys(admin, "development")) == 1
 
 
 @pytest.mark.parametrize("password", ["short\n", "x" * 1025, "first-password\nsecond-password\n"])
@@ -198,7 +207,7 @@ def test_login_throttle_uses_peer_address_and_keeps_policy_available(server, adm
         response = attacker.post("/api/login", json={"username": "admin", "password": PASSWORD}, headers={"X-Forwarded-For": "198.51.100.1"})
         assert response.status_code == 429 and response.headers["retry-after"] == "60"
         assert response.headers["cache-control"] == "no-store"
-        assert attacker.get("/api/policy", headers={"Authorization": f"Bearer {secret}"}).status_code == 200
+        assert attacker.get("/api/policy", headers=policy_headers(secret)).status_code == 200
     assert admin.get("/api/environments").status_code == 200
 
 
@@ -209,7 +218,7 @@ def test_concurrent_logins_and_policy_reads(server, admin):
         with httpx.Client(base_url=server.url, trust_env=False, timeout=5) as client:
             if index % 2:
                 return "login", client.post("/api/login", headers=ADMIN_HEADERS, json={"username": "admin", "password": "incorrect-password"}).status_code
-            return "policy", client.get("/api/policy", headers={"Authorization": f"Bearer {secret}"}).status_code
+            return "policy", client.get("/api/policy", headers=policy_headers(secret)).status_code
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
         results = list(pool.map(request, range(20)))
     assert all(status == 200 for kind, status in results if kind == "policy")

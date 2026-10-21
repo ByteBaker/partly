@@ -17,6 +17,7 @@ class InvalidContextError extends PartlyError {}
 class ContextTypeError extends InvalidContextError {}
 class PolicyNotReadyError extends PartlyError {}
 class AuthenticationError extends PartlyError {}
+class KeyRevokedError extends AuthenticationError {}
 class InvalidPolicyError extends PartlyError {}
 class RefreshError extends PartlyError {}
 class ClientClosedError extends PartlyError {}
@@ -30,6 +31,8 @@ class ClientBuilder {
   #options = { interval: 30, timeout: 5 };
   url(value) { this.#options.url = value; return this; }
   secretKey(value) { this.#options.key = value; return this; }
+  environment(value) { this.#options.environment = value; return this; }
+  applicationId(value) { this.#options.applicationId = value; return this; }
   pollInterval(value) { this.#options.interval = value; return this; }
   timeout(value) { this.#options.timeout = value; return this; }
   caBundle(value) { this.#options.ca = value; return this; }
@@ -45,6 +48,9 @@ class ClientBuilder {
     }
     if (typeof options.key !== "string" || !/^[\x21-\x7e]+$/u.test(options.key)) {
       throw new TypeError("Supply a nonempty ASCII API Key without whitespace");
+    }
+    for (const value of [options.environment, options.applicationId]) {
+      if (typeof value !== "string" || !/^[a-z0-9_-]{1,64}$/u.test(value)) throw new TypeError("Supply an environment name and application ID");
     }
     for (const value of [options.interval, options.timeout]) {
       if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value * 1000 > 2147483647) {
@@ -65,6 +71,7 @@ class Client {
   #snapshot;
   #etag;
   #closed = false;
+  #revoked = false;
   #queue = Promise.resolve();
   #timer;
   #abort = new AbortController();
@@ -72,7 +79,7 @@ class Client {
   constructor(options) { this.#options = options; }
   static builder() { return new ClientBuilder(); }
   get lastRefreshError() { return this.#lastError; }
-  #checkOpen() { if (this.#closed) throw new ClientClosedError("Client is closed"); }
+  #checkOpen() { if (this.#revoked) throw new KeyRevokedError("API Key revoked; build a new client with a valid key"); if (this.#closed) throw new ClientClosedError("Client is closed"); }
   #serial(operation) {
     const next = this.#queue.then(operation);
     this.#queue = next.catch(() => {});
@@ -107,7 +114,7 @@ class Client {
     });
   }
   #schedule() {
-    if (this.#closed) return;
+    if (this.#closed || this.#revoked) return;
     this.#timer = setTimeout(async () => {
       try { await this.refresh(); } catch (error) { this.#lastError = error; }
       this.#schedule();
@@ -115,7 +122,7 @@ class Client {
     this.#timer.unref();
   }
   async #request() {
-    const headers = { Authorization: `Bearer ${this.#options.key}` };
+    const headers = { Authorization: `Bearer ${this.#options.key}`, "X-Partly-Environment": this.#options.environment, "X-Partly-Application": this.#options.applicationId };
     if (this.#etag) headers["If-None-Match"] = this.#etag;
     const transport = this.#options.url.protocol === "https:" ? https : http;
     const request = transport.get(this.#options.url, {
@@ -130,7 +137,7 @@ class Client {
       const tag = response.headers.etag;
       if (status !== 200) {
         response.destroy();
-        return { status, tag };
+        return { status, tag, revoked: response.headers["x-partly-error"] === "key_revoked" };
       }
       const chunks = [];
       let length = 0;
@@ -147,8 +154,15 @@ class Client {
   }
   async #download() {
     try {
-      const { status, tag, body } = await this.#request();
+      const { status, tag, body, revoked } = await this.#request();
       this.#checkOpen();
+      if (status === 401 && revoked) {
+        this.#revoked = true;
+        this.#snapshot = undefined;
+        this.#etag = undefined;
+        clearTimeout(this.#timer);
+        throw new KeyRevokedError("API Key revoked; build a new client with a valid key");
+      }
       if (status === 401 || status === 403) throw new AuthenticationError("API Key rejected");
       if (status === 304) {
         if (!this.#snapshot || (tag !== undefined && tag !== this.#etag)) {
@@ -165,6 +179,8 @@ class Client {
       try { snapshot = await native.parsePolicy(body); }
       catch { throw new InvalidPolicyError("Policy validation failed"); }
       this.#checkOpen();
+      const scope = JSON.parse(snapshot.scope);
+      if (scope[1] !== this.#options.environment || scope[2] !== this.#options.applicationId) throw new InvalidPolicyError("Policy does not match configured scope");
       if (this.#snapshot && this.#snapshot.scope !== snapshot.scope) throw new InvalidPolicyError("Policy scope changed");
       this.#snapshot = snapshot;
       this.#etag = tag;
@@ -178,6 +194,7 @@ class Client {
     }
   }
   evaluate(flag, context = {}) {
+    if (this.#revoked) throw new KeyRevokedError("API Key revoked; build a new client with a valid key");
     if (!this.#snapshot) throw new PolicyNotReadyError("Await init first");
     if (typeof flag !== "string") throw new TypeError("Flag key must be a string");
     if (!this.#snapshot.containsFlag(flag)) {
@@ -218,5 +235,5 @@ class Client {
 
 module.exports = {
   Client, ClientBuilder, Decision, PartlyError, FlagNotFoundError, InvalidContextError, ContextTypeError,
-  PolicyNotReadyError, AuthenticationError, InvalidPolicyError, RefreshError, ClientClosedError,
+  PolicyNotReadyError, AuthenticationError, KeyRevokedError, InvalidPolicyError, RefreshError, ClientClosedError,
 };

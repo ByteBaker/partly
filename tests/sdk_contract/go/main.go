@@ -17,14 +17,16 @@ import (
 )
 
 type command struct {
-	Op       string         `json:"op"`
-	URL      string         `json:"url"`
-	Key      string         `json:"key"`
-	CABundle string         `json:"ca_bundle"`
-	Interval float64        `json:"interval"`
-	Timeout  float64        `json:"timeout"`
-	Flag     string         `json:"flag"`
-	Context  map[string]any `json:"context"`
+	Environment   string         `json:"environment"`
+	ApplicationID string         `json:"application_id"`
+	Op            string         `json:"op"`
+	URL           string         `json:"url"`
+	Key           string         `json:"key"`
+	CABundle      string         `json:"ca_bundle"`
+	Interval      float64        `json:"interval"`
+	Timeout       float64        `json:"timeout"`
+	Flag          string         `json:"flag"`
+	Context       map[string]any `json:"context"`
 }
 
 func errorCode(err error) string {
@@ -37,6 +39,8 @@ func errorCode(err error) string {
 		return "invalid_context"
 	case errors.Is(err, partly.ErrPolicyNotReady):
 		return "policy_not_ready"
+	case errors.Is(err, partly.ErrKeyRevoked):
+		return "key_revoked"
 	case errors.Is(err, partly.ErrAuthentication):
 		return "authentication"
 	case errors.Is(err, partly.ErrInvalidPolicy):
@@ -56,7 +60,7 @@ func execute(client **partly.Client, input command) (map[string]any, error) {
 	var err error
 	switch input.Op {
 	case "build":
-		builder := partly.NewClientBuilder().URL(input.URL).SecretKey(input.Key).
+		builder := partly.NewClientBuilder().URL(input.URL).Environment(input.Environment).ApplicationID(input.ApplicationID).SecretKey(input.Key).
 			PollInterval(time.Duration(input.Interval * float64(time.Second))).
 			Timeout(time.Duration(input.Timeout * float64(time.Second)))
 		if input.CABundle != "" {

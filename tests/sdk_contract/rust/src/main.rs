@@ -23,6 +23,7 @@ fn error_response(error: Error) -> Value {
             });
         }
         Error::PolicyNotReady => "policy_not_ready",
+        Error::KeyRevoked => "key_revoked",
         Error::Authentication => "authentication",
         Error::InvalidPolicy(_) => "invalid_policy",
         Error::Refresh(_) => "refresh",
@@ -37,6 +38,8 @@ async fn execute(client: &mut Option<Client>, command: Value) -> Result<Value, E
     if op == "build" {
         let mut builder = Client::builder()
             .url(command["url"].as_str().expect("url"))
+            .environment(command["environment"].as_str().expect("environment"))
+            .application_id(command["application_id"].as_str().expect("application_id"))
             .secret_key(command["key"].as_str().expect("key"))
             .poll_interval(Duration::from_secs_f64(
                 command["interval"].as_f64().expect("interval"),

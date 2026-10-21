@@ -5,7 +5,7 @@ import asyncio
 import os
 import re
 
-from conftest import PASSWORD, ROOT
+from conftest import PASSWORD, ROOT, scope_for
 from playwright.sync_api import expect, sync_playwright
 
 from partly import Client, Decision
@@ -50,13 +50,45 @@ def create_flag(page, key, mode="disabled", percentage=None):
     expect(page.locator(f'.flag-row[data-key="{key}"]')).to_be_visible()
 
 
-def create_key(page, name):
-    page.locator("#generate-key").click()
-    dialog = page.get_by_role("dialog", name="Generate API Key", exact=True)
-    dialog.get_by_label("Key name", exact=True).fill(name)
-    dialog.get_by_role("button", name="Generate key", exact=True).click()
+def ensure_app(page):
+    if page.locator(".app-row").count():
+        return False
+    page.get_by_role("button", name="Create app", exact=True).click()
+    dialog = page.get_by_role("dialog", name="Create app", exact=True)
+    dialog.get_by_label("Application name", exact=True).fill("Test application")
+    for checkbox in dialog.get_by_role("checkbox").all():
+        checkbox.check()
+    dialog.get_by_role("button", name="Create app", exact=True).click()
     expect(dialog).to_be_hidden()
+    expect(page.locator(".app-row")).to_be_visible()
+    return True
+
+
+def open_key(page):
+    ensure_app(page)
+    page.get_by_role("button", name="Create key", exact=True).click()
+
+
+def create_key(page, name):
+    if ensure_app(page):
+        page.get_by_label("Name for Default", exact=True).fill(name)
+        page.get_by_role("button", name="Save name for Default", exact=True).click()
+    else:
+        open_key(page)
+        dialog = page.get_by_role("dialog", name="Generate API Key", exact=True)
+        dialog.get_by_label("Key name", exact=True).fill(name)
+        dialog.get_by_role("button", name="Generate key", exact=True).click()
+        expect(dialog).to_be_hidden()
     expect(page.get_by_label(f"Name for {name}", exact=True)).to_be_visible()
+
+
+def confirm_flag(page, key):
+    environment = page.url.split("/environments/")[1].split("/")[0]
+    modal = page.locator("#confirm-flag-dialog")
+    expect(modal).to_be_visible()
+    modal.locator("#confirm-flag-input").fill(f"{environment}/{key}")
+    modal.locator("#confirm-flag-submit").click()
+    expect(modal).to_be_hidden()
 
 
 def test_dashboard_setup_flags_keys_and_restart(server):
@@ -76,20 +108,21 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         create_flag(page, "new_checkout", "percentage", 25)
         page.get_by_label("Percentage for new_checkout").fill("50")
         page.get_by_role("button", name="Save new_checkout", exact=True).click()
+        confirm_flag(page, "new_checkout")
         expect(page.get_by_role("status")).to_contain_text("Saved")
-        expect(page.get_by_role("tab")).to_have_text(["Feature flags", "Key Management", "Docs"])
+        expect(page.get_by_role("tab")).to_have_text(["Feature flags", "Apps & Keys", "Audits", "Docs"])
         artifacts = ROOT / "test-results"
         artifacts.mkdir(exist_ok=True)
         page.screenshot(path=str(artifacts / "dashboard-desktop.png"), full_page=True)
-        page.get_by_role("tab", name="Key Management").click()
-        expect(page).to_have_url(f"{server.url}/environments/development/keys")
+        page.get_by_role("tab", name="Apps & Keys").click()
+        expect(page).to_have_url(f"{server.url}/environments/development/apps")
         heading = page.locator(".workspace-heading").bounding_box()
         create_key(page, "Checkout service")
-        expect(page.locator(".key-row").get_by_role("status")).to_have_text("Created")
+        expect(page.locator(".key-row").get_by_role("status")).to_have_text("Saved")
         assert page.locator(".workspace-heading").bounding_box() == heading
         field = page.locator(".key-controls input")
-        expect(field).to_have_attribute("type", "password")
-        expect(field).to_have_value(re.compile(r"pk_[A-Za-z0-9]{24}"))
+        expect(field).to_have_attribute("type", "text")
+        expect(field).to_have_value(re.compile(r"pk_[A-Za-z0-9]{4}•+[A-Za-z0-9]{4}"))
         requests = []
         page.on("request", lambda request: requests.append(request.url))
         copy = page.get_by_role("button", name=re.compile("^Copy API Key "))
@@ -100,12 +133,12 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         expect(copy).to_have_text("Copy")
         secret = page.evaluate("navigator.clipboard.readText()")
         assert re.fullmatch(r"pk_[A-Za-z0-9]{24}", secret)
-        expect(field).to_have_value(secret)
-        expect(field).to_have_attribute("type", "password")
+        expect(field).to_have_value(secret[:7] + "•" * 12 + secret[-4:])
+        expect(field).to_have_attribute("type", "text")
         page.get_by_role("button", name="Reveal", exact=True).click()
         expect(field).to_have_attribute("type", "text")
         page.get_by_role("button", name="Hide", exact=True).click()
-        expect(field).to_have_attribute("type", "password")
+        expect(field).to_have_attribute("type", "text")
         assert requests == []
         assert page.locator(".key-row code").count() == 0
         page.get_by_label("Name for Checkout service", exact=True).fill("Checkout worker")
@@ -119,8 +152,8 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         page.get_by_label("Password", exact=True).fill(PASSWORD)
         page.get_by_role("button", name="Sign in", exact=True).click()
         expect(page.get_by_label("Name for Checkout worker", exact=True)).to_have_value("Checkout worker")
-        expect(field).to_have_attribute("type", "password")
-        expect(field).to_have_value(secret)
+        expect(field).to_have_attribute("type", "text")
+        expect(field).to_have_value(secret[:7] + "•" * 12 + secret[-4:])
         copy.focus()
         page.keyboard.press("Enter")
         expect(page.get_by_role("status")).to_have_text("Copied")
@@ -135,11 +168,11 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         })""")
         copy.click()
         expect(page.get_by_role("alert")).to_contain_text("Could not copy")
-        expect(field).to_have_attribute("type", "password")
+        expect(field).to_have_attribute("type", "text")
         page.evaluate("delete navigator.clipboard.writeText")
         choose(page, page.get_by_label("Environment", exact=True), "production")
-        expect(page).to_have_url(f"{server.url}/environments/production/keys")
-        expect(page.get_by_text("Generate a key to connect your application.")).to_be_visible()
+        expect(page).to_have_url(f"{server.url}/environments/production/apps")
+        expect(page.get_by_text("No applications in this environment.")).to_be_visible()
         page.get_by_role("tab", name="Feature flags").click()
         expect(page.get_by_text("No flags in this environment")).to_be_visible()
         choose(page, page.get_by_label("Environment", exact=True), "development")
@@ -147,10 +180,11 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         page.screenshot(path=str(artifacts / "dashboard-mobile.png"), full_page=True)
         page.on("dialog", lambda dialog: dialog.accept())
         page.get_by_role("button", name="Delete new_checkout").click()
+        confirm_flag(page, "new_checkout")
         expect(page.get_by_text("No flags in this environment")).to_be_visible()
-        page.get_by_role("tab", name="Key Management").click()
+        page.get_by_role("tab", name="Apps & Keys").click()
         page.get_by_role("button", name="Revoke", exact=True).click()
-        expect(page.get_by_text("Generate a key to connect your application.")).to_be_visible()
+        expect(page.get_by_text("Revoked keys (1)")).to_be_visible()
         page.get_by_role("button", name="Sign out").click()
         expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
         expect(page.get_by_role("tablist")).to_be_hidden()
@@ -165,7 +199,7 @@ def test_docs_navigation_and_complete_example(server, admin):
         page = browser.new_page(viewport={"width": 1280, "height": 1000}, permissions=["clipboard-read", "clipboard-write"])
         login(page, server)
         flags = page.get_by_role("tab", name="Feature flags")
-        keys = page.get_by_role("tab", name="Key Management")
+        keys = page.get_by_role("tab", name="Apps & Keys")
         docs = page.get_by_role("tab", name="Docs")
         flags.focus()
         page.keyboard.press("ArrowRight")
@@ -254,10 +288,11 @@ def test_flag_modal_types_rules_and_in_place_saves(server, admin):
         row = page.locator('.flag-row[data-key="eligible"]')
         choose(page, row.get_by_label("Match action for eligible"), "disable")
         page.get_by_role("button", name="Save eligible", exact=True).click()
+        confirm_flag(page, "eligible")
         expect(page.get_by_role("status")).to_contain_text("Saved")
         expect(page.get_by_label("Percentage for other_flag")).to_have_value("75")
         expect(page.get_by_role("button", name="Save other_flag", exact=True)).to_be_enabled()
-        assert not [request for request in requests if request[0] == "GET"]
+        assert not [request for request in requests if request[0] == "GET" and not request[1].endswith("/impact")]
         saved = admin.get("/api/environments/development/flags").json()["eligible"]
         assert saved == {"mode": "custom", "action": "disable", "groups": [
             [{"k": "age", "op": "ge", "v": 18}, {"k": "verified", "op": "is", "v": True}],
@@ -295,9 +330,10 @@ async def test_dashboard_rules_and_key_drive_sdk_refresh(server, admin):
                 verified.get_by_role("radio", name="True", exact=True).check()
                 modal.get_by_role("button", name="Create flag", exact=True).click()
                 expect(modal).to_be_hidden()
-                page.get_by_role("tab", name="Key Management").click()
+                page.get_by_role("tab", name="Apps & Keys").click()
                 create_key(page, "SDK application")
-                return page.get_by_label("API Key for SDK application", exact=True).input_value()
+                page.get_by_role("button", name="Reveal", exact=True).click()
+                return page.get_by_label("API Key for SDK application", exact=True).input_value(), page.locator(".app-row").get_attribute("data-app-id")
             finally:
                 browser.close()
 
@@ -310,13 +346,14 @@ async def test_dashboard_rules_and_key_drive_sdk_refresh(server, admin):
                 age = page.locator('.flag-row[data-key="eligible"] .condition').first
                 age.get_by_label("Comparison value", exact=True).fill("30")
                 page.get_by_role("button", name="Save eligible", exact=True).click()
+                confirm_flag(page, "eligible")
                 expect(page.get_by_role("status")).to_have_text("Saved")
             finally:
                 browser.close()
 
     # Each browser session stays in its worker thread; the SDK uses this event loop.
-    secret = await asyncio.to_thread(create_in_dashboard)
-    client = Client.builder().url(server.url).secret_key(secret).poll_interval(3600).build()
+    secret, application_id = await asyncio.to_thread(create_in_dashboard)
+    client = Client.builder().url(server.url).environment(scope_for(secret)[0]).application_id(application_id).secret_key(secret).poll_interval(3600).build()
     eligible = {"age": 25, "verified": True}
     try:
         await client.init()
@@ -388,8 +425,8 @@ def test_unsaved_navigation_reload_and_modal_protection(server, admin):
         modal.get_by_role("button", name="Cancel", exact=True).click()
         expect(modal).to_be_hidden()
         expect(discard).to_be_hidden()
-        page.get_by_role("tab", name="Key Management").click()
-        page.locator("#generate-key").click()
+        page.get_by_role("tab", name="Apps & Keys").click()
+        open_key(page)
         page.get_by_label("Key name", exact=True).fill("unsaved application")
         page.keyboard.press("Escape")
         expect(discard).to_be_visible()
@@ -408,10 +445,11 @@ def test_failed_save_preserves_draft_and_key_rename_warns(server, admin):
         page.get_by_label("Percentage for checkout").fill("75")
         page.route("**/api/environments/development/flags/checkout", lambda route: route.fulfill(status=500, json={"error": "Temporary failure"}))
         page.get_by_role("button", name="Save checkout", exact=True).click()
+        confirm_flag(page, "checkout")
         expect(page.get_by_role("alert")).to_have_text("Temporary failure")
         expect(page.get_by_label("Percentage for checkout")).to_have_value("75")
         expect(page.get_by_role("button", name="Save checkout", exact=True)).to_be_enabled()
-        page.get_by_role("tab", name="Key Management").click()
+        page.get_by_role("tab", name="Apps & Keys").click()
         page.get_by_role("button", name="Discard changes").click()
         create_key(page, "Worker")
         name = page.get_by_label("Name for Worker", exact=True)
@@ -440,6 +478,7 @@ def test_pending_save_locks_only_submitted_form(server, admin):
         field = page.get_by_label("Percentage for checkout")
         field.fill("75")
         page.get_by_role("button", name="Save checkout", exact=True).click()
+        confirm_flag(page, "checkout")
         expect(field).to_be_disabled()
         expect(page.get_by_label("Rollout mode for checkout", exact=True)).to_be_disabled()
         other = page.get_by_label("Percentage for search")
@@ -463,7 +502,7 @@ def test_key_requests_are_serialized_and_session_failure_keeps_draft(server, adm
         page = browser.new_page()
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
-        login(page, server, screen="keys")
+        login(page, server, screen="apps")
         create_key(page, "Worker")
         name = page.get_by_label("Name for Worker", exact=True)
         name.fill("Worker v2")
@@ -500,10 +539,12 @@ def test_rule_keyboard_focus_and_independent_row_errors(server, admin):
         page.get_by_label("Percentage for checkout").fill("75")
         page.route("**/api/environments/development/flags/checkout", lambda route: route.fulfill(status=500, json={"error": "Checkout could not be saved"}))
         page.get_by_role("button", name="Save checkout", exact=True).click()
+        confirm_flag(page, "checkout")
         checkout = page.locator('.flag-row[data-key="checkout"]')
         expect(checkout.get_by_role("alert")).to_have_text("Checkout could not be saved")
         page.get_by_label("Percentage for search").fill("40")
         page.get_by_role("button", name="Save search", exact=True).click()
+        confirm_flag(page, "search")
         expect(page.get_by_role("status")).to_contain_text("Saved")
         expect(page.get_by_label("Rollout mode for search", exact=True)).to_be_focused()
         expect(checkout.get_by_role("alert")).to_have_text("Checkout could not be saved")
@@ -537,7 +578,7 @@ def test_browser_back_preserves_dirty_edits_and_forward_keeps_environment(server
         page = browser.new_page()
         login(page, server, environment="production")
         create_flag(page, "checkout", "percentage", 50)
-        page.get_by_role("tab", name="Key Management").click()
+        page.get_by_role("tab", name="Apps & Keys").click()
         page.get_by_role("tab", name="Feature flags").click()
         field = page.get_by_label("Percentage for checkout")
         field.fill("75")
@@ -552,7 +593,7 @@ def test_browser_back_preserves_dirty_edits_and_forward_keeps_environment(server
         page.remove_listener("dialog", cancel)
         field.fill("50")
         page.go_back()
-        expect(page).to_have_url(f"{server.url}/environments/production/keys")
+        expect(page).to_have_url(f"{server.url}/environments/production/apps")
         page.go_forward()
         expect(page).to_have_url(f"{server.url}/environments/production/flags")
         expect(field).to_have_value("50")
@@ -616,8 +657,8 @@ def test_utilitarian_headers_select_clearance_and_sticky_navigation(server, admi
         for width in (1280, 390, 320):
             page.set_viewport_size({"width": width, "height": 900})
             flag_button = page.locator("#create-flag").bounding_box()
-            page.get_by_role("tab", name="Key Management").click()
-            key_button = page.locator("#generate-key").bounding_box()
+            page.get_by_role("tab", name="Apps & Keys").click()
+            key_button = page.locator("#create-app").bounding_box()
             assert flag_button == key_button
             expect(page.get_by_text("API Keys can read feature flags and rules. Use the UI to make changes.", exact=True)).to_be_visible()
             page.get_by_role("tab", name="Docs").click()
@@ -660,18 +701,18 @@ def test_key_modal_dirty_and_pending_creation_safeguards(server, admin):
     with sync_playwright() as playwright:
         browser = launch_browser(playwright)
         page = browser.new_page()
-        login(page, server, screen="keys")
-        page.locator("#generate-key").click()
+        login(page, server, screen="apps")
+        open_key(page)
         modal = page.get_by_role("dialog", name="Generate API Key", exact=True)
         expect(modal.get_by_label("Key name", exact=True)).to_be_focused()
-        expect(modal.get_by_text("Generate API Key in development.")).to_be_visible()
+        expect(modal.get_by_text("Generate API Key for Test application in development.")).to_be_visible()
         modal.get_by_label("Key name", exact=True).fill("Checkout service")
         page.keyboard.press("Escape")
         expect(page.get_by_role("dialog", name="Discard your changes?")).to_be_visible()
         page.get_by_role("button", name="Keep editing").click()
         expect(modal.get_by_label("Key name", exact=True)).to_have_value("Checkout service")
         pending = []
-        page.route("**/api/environments/development/keys", lambda route: pending.append(route))
+        page.route("**/api/environments/development/apps/*/keys", lambda route: pending.append(route))
         modal.get_by_role("button", name="Generate key", exact=True).click()
         expect(modal.get_by_label("Key name", exact=True)).to_be_disabled()
         expect(modal.get_by_role("button", name="Close key dialog", exact=True)).to_be_disabled()
@@ -680,8 +721,8 @@ def test_key_modal_dirty_and_pending_creation_safeguards(server, admin):
         assert len(pending) == 1
         pending.pop().continue_()
         expect(modal).to_be_hidden()
-        expect(page.get_by_label("API Key for Checkout service", exact=True)).to_have_attribute("type", "password")
-        page.locator("#generate-key").click()
+        expect(page.get_by_label("API Key for Checkout service", exact=True)).to_have_attribute("type", "text")
+        open_key(page)
         expect(modal.get_by_label("Key name", exact=True)).to_have_value("")
         modal.get_by_role("button", name="Cancel", exact=True).click()
         expect(modal).to_be_hidden()
@@ -698,7 +739,7 @@ def test_success_feedback_never_moves_existing_content(server, admin):
         page = browser.new_page(permissions=["clipboard-read", "clipboard-write"])
         login(page, server)
         create_flag(page, "checkout", "percentage", 50)
-        page.get_by_role("tab", name="Key Management").click()
+        page.get_by_role("tab", name="Apps & Keys").click()
         create_key(page, "Worker")
         create_key(page, "Other worker")
         page.clock.install()
@@ -706,7 +747,7 @@ def test_success_feedback_never_moves_existing_content(server, admin):
         artifacts.mkdir(exist_ok=True)
         for width in (1280, 390, 320):
             page.set_viewport_size({"width": width, "height": 900})
-            key_elements = ".workspace-heading, .key-row, .key-row input, .key-row button, #keys-screen > .hint"
+            key_elements = ".workspace-heading, .key-row, .key-row input, .key-row button, #apps-screen > .hint"
             before = geometry(page, key_elements)
             row = page.locator(".key-row").first
             row.get_by_role("button", name=re.compile("^Copy API Key ")).click()
@@ -739,12 +780,13 @@ def test_success_feedback_never_moves_existing_content(server, admin):
             flag_elements = ".workspace-heading, .flag-row, .flag-heading, .flag-row .dropdown, .flag-row input, .flag-row button"
             before = geometry(page, flag_elements)
             page.get_by_role("button", name="Save checkout", exact=True).click()
+            confirm_flag(page, "checkout")
             expect(page.get_by_role("status")).to_have_text("Saved")
             assert geometry(page, flag_elements) == before
             page.clock.fast_forward(3000)
             expect(page.get_by_role("status")).to_be_hidden()
             assert geometry(page, flag_elements) == before
-            page.get_by_role("tab", name="Key Management").click()
+            page.get_by_role("tab", name="Apps & Keys").click()
         browser.close()
 
 
@@ -926,4 +968,93 @@ def test_dropdown_popup_fits_viewport_without_layout_shift_and_cancels_on_move(s
             modal.get_by_role("button", name="Cancel", exact=True).click()
             expect(modal).to_be_hidden()
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        browser.close()
+
+
+def test_app_selection_typed_confirmation_revoked_history_and_audits(server, admin):
+    with sync_playwright() as playwright:
+        browser = launch_browser(playwright)
+        page = browser.new_page(viewport={"width": 1280, "height": 900})
+        page.add_init_script("Object.defineProperty(navigator, 'clipboard', {value: {writeText: async value => { window.partlyCopied = value; }}})")
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        login(page, server)
+        create_flag(page, "shared", "enabled")
+        create_flag(page, "unused", "disabled")
+        choose(page, page.get_by_label("Rollout mode for unused", exact=True), "enabled")
+        page.get_by_role("button", name="Save unused", exact=True).click()
+        modal = page.locator("#confirm-flag-dialog")
+        expect(modal.get_by_text("No applications use this flag.", exact=True)).to_be_visible()
+        expect(modal.locator("#confirm-flag-submit")).to_be_disabled()
+        modal.locator("#confirm-flag-input").fill("production/unused")
+        expect(modal.locator("#confirm-flag-submit")).to_be_disabled()
+        modal.get_by_role("button", name="Keep editing", exact=True).click()
+        expect(page.get_by_role("button", name="Save unused", exact=True)).to_be_enabled()
+        page.get_by_role("button", name="Save unused", exact=True).click()
+        confirm_flag(page, "unused")
+        page.get_by_role("tab", name="Apps & Keys", exact=True).click()
+        for name in ("Billing", "Storefront"):
+            page.get_by_role("button", name="Create app", exact=True).click()
+            create = page.get_by_role("dialog", name="Create app", exact=True)
+            create.get_by_label("Application name", exact=True).fill(name)
+            expect(create.get_by_role("checkbox", name="shared", exact=True)).not_to_be_checked()
+            create.get_by_role("checkbox", name="shared", exact=True).check()
+            create.get_by_role("button", name="Create app", exact=True).click()
+            expect(create).to_be_hidden()
+        billing = page.locator(".app-row").filter(has=page.get_by_role("heading", name="Billing", exact=True))
+        application_id = billing.get_attribute("data-app-id")
+        assert re.fullmatch(r"app_[0-9a-f]{20}", application_id)
+        billing.get_by_role("button", name="Copy ID", exact=True).click()
+        assert page.evaluate("window.partlyCopied") == application_id
+        billing.locator(".app-settings summary").click()
+        billing.get_by_role("checkbox", name="unused", exact=True).check()
+        page.get_by_role("tab", name="Docs", exact=True).click()
+        expect(page.get_by_role("dialog", name="Discard your changes?")).to_be_visible()
+        page.get_by_role("button", name="Keep editing", exact=True).click()
+        billing.get_by_role("button", name="Save app", exact=True).click()
+        expect(billing.get_by_role("button", name="Save app", exact=True)).to_be_disabled()
+        page.get_by_role("tab", name="Feature flags", exact=True).click()
+        choose(page, page.get_by_label("Rollout mode for shared", exact=True), "disabled")
+        page.get_by_role("button", name="Save shared", exact=True).click()
+        expect(modal.locator("li")).to_have_text(["Billing", "Storefront"])
+        modal.locator("#confirm-flag-input").fill("development/Shared")
+        expect(modal.locator("#confirm-flag-submit")).to_be_disabled()
+        artifacts = ROOT / "test-results"
+        artifacts.mkdir(exist_ok=True)
+        page.screenshot(path=str(artifacts / "flag-confirmation.png"), full_page=True)
+        confirm_flag(page, "shared")
+        page.get_by_role("tab", name="Audits", exact=True).click()
+        latest = page.locator(".audit-row").first
+        expect(latest.locator(".type-pill")).to_have_text("Flag")
+        latest.locator("summary").click()
+        expect(latest.locator(".audit-detail")).to_contain_text("Billing, Storefront")
+        expect(latest.locator(".audit-detail")).to_contain_text('"enabled"')
+        expect(latest.locator(".audit-detail")).to_contain_text('"disabled"')
+        choose(page, page.get_by_label("Filter by action", exact=True), "updated")
+        choose(page, page.get_by_label("Filter by application", exact=True), application_id)
+        expect(page.locator(".audit-row")).to_have_count(2)
+        page.screenshot(path=str(artifacts / "audits-desktop.png"), full_page=True)
+        page.get_by_role("tab", name="Apps & Keys", exact=True).click()
+        secret_field = billing.get_by_label("API Key for Default", exact=True)
+        mask = secret_field.input_value()
+        assert "•" in mask
+        billing.get_by_role("button", name="Reveal", exact=True).click()
+        secret = secret_field.input_value()
+        assert secret.startswith(mask[:7]) and secret.endswith(mask[-4:])
+        billing.get_by_role("button", name="Hide", exact=True).click()
+        expect(secret_field).to_have_value(mask)
+        page.on("dialog", lambda dialog: dialog.accept())
+        billing.get_by_role("button", name="Revoke", exact=True).click()
+        expect(billing.get_by_text("Revoked keys (1)", exact=True)).to_be_visible()
+        billing.locator(".revoked-keys summary").click()
+        expect(billing.locator(".revoked-key code")).to_have_text(mask)
+        assert billing.locator(".revoked-key button, .revoked-key input").count() == 0
+        response = page.request.get(f"{server.url}/api/environments/development/apps").json()
+        retained = next(app for app in response["applications"] if app["id"] == application_id)["keys"][0]
+        assert retained["secret"] is None and retained["revoked_at"]
+        page.screenshot(path=str(artifacts / "apps-desktop.png"), full_page=True)
+        page.set_viewport_size({"width": 390, "height": 844})
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.screenshot(path=str(artifacts / "apps-mobile.png"), full_page=True)
+        assert not errors
         browser.close()

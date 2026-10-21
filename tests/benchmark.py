@@ -59,10 +59,10 @@ async def main():
         with running_server() as (process, url):
             admin.post(f"{url}/api/setup", json={"username": "benchmark", "password": "temporary-benchmark-password"}).raise_for_status()
             admin.post(f"{url}/api/environments/development/flags", json={"key": "checkout", "mode": "percentage", "percentage": 50}).raise_for_status()
-            response = admin.post(f"{url}/api/environments/development/keys", json={"name": "Benchmark"})
+            response = admin.post(f"{url}/api/environments/development/apps", json={"name": "Benchmark", "flags": ["checkout"]})
             response.raise_for_status()
-            key = response.json()["secret"]
-            client = Client.builder().url(url).secret_key(key).build()
+            key = response.json()["keys"][0]["secret"]
+            client = Client.builder().url(url).environment("development").application_id(response.json()["id"]).secret_key(key).build()
             try:
                 await client.init()
                 samples = timeit.repeat(lambda: client.evaluate("checkout", context={"id": "user-123"}), number=100_000, repeat=5)

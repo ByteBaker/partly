@@ -5,7 +5,7 @@
 const $ = id => document.getElementById(id);
 const notice = $('notice');
 let noticeReset;
-const route = location.pathname.match(/^\/environments\/(development|production)\/(flags|keys|docs)\/?$/);
+const route = location.pathname.match(/^\/environments\/(development|production)\/(flags|apps|audits|docs)\/?$/);
 const environment = route?.[1] || 'development';
 const currentScreen = route?.[2] || 'flags';
 const trackers = new Map();
@@ -14,6 +14,9 @@ let unloading = false;
 let modalEditor;
 let nextId = 0;
 let docsSource = '';
+let availableFlags = [];
+let keyApplication;
+let appSelection;
 const ops = {
   le: ['≤', 'number'], lt: ['<', 'number'], ge: ['≥', 'number'], gt: ['>', 'number'], eq: ['=', 'number'],
   prefix: ['Starts with', 'string'], suffix: ['Ends with', 'string'], contains: ['Contains', 'string'],
@@ -47,10 +50,10 @@ function numberValue(value) {
   if (Number.isInteger(result) && !Number.isSafeInteger(result)) throw new Error('This number is too large to edit accurately in the dashboard. Use a number between −9007199254740991 and 9007199254740991.');
   return result;
 }
-async function api(path, method = 'GET', body) {
+async function api(path, method = 'GET', body, headers = {}) {
   const response = await fetch(`/api${path}`, {
     method, credentials: 'same-origin',
-    headers: { 'X-Partly-Request': 'dashboard', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    headers: { ...headers, 'X-Partly-Request': 'dashboard', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
@@ -74,6 +77,7 @@ async function action(trigger, operation, errorArea) {
   const focused = document.activeElement;
   const controls = scope ? [...scope.querySelectorAll('input, button')].map(element => [element, element.disabled]) : [];
   if (form === $('new-flag')) controls.push([$('close-flag'), $('close-flag').disabled]);
+  if (form === $('new-app')) controls.push([$('close-app'), $('close-app').disabled]);
   if (form === $('new-key')) controls.push([$('close-key'), $('close-key').disabled]);
   if (state) state.pending = true;
   if (scope) scope.setAttribute('aria-busy', 'true');
@@ -306,8 +310,11 @@ function flagRow(key, flag) {
   const actions = node('div', '', 'row-actions');
   const save = node('button', 'Save'); save.type = 'submit'; save.setAttribute('aria-label', `Save ${key}`);
   const remove = button('Delete', 'quiet danger', () => {
-    if (!confirm(`Delete ${key} from ${environment}? SDK checks for this flag will raise an error after refresh.`)) return;
-    action(remove, async () => { await api(`/environments/${environment}/flags/${key}`, 'DELETE'); untrack(form); form.remove(); updateFlagCount(); showNotice('Deleted', $('flags')); });
+    action(remove, async () => {
+      const confirmation = await confirmFlag(key, true);
+      if (!confirmation) return;
+      await api(`/environments/${environment}/flags/${key}`, 'DELETE', undefined, confirmation); untrack(form); form.remove(); updateFlagCount(); showNotice('Deleted', $('flags'));
+    });
   }); remove.setAttribute('aria-label', `Delete ${key}`);
   actions.append(save, remove); heading.append(identity, actions); form.append(heading);
   const editor = createEditor(flag, key); form.append(editor.area);
@@ -316,7 +323,10 @@ function flagRow(key, flag) {
   form.addEventListener('submit', event => {
     event.preventDefault();
     action(save, async () => {
-      const saved = await api(`/environments/${environment}/flags/${key}`, 'PUT', editor.value());
+      const draft = editor.value();
+      const confirmation = await confirmFlag(key, false);
+      if (!confirmation) return;
+      const saved = await api(`/environments/${environment}/flags/${key}`, 'PUT', draft, confirmation);
       const replacement = flagRow(saved.key, saved);
       untrack(form);
       form.replaceWith(replacement);
@@ -326,13 +336,63 @@ function flagRow(key, flag) {
   });
   return form;
 }
-function addKey({ id, name, secret }) {
-  $('keys').querySelector('.empty')?.remove();
+async function confirmFlag(key, deleting) {
+  const impact = await api(`/environments/${environment}/flags/${key}/impact`);
+  const expected = `${environment}/${key}`;
+  const dialog = $('confirm-flag-dialog');
+  $('confirm-flag-title').textContent = deleting ? `Delete ${key}?` : `Update ${key}?`;
+  $('flag-impact-description').textContent = impact.applications.length
+    ? `This change affects the following applications in ${environment} after their next successful refresh.${deleting ? ' Evaluating this flag will then return an unknown-flag error.' : ''}`
+    : 'No applications use this flag.';
+  $('flag-impact-apps').replaceChildren(...impact.applications.map(app => node('li', app.name)));
+  $('confirm-flag-label').textContent = `Type ${expected} to confirm`;
+  const field = $('confirm-flag-input'); field.value = '';
+  const submit = $('confirm-flag-submit'); submit.textContent = deleting ? 'Delete flag' : 'Save changes'; submit.disabled = true;
+  $('confirm-flag-error').hidden = true;
+  field.oninput = () => { submit.disabled = field.value !== expected; };
+  dialog.showModal(); field.focus();
+  return new Promise(resolve => {
+    const finish = confirmed => {
+      dialog.close(); field.oninput = null; $('confirm-flag-form').onsubmit = null; dialog.oncancel = null; $('cancel-flag-confirmation').onclick = null;
+      resolve(confirmed ? { 'X-Partly-Confirm': expected, 'X-Partly-Impact': impact.token } : null);
+    };
+    $('confirm-flag-form').onsubmit = event => { event.preventDefault(); if (field.value === expected) finish(true); };
+    $('cancel-flag-confirmation').onclick = () => finish(false);
+    dialog.oncancel = event => { event.preventDefault(); finish(false); };
+  });
+}
+
+function flagSelection(selected, name) {
+  const area = node('fieldset', '', 'flag-selection'); area.append(node('legend', 'Selected flags'));
+  const search = input('search', '', 'search'); search.required = false; search.placeholder = 'Find a flag'; search.setAttribute('aria-label', `Find flags for ${name}`);
+  const list = node('div', '', 'flag-choices');
+  const choices = availableFlags.map(key => {
+    const checkbox = input('flags', key, 'checkbox'); checkbox.required = false; checkbox.checked = selected.includes(key);
+    const row = label(key, checkbox); list.append(row); return { key, checkbox, row };
+  });
+  const empty = node('p', availableFlags.length ? 'No matching flags.' : 'No flags in this environment.', 'small muted');
+  empty.hidden = availableFlags.length > 0;
+  search.addEventListener('input', () => {
+    for (const choice of choices) choice.row.hidden = !choice.key.includes(search.value);
+    empty.hidden = choices.some(choice => !choice.row.hidden);
+  });
+  area.append(search, list, empty);
+  return { area, read: () => choices.filter(choice => choice.checkbox.checked).map(choice => choice.key) };
+}
+
+function addKey(key, application) {
+  const { id, masked_secret: masked, revoked_at: revoked, created_at: created } = key;
+  let { name, secret } = key;
   const row = node('div', '', 'key-row');
+  if (revoked) {
+    row.classList.add('revoked-key');
+    row.append(node('strong', name), node('code', masked), node('span', `Created ${new Date(created).toLocaleString()} · Revoked ${new Date(revoked).toLocaleString()}`, 'small muted'));
+    return row;
+  }
   const rename = node('form', '', 'key-name-form');
   const nameInput = input('name', name); nameInput.maxLength = 64;
   const saveName = node('button', 'Save name'); saveName.type = 'submit';
-  const value = input('secret', secret, 'password'); value.readOnly = true; value.autocomplete = 'off';
+  const value = input('secret', masked); value.readOnly = true; value.autocomplete = 'off';
   const copy = button('Copy');
   function updateNames() {
     nameInput.setAttribute('aria-label', `Name for ${name}`); saveName.setAttribute('aria-label', `Save name for ${name}`);
@@ -340,29 +400,131 @@ function addKey({ id, name, secret }) {
   }
   updateNames(); rename.append(label('Key name', nameInput), saveName); track(rename, () => nameInput.value, saveName);
   rename.addEventListener('submit', event => {
-    event.preventDefault();
-    action(saveName, async () => {
-      await api(`/keys/${id}`, 'PUT', { name: nameInput.value }); name = nameInput.value.trim(); nameInput.value = name;
+    event.preventDefault(); action(saveName, async () => {
+      await api(`/keys/${id}`, 'PUT', { name: nameInput.value }); name = nameInput.value.trim(); key.name = name; nameInput.value = name;
       updateNames(); markSaved(rename); showNotice('Saved', row);
     });
   });
   const controls = node('div', '', 'key-controls'); const secretLabel = label('API Key', value); secretLabel.className = 'key-secret';
-  const reveal = button('Reveal', '', () => { const visible = value.type === 'password'; value.type = visible ? 'text' : 'password'; reveal.textContent = visible ? 'Hide' : 'Reveal'; reveal.setAttribute('aria-pressed', String(visible)); }); reveal.setAttribute('aria-pressed', 'false');
+  let visible = false;
+  const reveal = button('Reveal', '', () => { visible = !visible; value.value = visible ? secret : masked; reveal.textContent = visible ? 'Hide' : 'Reveal'; reveal.setAttribute('aria-pressed', String(visible)); }); reveal.setAttribute('aria-pressed', 'false');
   copy.addEventListener('click', () => action(copy, async () => {
     try { await navigator.clipboard.writeText(secret); } catch { throw new Error('Could not copy. Allow clipboard access or use Reveal to copy the key manually.'); }
     showNotice('Copied', row);
   }));
   const revoke = button('Revoke', 'quiet danger', () => {
-    if (!confirm('Revoke this API Key? Applications keep their last policy but cannot download updates.')) return;
-    action(revoke, async () => { await api(`/keys/${id}`, 'DELETE'); untrack(rename); row.remove(); keyEmptyState(); showNotice('Revoked', $('keys')); });
+    if (!confirm('Revoke this API Key? Connected SDKs will clear their policy and stop evaluating when their next refresh receives the revocation. Disconnected SDKs cannot receive it yet.')) return;
+    action(revoke, async () => {
+      await api(`/keys/${id}`, 'DELETE'); untrack(rename);
+      secret = null; key.secret = null; key.revoked_at = new Date().toISOString();
+      const replacement = addKey(key, application); row.remove(); application.revoked.append(replacement); application.updateRevoked();
+      showNotice('Revoked', application.heading.querySelector('button'));
+    });
   });
   const error = node('p', '', 'notice error item-error'); error.hidden = true; error.setAttribute('role', 'alert');
-  controls.append(secretLabel, copy, reveal, revoke); row.append(rename, controls, error); $('keys').append(row);
+  controls.append(secretLabel, copy, reveal, revoke); row.append(rename, controls, node('span', `Created ${new Date(created).toLocaleString()}`, 'small muted'), error);
   return row;
 }
-function keyEmptyState() {
-  if ($('keys').querySelector('.key-row')) return;
-  const empty = node('div', '', 'empty'); empty.append(node('h3', 'No API Keys yet'), node('p', 'Generate a key to connect your application.')); $('keys').replaceChildren(empty);
+
+function appRow(app) {
+  const row = node('article', '', 'app-row'); row.dataset.appId = app.id;
+  const heading = node('div', '', 'app-heading'); const title = node('h2', app.name); title.id = `${app.id}-title`; row.setAttribute('aria-labelledby', title.id);
+  const identity = node('div', '', 'app-identity'); identity.append(node('code', app.id));
+  const copyId = button('Copy ID', 'quiet', () => action(copyId, async () => { await navigator.clipboard.writeText(app.id); showNotice('Copied', copyId); }));
+  copyId.setAttribute('aria-label', 'Copy ID');
+  identity.append(copyId); heading.append(title, identity); row.append(heading);
+  const settings = node('details', '', 'app-settings'); settings.append(node('summary', `App settings · ${app.flags.length} selected flags`));
+  const form = node('form'); const name = input('name', app.name); name.maxLength = 64; name.setAttribute('aria-label', `Application name for ${app.name}`);
+  const selection = flagSelection(app.flags, app.name); const save = node('button', 'Save app', 'primary'); save.type = 'submit'; save.setAttribute('aria-label', 'Save app');
+  const error = node('p', '', 'notice error item-error'); error.hidden = true; error.setAttribute('role', 'alert');
+  form.append(label('Application name', name), selection.area, save, error); settings.append(form); row.append(settings);
+  track(form, () => ({ name: name.value, flags: selection.read() }), save);
+  form.addEventListener('submit', event => {
+    event.preventDefault(); action(save, async () => {
+      const saved = await api(`/environments/${environment}/apps/${app.id}`, 'PUT', { name: name.value, flags: selection.read() });
+      app.name = saved.name; application.name = saved.name; app.flags = saved.flags; name.value = saved.name; title.textContent = saved.name; name.setAttribute('aria-label', `Application name for ${saved.name}`);
+      settings.querySelector('summary').textContent = `App settings · ${saved.flags.length} selected flags`;
+      markSaved(form); showNotice('Saved', save);
+    });
+  });
+  const keyHeading = node('div', '', 'list-heading'); keyHeading.append(node('h3', 'API Keys'));
+  const active = node('div', '', 'active-keys'); const revoked = node('details', '', 'revoked-keys'); const summary = node('summary'); revoked.append(summary);
+  const application = { ...app, row, heading: keyHeading, active, revoked, updateRevoked: () => { const count = revoked.querySelectorAll('.key-row').length; summary.textContent = `Revoked keys (${count})`; revoked.hidden = count === 0; } };
+  const createKey = button('Create key', '', () => openKey(application)); createKey.setAttribute('aria-label', 'Create key');
+  keyHeading.append(createKey); row.append(keyHeading, active, revoked);
+  for (const key of app.keys) (key.revoked_at ? revoked : active).append(addKey(key, application));
+  application.updateRevoked();
+  return row;
+}
+
+function openKey(application) {
+  keyApplication = application; $('new-key').reset(); $('key-dialog-error').hidden = true;
+  $('key-dialog-context').textContent = `Generate API Key for ${application.name} in ${environment}.`;
+  track($('new-key'), () => $('key-name').value); $('key-dialog').showModal(); $('key-name').focus();
+}
+
+async function closeApp() {
+  if (trackers.get($('new-app'))?.pending) return;
+  if (isDirty($('new-app')) && !await confirmDiscard()) return;
+  untrack($('new-app')); $('app-dialog').close();
+}
+$('create-app').addEventListener('click', () => {
+  $('new-app').reset(); $('app-dialog-error').hidden = true; $('app-dialog-context').textContent = `Create app in ${environment}.`;
+  appSelection = flagSelection([], 'new app'); $('app-flags').replaceChildren(appSelection.area);
+  track($('new-app'), () => ({ name: $('app-name').value, flags: appSelection.read() })); $('app-dialog').showModal(); $('app-name').focus();
+});
+$('close-app').addEventListener('click', closeApp); $('cancel-app').addEventListener('click', closeApp);
+$('app-dialog').addEventListener('cancel', event => { event.preventDefault(); closeApp(); });
+$('new-app').addEventListener('submit', event => {
+  event.preventDefault(); action(event.submitter, async () => {
+    const app = await api(`/environments/${environment}/apps`, 'POST', { name: $('app-name').value, flags: appSelection.read() });
+    const row = appRow(app); $('apps').querySelector('.empty')?.remove(); $('apps').append(row);
+    untrack($('new-app')); $('app-dialog').close(); showNotice('Created', row.querySelector('.app-identity button'));
+  });
+});
+
+async function setupAudits() {
+  const { applications } = await api(`/environments/${environment}/apps`);
+  const actionFilter = createDropdown([['', 'All actions'], ...['created', 'updated', 'deleted', 'renamed', 'revoked'].map(value => [value, value[0].toUpperCase() + value.slice(1)])], '', 'action');
+  const appFilter = createDropdown([['', 'All applications'], ...applications.map(app => [app.id, app.name])], '', 'application_id');
+  actionFilter.setAttribute('aria-label', 'Filter by action'); appFilter.setAttribute('aria-label', 'Filter by application');
+  $('audit-filters').append(label('Action', actionFilter), label('Application', appFilter));
+  let cursor;
+  async function load(reset) {
+    const params = new URLSearchParams();
+    if (!reset && cursor) params.set('before', cursor);
+    if (actionFilter.value) params.set('action', actionFilter.value);
+    if (appFilter.value) params.set('application_id', appFilter.value);
+    actionFilter.disabled = true; appFilter.disabled = true;
+    try {
+      const { audits } = await api(`/environments/${environment}/audits?${params}`);
+      if (reset) {
+        const heading = node('div', '', 'audit-summary audit-heading'); heading.setAttribute('aria-hidden', 'true');
+        heading.append(...['Time', 'Who', 'Action', 'Item'].map(text => node('span', text)));
+        $('audits').replaceChildren(heading);
+      }
+      for (const entry of audits) {
+        const row = node('details', '', 'audit-row'); const summary = node('summary', '', 'audit-summary');
+        const time = node('time', new Date(entry.created_at).toLocaleString()); time.dateTime = entry.created_at;
+        const item = node('span', '', 'audit-item'); item.append(node('span', { flag: 'Flag', app: 'App', api_key: 'API Key' }[entry.item_type], 'type-pill'), node('span', entry.item_name));
+        summary.append(time, node('span', entry.actor), node('span', entry.action[0].toUpperCase() + entry.action.slice(1)), item);
+        const detail = node('div', '', 'audit-detail');
+        if (entry.details.application_id) detail.append(node('p', `Application: ${applications.find(app => app.id === entry.details.application_id)?.name || entry.details.application_id}`));
+        if (entry.details.applications) detail.append(node('p', entry.details.applications.length ? `Affected applications: ${entry.details.applications.map(app => app.name).join(', ')}` : 'No applications used this flag.'));
+        for (const [key, value] of Object.entries(entry.details)) {
+          if (key === 'applications' || key === 'application_id') continue;
+          detail.append(node('h3', key === 'before' ? 'Before' : key === 'after' ? 'After' : 'Key identifier'), node('pre', JSON.stringify(value, null, 2)));
+        }
+        row.append(summary, detail); $('audits').append(row);
+      }
+      if (!$('audits').querySelector('.audit-row')) $('audits').append(node('p', 'No audit entries match.', 'empty'));
+      cursor = audits.at(-1)?.id; $('more-audits').hidden = audits.length < 100;
+    } finally { actionFilter.disabled = false; appFilter.disabled = false; }
+  }
+  const refresh = () => action($('more-audits'), () => load(true));
+  actionFilter.addEventListener('change', refresh); appFilter.addEventListener('change', refresh);
+  $('more-audits').addEventListener('click', () => action($('more-audits'), () => load(false)));
+  await load(true);
 }
 
 async function closeFlag() {
@@ -388,7 +550,8 @@ $('new-flag').addEventListener('submit', event => {
 });
 $('new-key').addEventListener('submit', event => {
   event.preventDefault(); action(event.submitter, async () => {
-    const row = addKey(await api(`/environments/${environment}/keys`, 'POST', { name: $('key-name').value }));
+    const key = await api(`/environments/${environment}/apps/${keyApplication.id}/keys`, 'POST', { name: $('key-name').value });
+    const row = addKey(key, keyApplication); keyApplication.active.append(row);
     untrack($('new-key'));
     $('key-dialog').close();
     showNotice('Created', row);
@@ -400,14 +563,6 @@ async function closeKey() {
   untrack($('new-key'));
   $('key-dialog').close();
 }
-$('generate-key').addEventListener('click', () => {
-  $('new-key').reset();
-  $('key-dialog-error').hidden = true;
-  $('key-dialog-context').textContent = `Generate API Key in ${environment}.`;
-  track($('new-key'), () => $('key-name').value);
-  $('key-dialog').showModal();
-  $('key-name').focus();
-});
 $('close-key').addEventListener('click', closeKey);
 $('cancel-key').addEventListener('click', closeKey);
 $('key-dialog').addEventListener('cancel', event => { event.preventDefault(); closeKey(); });
@@ -480,13 +635,17 @@ async function boot() {
     $('username').focus(); return;
   }
   $('create-flag').hidden = currentScreen !== 'flags';
-  $('generate-key').hidden = currentScreen !== 'keys';
+  $('create-app').hidden = currentScreen !== 'apps';
   $('screen-title').textContent = $(`${currentScreen}-tab`).textContent; document.title = `Partly · ${$('screen-title').textContent} · ${environment}`;
   if (currentScreen === 'flags') {
     const flags = await api(`/environments/${environment}/flags`);
     for (const [key, flag] of Object.entries(flags)) $('flags').append(flagRow(key, flag)); updateFlagCount();
-  } else if (currentScreen === 'keys') {
-    const result = await api(`/environments/${environment}/keys`); result.keys.forEach(addKey); keyEmptyState();
+  } else if (currentScreen === 'apps') {
+    const [flags, result] = await Promise.all([api(`/environments/${environment}/flags`), api(`/environments/${environment}/apps`)]);
+    availableFlags = Object.keys(flags); result.applications.forEach(app => $('apps').append(appRow(app)));
+    if (!result.applications.length) $('apps').append(node('p', 'No applications in this environment.', 'empty'));
+  } else if (currentScreen === 'audits') {
+    await setupAudits();
   } else {
     const response = await fetch('/docs/python.py'); if (!response.ok) throw new Error('Could not load the Python example. Reload to try again.');
     docsSource = await response.text();

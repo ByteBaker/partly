@@ -5,7 +5,7 @@ import json
 import subprocess
 
 import pytest
-from conftest import ROOT, make_key, save_flag
+from conftest import ROOT, make_key, save_flag, scope_for
 
 
 @pytest.mark.parametrize("language", ["rust", "go", "node"])
@@ -15,6 +15,8 @@ def test_language_quickstart(language, server, admin, tmp_path):
     source = (ROOT / "examples" / language / filename).read_text()
     source = source.replace('"http://127.0.0.1:8080"', json.dumps(server.url))
     source = source.replace('"YOUR_API_KEY"', json.dumps(key))
+
+    source = source.replace("YOUR_APPLICATION_ID", scope_for(key)[1])
 
     if language == "rust":
         (tmp_path / "Cargo.toml").write_text(f"""

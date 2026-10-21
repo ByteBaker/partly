@@ -79,11 +79,12 @@ Before upgrading, back up the stopped database and keep the old executable. This
 
 Use a current browser; dropdowns require the Popover API. Sign in at `/`. The environment selector reloads the page with the environment in the URL, such as `/environments/production/flags`.
 
-- **Feature flags:** create and edit flags in the current environment. Choose everyone, percentage, custom rules, or nobody. Unsaved changes trigger navigation warnings; saving one flag preserves other drafts.
-- **Key Management:** generate named API Keys, rename them without changing the secret, or revoke them. Copy and reveal work locally and remain available after restart. If clipboard access fails, reveal and copy manually.
-- **Docs:** copy the tested [Python quickstart](../../examples/python/quickstart.py) and replace its URL and API Key constants.
+- **Feature flags:** create and edit flags in the current environment. Choose everyone, percentage, custom rules, or nobody. Unsaved changes trigger navigation warnings; saving one flag preserves other drafts. Existing edits and deletions always list affected apps (including an empty list) and require the exact `environment/flag_name`. Concurrent changes invalidate the confirmation.
+- **Apps & Keys:** create an app, select its flags, and copy its permanent application ID. A Default API Key is generated automatically. Create extra keys for rotation; rename, copy, reveal, or revoke active keys. Revoked keys remain in history with a partial identifier and dates, but no copy/reveal. Apps are separate in each environment; newly created flags are not automatically assigned.
+- **Audits:** browse admin changes with item types, before/after details, affected applications, and action/application filters. Entries and their changes are saved in one transaction. The shared admin account identifies the account, not individual teammates using it.
+- **Docs:** copy the tested [Python quickstart](../../examples/python/quickstart.py) and replace its URL, environment, application ID, and API Key constants.
 
-API Keys only read policies. Masking hides keys visually; authenticated browsers still hold their values. Revoking a key stops future downloads, but cannot erase a policy already held by an SDK.
+API Keys only read policies. Masking hides keys visually; authenticated browsers still hold their values. When a refresh confirms revocation, the SDK clears its policy and stops evaluation and polling. Disconnected SDKs cannot discover revocation until they communicate again. Ordinary network and server failures preserve the accepted policy.
 
 ## HTTP contract
 
@@ -100,21 +101,29 @@ Admin writes require `X-Partly-Request: dashboard`. Sessions use HttpOnly, SameS
 | `POST /api/environments/{env}/flags` | Admin; create `{key, ...flag}`; return saved flag with key, status 201 |
 | `PUT /api/environments/{env}/flags/{key}` | Admin; update existing flag; return saved flag with key, status 200 |
 | `DELETE /api/environments/{env}/flags/{key}` | Admin; delete flag |
-| `GET /api/environments/{env}/keys` | Admin; `{keys: [{id, name, secret}]}` |
-| `POST /api/environments/{env}/keys` | Admin; accept `{name}`, generate and return `{id, name, secret}` |
+| `GET /api/environments/{env}/flags/{key}/impact` | Admin; affected applications and confirmation token |
+| `GET /api/environments/{env}/apps` | Admin; applications with selected flags and keys |
+| `POST /api/environments/{env}/apps` | Admin; `{name, flags: [key, ...]}`; returns app ID, selections, and first key, status 201 |
+| `PUT /api/environments/{env}/apps/{id}` | Admin; update `{name, flags}` without changing the ID |
+| `POST /api/environments/{env}/apps/{id}/keys` | Admin; `{name}`; returns a new key |
+| `GET /api/environments/{env}/audits` | Admin; newest 100 entries, optional `before` ID, `action`, and `application_id` filters |
 | `PUT /api/keys/{id}` | Admin; rename with `{name}` |
 | `DELETE /api/keys/{id}` | Admin; revoke key |
 | `GET /api/policy` | SDK bearer key; full policy or `304` |
 
 Login allows five attempts per peer IP per minute, ignoring forwarded headers. Busy or throttled requests return `429` with `Retry-After: 60`. Limits reset on restart.
 
-Policy downloads authenticate before checking `If-None-Match`. The key fixes the project and environment. A `200` response contains the full policy and a quoted SHA-256 ETag; `304` has no body. Identical saves and changes in other environments leave the ETag unchanged.
+Policy downloads authenticate before checking `If-None-Match`. The key fixes the environment and application. Supply both `X-Partly-Environment` and `X-Partly-Application`; a mismatch is rejected. The policy includes `application_id` and only the app's selected flags. A revoked key receives `401`, JSON `code: "key_revoked"`, and `X-Partly-Error: key_revoked`, even with an unchanged ETag. A `200` response contains the full policy and a quoted SHA-256 ETag; `304` has no body. Identical saves and changes outside an app's selected flags leave its ETag unchanged. The content hash identifies the snapshot; each app's revision increases only when its selected policy changes.
 
 See the [policy format and rule operators](../partly-core/README.md#policy-format) for flag JSON. Duplicate creation returns `409`; updating a missing flag returns `404`. Custom actions are `enable` or `disable`, with the opposite decision for nonmatching context. Invalid rules are rejected.
 
 Admin JSON bodies are limited to 16 KiB; each environment's complete policy to 1 MiB. An oversized policy save returns `400` and preserves the previous flag and revision.
 
-All responses use `Cache-Control: no-store`. Key lists include secrets; there is no `/reveal` endpoint. Storage failures return a generic `500`, with details in the terminal. Credentials are not logged.
+Flag PUT/DELETE requests require `X-Partly-Confirm: environment/flag_name` and `X-Partly-Impact` from the impact endpoint. A stale preview returns `409`; review it again.
+
+All responses use `Cache-Control: no-store`. Active key lists include secrets; revoked entries return `secret: null` with `masked_secret`, `created_at`, and `revoked_at`. Revocation removes the full stored secret, retaining its SHA-256 hash and partial identifier. Audit details never include full credentials. Audit entries cannot be edited through the API but are not protected from direct database access.
+
+There is no `/reveal` endpoint. Storage failures return a generic `500`, with details in the terminal. Credentials are not logged.
 
 ## License
 

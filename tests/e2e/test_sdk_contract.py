@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 import trustme
-from conftest import ROOT, RULE_CASES, Server, make_key, save_flag
+from conftest import ROOT, RULE_CASES, Server, make_key, save_flag, scope_for
 
 DRIVERS = ROOT / "tests/sdk_contract"
 
@@ -36,6 +36,10 @@ class Driver:
         raise AssertionError(f"{reason}\n{self.log_path.read_text(errors='replace')}")
 
     def call(self, op, *, deadline_seconds=5, **arguments):
+        if op == "build":
+            environment, application = scope_for(arguments["key"])
+            arguments.setdefault("environment", environment)
+            arguments.setdefault("application_id", application)
         try:
             self.process.stdin.write(json.dumps({"op": op, **arguments}).encode() + b"\n")
             self.process.stdin.flush()
@@ -324,8 +328,14 @@ def test_sdk_contract(language, driver, tmp_path):
                 assert time.monotonic() < deadline, "Background polling did not update the policy"
                 time.sleep(0.02)
             assert admin.delete(f"/api/keys/{key_id}").status_code == 204
-            assert driver.call("refresh") == {"error": "authentication"}
-            assert evaluate("always") == {"decision": "enabled"}
+            assert driver.call("refresh") == {"error": "key_revoked"}
+            assert evaluate("always") == {"error": "key_revoked"}
+            assert driver.call("init") == {"error": "key_revoked"}
+            assert driver.call("close") == {"ok": True}
+            assert evaluate("always") == {"error": "key_revoked"}
+            _, secret = make_key(admin)
+            build(secret)
+            assert driver.call("init") == {"ok": True}
             server.stop()
             assert driver.call("refresh") == {"error": "refresh"}
             assert evaluate("always") == {"decision": "enabled"}
@@ -347,7 +357,7 @@ def test_sdk_contract(language, driver, tmp_path):
 
 @pytest.mark.parametrize("language", ["python", "rust", "go", "node"])
 def test_sdk_rejects_bad_refresh_without_losing_policy_or_etag(language, driver):
-    policy = {"schema_version": 1, "project": "default", "environment": "development",
+    policy = {"schema_version": 1, "application_id": "app_test", "project": "default", "environment": "development",
               "revision": 1, "flags": {"flag": {"mode": "enabled"}}}
     response = [304, b"", {"ETag": '"one"'}, 0]
     requests = []
@@ -377,11 +387,14 @@ def test_sdk_rejects_bad_refresh_without_losing_policy_or_etag(language, driver)
         assert driver.call("build", url=f"http://127.0.0.1:{server.server_port}",
                            key="test-secret", interval=3600, timeout=0.2) == {"ok": True}
         assert driver.call("init") == {"error": "invalid_policy"}
+        response[:] = [200, json.dumps({**policy, "application_id": "app_wrong"}).encode(), {"ETag": '"one"'}, 0]
+        assert driver.call("init") == {"error": "invalid_policy"}
         response[:] = [200, json.dumps(policy).encode(), {"ETag": '"one"'}, 0]
         assert driver.call("init") == {"ok": True}
         invalid_bodies = [
             b"not json", b"[]", json.dumps({**policy, "schema_version": 2}).encode(),
             json.dumps({**policy, "environment": "production"}).encode(),
+            json.dumps({**policy, "application_id": "app_other"}).encode(),
             json.dumps({**policy, "unexpected": True}).encode(),
             json.dumps({**policy, "flags": {"flag": {"mode": "percentage", "percentage": 101}}}).encode(),
             json.dumps({**policy, "flags": {"flag": {"mode": "custom", "action": "enable",
@@ -430,3 +443,42 @@ def test_contract_driver_reports_failures(tmp_path, program, message):
             driver.call("init", deadline_seconds=1)
     finally:
         driver.stop()
+
+
+@pytest.mark.parametrize("language", ["python", "rust", "go", "node"])
+def test_application_scope_selection_and_background_revocation(language, driver, server, admin):
+    from test_applications import create_app
+
+    for flag in ("shared", "private"):
+        assert admin.post("/api/environments/development/flags", json={"key": flag, "mode": "enabled"}).status_code == 201
+    app = create_app(admin, "Storefront", ["shared"])
+    other = create_app(admin, "Billing", ["private"])
+    key = app["keys"][0]
+
+    def build(application_id, interval=3600):
+        assert driver.call("build", url=server.url, key=key["secret"], environment="development",
+                           application_id=application_id, interval=interval, timeout=1) == {"ok": True}
+
+    build(other["id"])
+    assert driver.call("init") == {"error": "authentication"}
+    assert driver.call("close") == {"ok": True}
+    build(app["id"])
+    assert driver.call("init") == {"ok": True}
+    assert driver.call("evaluate", flag="shared", context={}) == {"decision": "enabled"}
+    assert driver.call("evaluate", flag="private", context={}) == {"error": "flag_not_found"}
+    assert admin.put(f"/api/environments/development/apps/{app['id']}", json={"name": "Storefront", "flags": []}).status_code == 200
+    assert driver.call("refresh") == {"updated": True}
+    assert driver.call("evaluate", flag="shared", context={}) == {"error": "flag_not_found"}
+    assert driver.call("refresh") == {"updated": False}
+    assert driver.call("close") == {"ok": True}
+    build(app["id"], interval=0.02)
+    assert driver.call("init") == {"ok": True}
+    assert admin.delete(f"/api/keys/{key['id']}").status_code == 204
+    deadline = time.monotonic() + 5
+    while driver.call("evaluate", flag="shared", context={}) != {"error": "key_revoked"}:
+        assert time.monotonic() < deadline, "Background refresh did not clear the revoked policy"
+        time.sleep(0.02)
+    assert driver.call("refresh") == {"error": "key_revoked"}
+    assert driver.call("init") == {"error": "key_revoked"}
+    assert driver.call("close") == {"ok": True}
+    assert driver.call("evaluate", flag="shared", context={}) == {"error": "key_revoked"}

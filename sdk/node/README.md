@@ -23,7 +23,7 @@ The build creates `sdk/node/native/<platform>-<arch>/partly.node`. No npm depend
 
 ## Client contract
 
-Build with `Client.builder().url(url).secretKey(key).build()`. Reuse one instance; building it makes no requests.
+Build with `Client.builder().url(url).environment(env).applicationId(appID).secretKey(key).build()`. Reuse one instance; building it makes no requests.
 
 | Method | Behavior |
 | --- | --- |
@@ -40,7 +40,7 @@ HTTPS verifies certificates and hostnames using Node's bundled public roots. `ca
 
 Context must be a flat object of strings, finite numbers, and booleans. Integer context values must be safe JavaScript integers (±9,007,199,254,740,991). BigInt, null, nested objects, and arrays are rejected. Policy numbers retain their original precision in Rust. See [shared rules](../../crates/partly-core/README.md).
 
-Failed refreshes keep the policy and ETag. Local evaluation still works after close, but network calls then fail. Initialization can be retried after a failure.
+Ordinary failed refreshes keep the policy and ETag. Local evaluation still works after close, but network calls then fail. Initialization can be retried after a failure.
 
 ```sh
 node --test sdk/node/test/*.test.js
@@ -48,3 +48,9 @@ python -m pytest -q tests/e2e/test_sdk_contract.py -k node
 ```
 
 [Apache-2.0](LICENSE).
+
+## Application scope and revocation
+
+Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.environment("development").applicationId("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
+
+A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `KeyRevokedError` (an `AuthenticationError` subclass). Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh reaches the server.

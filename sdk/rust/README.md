@@ -32,7 +32,7 @@ The [runnable quickstart](../../examples/rust/quickstart.rs) shows startup with 
 - `build()` validates settings without network access. `init().await` downloads the first policy and starts one poller; failed initialization can be retried.
 - Malformed URLs return `Error::UrlParse(UrlParseError)` with the original parser error, also available through `std::error::Error::source()`. Valid URLs that violate the allowed origin format return `Error::Configuration`. Neither error includes the supplied URL or API Key.
 - `evaluate()` returns `Result<Decision, Error>`. Match `Error::Evaluation(EvaluationError::ContextType { .. })` for wrong context types. Unknown flags and missing policy are separate errors.
-- `refresh().await` returns `true` for an accepted policy, `false` for an unchanged response. Failures preserve the policy and ETag.
+- `refresh().await` returns `true` for an accepted policy, `false` for an unchanged response. Ordinary failures preserve the policy and ETag; confirmed revocation clears them.
 - `close().await` cancels downloads and stops polling. Repeated calls are safe. The last policy remains available for evaluation, but the client cannot reconnect.
 - `last_refresh_error()` reports a background refresh failure; a successful refresh clears it.
 
@@ -48,3 +48,9 @@ python -m pytest -q tests/e2e/test_sdk_contract.py -k rust
 ```
 
 [Apache-2.0](LICENSE).
+
+## Application scope and revocation
+
+Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.environment("development").application_id("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
+
+A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `Error::KeyRevoked`. Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh reaches the server.

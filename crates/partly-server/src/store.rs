@@ -11,6 +11,8 @@ use rand::{
 };
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::Serialize;
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap},
     fs::{File, OpenOptions, TryLockError},
@@ -29,14 +31,39 @@ pub struct Store {
 pub struct SdkKey {
     id: String,
     name: String,
-    secret: String,
+    secret: Option<String>,
+    masked_secret: String,
+    created_at: String,
+    revoked_at: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct Application {
+    id: String,
+    name: String,
+    flags: Vec<String>,
+    keys: Vec<SdkKey>,
+}
+
+fn audit(
+    db: &Connection,
+    env: &str,
+    action: &str,
+    kind: &str,
+    id: &str,
+    name: &str,
+    details: Value,
+) -> Result<(), ApiError> {
+    db.execute("INSERT INTO audits (environment, actor, action, item_type, item_id, item_name, application_id, details) SELECT ?1, username, ?2, ?3, ?4, ?5, ?6, ?7 FROM admin WHERE id = 1",
+        params![env, action, kind, id, name, details.get("application_id").and_then(Value::as_str), details.to_string()])?;
+    Ok(())
 }
 
 fn key_name(name: &str) -> Result<&str, ApiError> {
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 64 || name.chars().any(char::is_control) {
         return Err(ApiError::bad(
-            "Use a key name of 1–64 characters without control characters",
+            "Use a name of 1–64 characters without control characters",
         ));
     }
     Ok(name)
@@ -46,7 +73,10 @@ fn check_policy_size(policy: &Policy) -> Result<(), ApiError> {
     let size = serde_json::to_vec(policy)
         .map_err(|_| ApiError::internal("Cannot encode policy"))?
         .len();
-    if size > MAX_POLICY_BYTES {
+    // Reserve enough metadata for any application ID and revision in this environment.
+    let scope_reserve = 64_usize.saturating_sub(policy.application_id.len()) + 20
+        - policy.revision.to_string().len();
+    if size + scope_reserve > MAX_POLICY_BYTES {
         return Err(ApiError::bad(
             "Policy exceeds the 1 MiB POC limit; remove flags or simplify rules",
         ));
@@ -116,6 +146,17 @@ impl Store {
                         "Existing database is invalid or has an unsupported schema",
                     ));
                 }
+                for query in [
+                    "SELECT id, name, application_id, secret, secret_hash, masked_secret, created_at, revoked_at FROM sdk_keys",
+                    "SELECT id, environment, name, revision FROM applications",
+                    "SELECT environment, application_id, flag_key FROM application_flags",
+                    "SELECT id, environment, actor, action, item_type, item_id, item_name, application_id, details, created_at FROM audits",
+                    "SELECT environment, key, config FROM flags",
+                ] {
+                    connection.prepare(query).map_err(|_| {
+                        ApiError::internal("Existing database has an incompatible development schema. Use a fresh --db path; the existing file has not been changed.")
+                    })?;
+                }
                 if connection
                     .query_row("PRAGMA foreign_key_check", [], |_| Ok(()))
                     .optional()?
@@ -135,14 +176,6 @@ impl Store {
                 )?;
                 if count != 1 || PasswordHash::new(&hash).is_err() {
                     return Err(ApiError::internal("Existing database setup is incomplete"));
-                }
-                for query in [
-                    "SELECT id, name, environment, secret FROM sdk_keys",
-                    "SELECT environment, key, config FROM flags",
-                ] {
-                    connection.prepare(query).map_err(|_| {
-                        ApiError::internal("Existing database has an incompatible development schema. Use a fresh --db path; the existing file has not been changed.")
-                    })?;
                 }
                 Some(connection)
             }
@@ -314,6 +347,7 @@ impl Store {
             schema_version: 1,
             project,
             environment: env.into(),
+            application_id: "environment".into(),
             revision,
             flags,
         })
@@ -338,6 +372,13 @@ impl Store {
             .as_mut()
             .ok_or_else(|| ApiError::conflict("Complete setup first"))?
             .transaction()?;
+        let before: Option<String> = transaction
+            .query_row(
+                "SELECT config FROM flags WHERE environment = ?1 AND key = ?2",
+                [env, key],
+                |r| r.get(0),
+            )
+            .optional()?;
         let exists: bool = transaction.query_row(
             "SELECT EXISTS(SELECT 1 FROM flags WHERE environment = ?1 AND key = ?2)",
             [env, key],
@@ -357,7 +398,21 @@ impl Store {
                 "UPDATE environments SET revision = revision + 1 WHERE name = ?1",
                 [env],
             )?;
+            transaction.execute("UPDATE applications SET revision = revision + 1 WHERE id IN (SELECT application_id FROM application_flags WHERE environment = ?1 AND flag_key = ?2)", [env, key])?;
             check_policy_size(&Self::read_policy(&transaction, env)?)?;
+            let before: Option<Value> = before
+                .map(|v| serde_json::from_str(&v))
+                .transpose()
+                .map_err(|_| ApiError::internal("Invalid stored flag"))?;
+            audit(
+                &transaction,
+                env,
+                if create { "created" } else { "updated" },
+                "flag",
+                key,
+                key,
+                json!({"before": before, "after": flag, "applications": Self::flag_apps(&transaction, env, key)?}),
+            )?;
         }
         transaction.commit()?;
         Ok(())
@@ -370,6 +425,15 @@ impl Store {
             .as_mut()
             .ok_or_else(|| ApiError::conflict("Complete setup first"))?
             .transaction()?;
+        let before: Option<String> = transaction
+            .query_row(
+                "SELECT config FROM flags WHERE environment = ?1 AND key = ?2",
+                [env, key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let applications = Self::flag_apps(&transaction, env, key)?;
+        transaction.execute("UPDATE applications SET revision = revision + 1 WHERE id IN (SELECT application_id FROM application_flags WHERE environment = ?1 AND flag_key = ?2)", [env, key])?;
         if transaction.execute(
             "DELETE FROM flags WHERE environment = ?1 AND key = ?2",
             [env, key],
@@ -381,75 +445,305 @@ impl Store {
             "UPDATE environments SET revision = revision + 1 WHERE name = ?1",
             [env],
         )?;
+        let before: Option<Value> = before
+            .map(|v| serde_json::from_str(&v))
+            .transpose()
+            .map_err(|_| ApiError::internal("Invalid stored flag"))?;
+        audit(
+            &transaction,
+            env,
+            "deleted",
+            "flag",
+            key,
+            key,
+            json!({"before": before, "after": null, "applications": applications}),
+        )?;
         transaction.commit()?;
         Ok(())
     }
 
-    pub fn keys(&self, env: &str) -> Result<Vec<SdkKey>, ApiError> {
-        self.environment(env)?;
-        let mut query = self.db()?.prepare(
-            "SELECT id, name, secret FROM sdk_keys WHERE environment = ?1 ORDER BY rowid",
-        )?;
+    fn flag_apps(db: &Connection, env: &str, key: &str) -> Result<Vec<Value>, ApiError> {
+        let mut query = db.prepare("SELECT a.id, a.name FROM applications a JOIN application_flags f ON a.id = f.application_id WHERE f.environment = ?1 AND f.flag_key = ?2 ORDER BY a.name, a.id")?;
         let rows = query
-            .query_map([env], |r| {
+            .query_map([env, key], |r| {
+                Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?}))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn flag_impact(&self, env: &str, key: &str) -> Result<Vec<Value>, ApiError> {
+        self.environment(env)?;
+        if !self.policy(env)?.flags.contains_key(key) {
+            return Err(ApiError::not_found("Flag not found"));
+        }
+        Self::flag_apps(self.db()?, env, key)
+    }
+
+    fn read_application(db: &Connection, env: &str, id: &str) -> Result<Application, ApiError> {
+        let name = db
+            .query_row(
+                "SELECT name FROM applications WHERE environment = ?1 AND id = ?2",
+                [env, id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| ApiError::not_found("Application not found"))?;
+        let mut query = db.prepare(
+            "SELECT flag_key FROM application_flags WHERE application_id = ?1 ORDER BY flag_key",
+        )?;
+        let flags = query
+            .query_map([id], |r| r.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+        let keys = Self::read_keys(db, id)?;
+        Ok(Application {
+            id: id.into(),
+            name,
+            flags,
+            keys,
+        })
+    }
+
+    pub fn applications(&self, env: &str) -> Result<Vec<Application>, ApiError> {
+        self.environment(env)?;
+        let db = self.db()?;
+        let mut query =
+            db.prepare("SELECT id FROM applications WHERE environment = ?1 ORDER BY name, id")?;
+        let ids = query
+            .query_map([env], |r| r.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+        ids.iter()
+            .map(|id| Self::read_application(db, env, id))
+            .collect()
+    }
+
+    pub fn save_application(
+        &mut self,
+        env: &str,
+        id: Option<&str>,
+        name: &str,
+        flags: &[String],
+    ) -> Result<Application, ApiError> {
+        self.environment(env)?;
+        let name = key_name(name)?;
+        let created = id.is_none();
+        let id = id
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("app_{}", &secret()[..20]));
+        let tx = self
+            .connection
+            .as_mut()
+            .ok_or_else(|| ApiError::conflict("Complete setup first"))?
+            .transaction()?;
+        let before = if created {
+            None
+        } else {
+            Some(Self::read_application(&tx, env, &id)?)
+        };
+        let duplicate: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM applications WHERE environment = ?1 AND name = ?2 AND id != ?3)", params![env, name, id], |r| r.get(0))?;
+        if duplicate {
+            return Err(ApiError::conflict(
+                "An application with this name already exists in this environment",
+            ));
+        }
+        if created {
+            tx.execute(
+                "INSERT INTO applications (id, environment, name) VALUES (?1, ?2, ?3)",
+                params![id, env, name],
+            )?;
+        } else {
+            tx.execute(
+                "UPDATE applications SET name = ?1 WHERE id = ?2",
+                params![name, id],
+            )?;
+        }
+        tx.execute(
+            "DELETE FROM application_flags WHERE application_id = ?1",
+            [&id],
+        )?;
+        let mut selected = std::collections::BTreeSet::new();
+        for flag in flags {
+            if !selected.insert(flag) {
+                return Err(ApiError::bad("Select each flag only once"));
+            }
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM flags WHERE environment = ?1 AND key = ?2)",
+                [env, flag],
+                |r| r.get(0),
+            )?;
+            if !exists {
+                return Err(ApiError::bad(
+                    "Selected flag does not exist in this environment",
+                ));
+            }
+            tx.execute("INSERT INTO application_flags (environment, application_id, flag_key) VALUES (?1, ?2, ?3)", params![env, id, flag])?;
+        }
+        if before.as_ref().is_none_or(|app| {
+            app.flags.iter().collect::<std::collections::BTreeSet<_>>() != selected
+        }) {
+            tx.execute(
+                "UPDATE applications SET revision = revision + 1 WHERE id = ?1",
+                [&id],
+            )?;
+        }
+        let after = json!({"name": name, "flags": selected});
+        let before = before
+            .as_ref()
+            .map(|app| json!({"name": app.name, "flags": app.flags}));
+        if before.as_ref() != Some(&after) {
+            audit(
+                &tx,
+                env,
+                if created { "created" } else { "updated" },
+                "app",
+                &id,
+                name,
+                json!({"application_id": id, "before": before, "after": after}),
+            )?;
+        }
+        if created {
+            Self::insert_key(&tx, env, &id, "Default")?;
+        }
+        let app = Self::read_application(&tx, env, &id)?;
+        tx.commit()?;
+        Ok(app)
+    }
+
+    fn read_keys(db: &Connection, application: &str) -> Result<Vec<SdkKey>, ApiError> {
+        let mut query = db.prepare("SELECT id, name, secret, masked_secret, created_at, revoked_at FROM sdk_keys WHERE application_id = ?1 ORDER BY rowid")?;
+        let rows = query
+            .query_map([application], |r| {
                 Ok(SdkKey {
                     id: r.get(0)?,
                     name: r.get(1)?,
                     secret: r.get(2)?,
+                    masked_secret: r.get(3)?,
+                    created_at: r.get(4)?,
+                    revoked_at: r.get(5)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
-    pub fn create_key(&self, env: &str, name: &str) -> Result<SdkKey, ApiError> {
-        self.environment(env)?;
-        let name = key_name(name)?.to_owned();
+    fn insert_key(db: &Connection, env: &str, app: &str, name: &str) -> Result<SdkKey, ApiError> {
+        let name = key_name(name)?;
         let id = secret()[..16].to_owned();
         let key = format!("pk_{}", Alphanumeric.sample_string(&mut OsRng, 24));
+        let masked = format!("{}••••••••••••{}", &key[..7], &key[key.len() - 4..]);
+        let hash = format!("{:x}", Sha256::digest(key.as_bytes()));
         // shortcut: SDK keys are plaintext in the local POC, add protected storage before production use.
-        self.db()?.execute(
-            "INSERT INTO sdk_keys (id, environment, secret, name) VALUES (?1, ?2, ?3, ?4)",
-            params![id, env, key, name],
-        )?;
-        Ok(SdkKey {
-            id,
+        db.execute("INSERT INTO sdk_keys (id, application_id, secret, secret_hash, masked_secret, name) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![id, app, key, hash, masked, name])?;
+        audit(
+            db,
+            env,
+            "created",
+            "api_key",
+            &id,
             name,
-            secret: key,
-        })
+            json!({"application_id": app, "masked_secret": masked}),
+        )?;
+        Self::read_keys(db, app)?
+            .into_iter()
+            .find(|key| key.id == id)
+            .ok_or_else(|| ApiError::internal("Cannot read new API Key"))
     }
 
-    pub fn rename_key(&self, id: &str, name: &str) -> Result<(), ApiError> {
-        let name = key_name(name)?;
-        if self.db()?.execute(
-            "UPDATE sdk_keys SET name = ?1 WHERE id = ?2",
-            params![name, id],
-        )? == 0
-        {
-            return Err(ApiError::not_found("Key not found"));
+    pub fn create_key(&mut self, env: &str, app: &str, name: &str) -> Result<SdkKey, ApiError> {
+        self.environment(env)?;
+        let tx = self
+            .connection
+            .as_mut()
+            .ok_or_else(|| ApiError::conflict("Complete setup first"))?
+            .transaction()?;
+        Self::read_application(&tx, env, app)?;
+        let key = Self::insert_key(&tx, env, app, name)?;
+        tx.commit()?;
+        Ok(key)
+    }
+
+    pub fn change_key(&mut self, id: &str, name: Option<&str>) -> Result<(), ApiError> {
+        let name = name.map(key_name).transpose()?;
+        let tx = self
+            .connection
+            .as_mut()
+            .ok_or_else(|| ApiError::conflict("Complete setup first"))?
+            .transaction()?;
+        let (app, env, old_name, revoked): (String, String, String, Option<String>) = tx.query_row("SELECT a.id, a.environment, k.name, k.revoked_at FROM sdk_keys k JOIN applications a ON a.id = k.application_id WHERE k.id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).optional()?.ok_or_else(|| ApiError::not_found("Key not found"))?;
+        if revoked.is_some() {
+            return Err(ApiError::conflict("Key is already revoked"));
         }
+        if let Some(name) = name {
+            if name != old_name {
+                tx.execute("UPDATE sdk_keys SET name = ?1 WHERE id = ?2", [name, id])?;
+                audit(
+                    &tx,
+                    &env,
+                    "renamed",
+                    "api_key",
+                    id,
+                    name,
+                    json!({"application_id": app, "before": {"name": old_name}, "after": {"name": name}}),
+                )?;
+            }
+        } else {
+            tx.execute("UPDATE sdk_keys SET secret = NULL, revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1", [id])?;
+            audit(
+                &tx,
+                &env,
+                "revoked",
+                "api_key",
+                id,
+                &old_name,
+                json!({"application_id": app}),
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
-    pub fn revoke_key(&self, id: &str) -> Result<(), ApiError> {
-        if self
-            .db()?
-            .execute("DELETE FROM sdk_keys WHERE id = ?1", [id])?
-            == 0
-        {
-            return Err(ApiError::not_found("Key not found"));
+    pub fn app_policy(&self, key: &str, env: &str, app: &str) -> Result<Policy, ApiError> {
+        let hash = format!("{:x}", Sha256::digest(key.as_bytes()));
+        let (scope_env, scope_app, revoked, revision): (String, String, Option<String>, i64) = self.db()?.query_row("SELECT a.environment, a.id, k.revoked_at, a.revision FROM sdk_keys k JOIN applications a ON a.id = k.application_id WHERE k.secret_hash = ?1", [hash], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).optional()?.ok_or_else(ApiError::unauthorized)?;
+        if revoked.is_some() {
+            return Err(ApiError(
+                axum::http::StatusCode::UNAUTHORIZED,
+                "key_revoked".into(),
+            ));
         }
-        Ok(())
+        if env != scope_env || app != scope_app {
+            return Err(ApiError::unauthorized());
+        }
+        let mut query = self.db()?.prepare(
+            "SELECT flag_key FROM application_flags WHERE application_id = ?1 ORDER BY flag_key",
+        )?;
+        let flags = query
+            .query_map([app], |r| r.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+        let mut policy = self.policy(env)?;
+        policy.application_id = app.into();
+        policy
+            .flags
+            .retain(|key, _| flags.binary_search(key).is_ok());
+        policy.revision = u64::try_from(revision)
+            .map_err(|_| ApiError::internal("Invalid application revision"))?;
+        Ok(policy)
     }
 
-    pub fn key_environment(&self, key: &str) -> Result<String, ApiError> {
-        self.db()?
-            .query_row(
-                "SELECT environment FROM sdk_keys WHERE secret = ?1",
-                [key],
-                |r| r.get(0),
-            )
-            .optional()?
-            .ok_or_else(ApiError::unauthorized)
+    pub fn audits(
+        &self,
+        env: &str,
+        before: Option<i64>,
+        action: Option<&str>,
+        app: Option<&str>,
+    ) -> Result<Vec<Value>, ApiError> {
+        self.environment(env)?;
+        let mut query = self.db()?.prepare("SELECT id, actor, action, item_type, item_id, item_name, details, created_at FROM audits WHERE environment = ?1 AND (?2 IS NULL OR id < ?2) AND (?3 IS NULL OR action = ?3) AND (?4 IS NULL OR application_id = ?4 OR EXISTS (SELECT 1 FROM json_each(details, '$.applications') WHERE json_extract(value, '$.id') = ?4)) ORDER BY id DESC LIMIT 100")?;
+        let rows = query.query_map(params![env, before, action, app], |r| {
+            let raw: String = r.get(6)?;
+            let details: Value = serde_json::from_str(&raw).map_err(|e| rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e)))?;
+            Ok(json!({"id": r.get::<_, i64>(0)?, "actor": r.get::<_, String>(1)?, "action": r.get::<_, String>(2)?, "item_type": r.get::<_, String>(3)?, "item_id": r.get::<_, String>(4)?, "item_name": r.get::<_, String>(5)?, "details": details, "created_at": r.get::<_, String>(7)?}))
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 }

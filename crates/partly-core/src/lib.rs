@@ -180,6 +180,7 @@ pub struct Policy {
     pub schema_version: u32,
     pub project: String,
     pub environment: String,
+    pub application_id: String,
     pub revision: u64,
     pub flags: BTreeMap<String, Flag>,
 }
@@ -281,8 +282,11 @@ impl Policy {
         if self.schema_version != 1 {
             return Err("Unsupported policy schema_version".into());
         }
-        if !valid_key(&self.project) || !valid_key(&self.environment) {
-            return Err("Invalid policy project or environment".into());
+        if !valid_key(&self.project)
+            || !valid_key(&self.environment)
+            || !valid_key(&self.application_id)
+        {
+            return Err("Invalid policy project, environment, or application".into());
         }
         for (key, flag) in &self.flags {
             if !valid_key(key) {
@@ -467,7 +471,7 @@ mod tests {
     use serde_json::json;
 
     fn policy(flag: Value) -> Policy {
-        Policy::from_json(&serde_json::to_vec(&json!({"schema_version":1,"project":"default","environment":"development","revision":1,"flags":{"checkout":flag}})).unwrap()).unwrap()
+        Policy::from_json(&serde_json::to_vec(&json!({"schema_version":1,"application_id":"app_test","project":"default","environment":"development","revision":1,"flags":{"checkout":flag}})).unwrap()).unwrap()
     }
 
     #[test]
@@ -689,7 +693,7 @@ mod tests {
     #[test]
     fn json_floats_preserve_their_numeric_value() {
         let policy = Policy::from_json(
-            br#"{"schema_version":1,"project":"default","environment":"development","revision":1,
+            br#"{"schema_version":1,"application_id":"app_test","project":"default","environment":"development","revision":1,
             "flags":{"checkout":{"mode":"custom","action":"enable","groups":[[
                 {"k":"value","op":"eq","v":1.0000000000000001e18}
             ]]}}}"#,
@@ -713,7 +717,7 @@ mod tests {
             "-1e400",
         ] {
             let json = format!(
-                r#"{{"schema_version":1,"project":"default","environment":"development","revision":1,"flags":{{"checkout":{{"mode":"custom","action":"enable","groups":[[{{"k":"x","op":"eq","v":{literal}}}]]}}}}}}"#
+                r#"{{"schema_version":1,"application_id":"app_test","project":"default","environment":"development","revision":1,"flags":{{"checkout":{{"mode":"custom","action":"enable","groups":[[{{"k":"x","op":"eq","v":{literal}}}]]}}}}}}"#
             );
             assert!(Policy::from_json(json.as_bytes()).is_err(), "{literal}");
         }
@@ -724,7 +728,7 @@ mod tests {
             "-1e300",
         ] {
             let json = format!(
-                r#"{{"schema_version":1,"project":"default","environment":"development","revision":1,"flags":{{"checkout":{{"mode":"custom","action":"enable","groups":[[{{"k":"x","op":"eq","v":{literal}}}]]}}}}}}"#
+                r#"{{"schema_version":1,"application_id":"app_test","project":"default","environment":"development","revision":1,"flags":{{"checkout":{{"mode":"custom","action":"enable","groups":[[{{"k":"x","op":"eq","v":{literal}}}]]}}}}}}"#
             );
             assert!(Policy::from_json(json.as_bytes()).is_ok(), "{literal}");
         }

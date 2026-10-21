@@ -5,6 +5,7 @@ import asyncio
 import logging
 import math
 import os
+import re
 import ssl
 from enum import Enum
 from typing import Never, Self
@@ -34,6 +35,10 @@ class AuthenticationError(PartlyError):
     """The control plane rejected the SDK key."""
 
 
+class KeyRevokedError(AuthenticationError):
+    """This key was revoked; build a new client with a valid key."""
+
+
 class RefreshError(PartlyError):
     """The control plane could not provide a policy."""
 
@@ -46,6 +51,8 @@ class ClientBuilder:
     def __init__(self) -> None:
         self._url: str | None = None
         self._secret_key: str | None = None
+        self._environment: str | None = None
+        self._application_id: str | None = None
         self._interval = 30.0
         self._timeout = 5.0
         self._ca_bundle: str | os.PathLike[str] | None = None
@@ -56,6 +63,14 @@ class ClientBuilder:
 
     def secret_key(self, value: str) -> Self:
         self._secret_key = value
+        return self
+
+    def environment(self, value: str) -> Self:
+        self._environment = value
+        return self
+
+    def application_id(self, value: str) -> Self:
+        self._application_id = value
         return self
 
     def poll_interval(self, seconds: float) -> Self:
@@ -83,6 +98,10 @@ class ClientBuilder:
         _ = parsed.port
         if not isinstance(self._secret_key, str) or not self._secret_key or any(not 33 <= ord(c) <= 126 for c in self._secret_key):
             raise ValueError("Supply a non-empty ASCII SDK secret key without whitespace or control characters")
+        if not isinstance(self._environment, str) or not re.fullmatch(r"[a-z0-9_-]{1,64}", self._environment):
+            raise ValueError("Supply an environment name")
+        if not isinstance(self._application_id, str) or not re.fullmatch(r"[a-z0-9_-]{1,64}", self._application_id):
+            raise ValueError("Supply an application ID")
         for value in (self._interval, self._timeout):
             try:
                 valid = not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and value > 0
@@ -98,14 +117,16 @@ class ClientBuilder:
                 raise ValueError("Supply a CA bundle path as a string or PathLike") from None
             if not isinstance(ca_bundle, str) or not ca_bundle or "\0" in ca_bundle:
                 raise ValueError("Supply a non-empty CA bundle path without null characters")
-        return Client(self._url.rstrip("/"), self._secret_key, self._interval, self._timeout, ca_bundle)
+        return Client(self._url.rstrip("/"), self._secret_key, self._interval, self._timeout, self._environment, self._application_id, ca_bundle)
 
 
 class Client:
     """Reuse one client per application process and event loop."""
 
-    def __init__(self, url: str, secret_key: str, interval: float, timeout: float, ca_bundle: str | None = None) -> None:
+    def __init__(self, url: str, secret_key: str, interval: float, timeout: float, environment: str, application_id: str, ca_bundle: str | None = None) -> None:
         self._url = url
+        self._environment = environment
+        self._application_id = application_id
         self._secret_key = secret_key
         self._interval = interval
         self._timeout = timeout
@@ -116,6 +137,7 @@ class Client:
         self._lock = asyncio.Lock()
         self._poll_task: asyncio.Task[None] | None = None
         self._closed = False
+        self._revoked = False
         self.last_refresh_error: PartlyError | None = None
 
     @classmethod
@@ -150,6 +172,8 @@ class Client:
             return await self._download()
 
     def evaluate(self, flag_key: str, *, context: dict[str, str | int | float | bool] | None = None) -> Decision:
+        if self._revoked:
+            raise KeyRevokedError("API Key revoked; build a new client with a valid key")
         snapshot = self._snapshot
         if snapshot is None:
             raise PolicyNotReadyError("No policy loaded; await client.init()")
@@ -158,6 +182,8 @@ class Client:
         return Decision.ENABLED if snapshot.evaluate(flag_key, context) else Decision.DISABLED
 
     def _check_open(self) -> None:
+        if self._revoked:
+            raise KeyRevokedError("API Key revoked; build a new client with a valid key")
         if self._closed:
             raise ClientClosedError("This client is closed; build a new client")
 
@@ -171,8 +197,17 @@ class Client:
             body, etag = downloaded
             snapshot = await asyncio.to_thread(Snapshot, body)
             self._check_open()
-            if self._snapshot is not None and (snapshot.project, snapshot.environment) != (self._snapshot.project, self._snapshot.environment):
+            if (snapshot.environment, snapshot.application_id) != (self._environment, self._application_id):
+                raise InvalidPolicyError("Policy does not match the configured environment and application")
+            if self._snapshot is not None and snapshot.project != self._snapshot.project:
                 raise InvalidPolicyError("Policy project or environment changed unexpectedly")
+        except KeyRevokedError as error:
+            self._revoked = True
+            self._snapshot, self._etag = None, None
+            self.last_refresh_error = error
+            if self._poll_task is not None and self._poll_task is not asyncio.current_task():
+                self._poll_task.cancel()
+            raise
         except PartlyError as error:
             self.last_refresh_error = error
             raise
@@ -189,10 +224,12 @@ class Client:
 
     async def _request(self) -> tuple[bytes, str] | None:
         assert self._http is not None, "init must configure HTTP before downloading"
-        headers = {"Authorization": f"Bearer {self._secret_key}"}
+        headers = {"Authorization": f"Bearer {self._secret_key}", "X-Partly-Environment": self._environment, "X-Partly-Application": self._application_id}
         if self._etag is not None:
             headers["If-None-Match"] = self._etag
         async with self._http.stream("GET", f"{self._url}/api/policy", headers=headers) as response:
+            if response.status_code == 401 and response.headers.get("x-partly-error") == "key_revoked":
+                raise KeyRevokedError("API Key revoked; build a new client with a valid key")
             if response.status_code in (401, 403):
                 raise AuthenticationError("SDK key rejected by the control plane")
             if response.status_code == 304:
@@ -217,6 +254,9 @@ class Client:
             await asyncio.sleep(self._interval)
             try:
                 await self.refresh()
+            except KeyRevokedError as error:
+                logger.warning("Background refresh stopped: %s", error)
+                return
             except PartlyError as error:
                 logger.warning("Background refresh failed: %s", error)
 

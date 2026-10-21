@@ -29,3 +29,7 @@ node_modules/
 *.node
 /sdk/go/native/
 /sdk/node/native/
+
+# Native Python development builds
+/sdk/python/python/partly/*.so
+/sdk/python/python/partly/*.pyd

@@ -7,7 +7,7 @@ from contextlib import closing
 
 import httpx
 import pytest
-from conftest import Server, make_key, save_flag
+from conftest import Server, keys, make_key, policy_headers, save_flag
 
 
 def test_stopped_database_backup_restores_flags_keys_and_admin(server, admin, tmp_path):
@@ -31,10 +31,10 @@ def test_stopped_database_backup_restores_flags_keys_and_admin(server, admin, tm
         with closing(restored.admin(setup=False)) as recovered:
             flags = recovered.get("/api/environments/development/flags").json()
             assert flags["new_checkout"] == {"mode": "percentage", "percentage": 25}
-            keys = recovered.get("/api/environments/development/keys").json()["keys"]
-            assert [(item["name"], item["secret"]) for item in keys] == [("Retained application", key)]
+            saved_keys = keys(recovered, "development")
+            assert [(item["name"], item["secret"]) for item in saved_keys] == [("Retained application", key)]
         response = httpx.get(
-            f"{restored.url}/api/policy", headers={"Authorization": f"Bearer {key}"}, trust_env=False,
+            f"{restored.url}/api/policy", headers=policy_headers(key), trust_env=False,
         )
         assert response.status_code == 200
         assert response.json()["flags"]["new_checkout"]["percentage"] == 25

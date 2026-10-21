@@ -19,7 +19,7 @@ cargo build --release --locked -p partly-server
 
 1. Open <http://127.0.0.1:8080> and create an admin account (password: at least 12 characters).
 2. In **Development**, create `new_checkout` with **Enabled for everyone**.
-3. Under **Key Management**, generate and copy an API Key.
+3. Under **Apps & Keys**, create an app, select its flags, and copy its application ID and API Key.
 
 Setup creates the database. Reuse its path on restart. For remote access, [configure HTTPS](crates/partly-server/README.md#https).
 
@@ -35,7 +35,7 @@ maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out tar
 python -m pip install target/wheels/partly_sdk-0.1.0a1-cp314-cp314-*.whl
 ```
 
-Replace `YOUR_API_KEY` in [quickstart.py](examples/python/quickstart.py), then run:
+Set the environment and replace `YOUR_APPLICATION_ID` and `YOUR_API_KEY` in [quickstart.py](examples/python/quickstart.py), then run:
 
 ```sh
 python examples/python/quickstart.py
@@ -52,7 +52,7 @@ Self-hosted capabilities, reviewed October 2026. Linked sources describe each to
 | Standalone server binary | ✅ | ✅ | ✅ | ❌ | ❌ |
 | Self-hosted central service | ✅ | ✅ | ✅ (relay) | ✅ | ✅ |
 | One service for multiple apps | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Separate app/project flag collections | ❌ | ✅ [Namespaces](https://docs.flipt.io/v2/concepts#namespaces) | ✅ [Flag sets](https://gofeatureflag.org/docs/concepts/flagset) | ✅ [Projects (Enterprise)](https://docs.getunleash.io/concepts/projects) | ✅ [Projects](https://docs.flagsmith.com/flagsmith-concepts/data-model) |
+| Separate app/project flag collections | ✅ | ✅ [Namespaces](https://docs.flipt.io/v2/concepts#namespaces) | ✅ [Flag sets](https://gofeatureflag.org/docs/concepts/flagset) | ✅ [Projects (Enterprise)](https://docs.getunleash.io/concepts/projects) | ✅ [Projects](https://docs.flagsmith.com/flagsmith-concepts/data-model) |
 | Boolean flags | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Percentage rollouts | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Context-based targeting | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -65,7 +65,7 @@ Deployment details: [Flipt](https://docs.flipt.io/v2/introduction), [GO Feature 
 
 ### One server, multiple applications
 
-Run Partly once on a shared server with [HTTPS](crates/partly-server/README.md#https). Give each application's SDK the same server URL and a separately named API Key for its environment. Each application downloads policy and evaluates flags locally.
+Run Partly once on a shared server with [HTTPS](crates/partly-server/README.md#https). Create an app under **Apps & Keys**, select its flags, and give its SDK the server URL, environment, application ID, and API Key. Each application downloads policy and evaluates flags locally.
 
 ```mermaid
 flowchart LR
@@ -74,7 +74,7 @@ flowchart LR
     CP -->|Policy download and refresh| C[Worker: local SDK]
 ```
 
-Today, one instance has one shared project, Development and Production environments, and one admin. All keys in an environment can download its complete policy; a key's name does not restrict it to an application. Separate keys allow independent revocation, but app-level policy isolation and team permissions are not implemented. Organization-wide capacity still needs load testing.
+One instance has Development and Production environments and one admin. Apps select shared flags within their environment; each key can download only its app's selection. Multiple keys support rotation, and revoked keys remain identifiable in history. The Audits tab records admin changes. Team permissions and organization-wide capacity testing remain future work.
 
 ### SDKs
 
@@ -105,7 +105,7 @@ GO Feature Flag uses OpenFeature providers or its Go library. Flipt's [Rust and 
 
 Flipt leaves resource settings unset; its commented 128 MiB example is not a recommendation. GO Feature Flag's figure is a Kubernetes reservation, not a usage limit. Unleash gives a starting recommendation; Flagsmith's figures describe its Small production tier.
 
-Partly's figure is sampled server memory in a one-flag local test, excluding the application SDK and browser. A production RAM recommendation still needs load testing. These figures use different workloads and deployment sizes, so they do not establish a memory ranking.
+Partly's figure is an earlier baseline of sampled server memory in a one-flag local test, excluding the application SDK and browser. A production RAM recommendation still needs load testing. These figures use different workloads and deployment sizes, so they do not establish a memory ranking.
 
 The same [local benchmark](tests/benchmark.py) measured about **0.32 µs per Python evaluation**, including the Rust binding: five batches of 100,000 calls with one percentage flag and a fixed user. This is a batch average, not tail latency or a cross-product speed comparison.
 
@@ -115,12 +115,12 @@ Proposed order, keeping the single executable and local evaluation:
 
 1. **Release the existing SDKs.** Finish npm and Go distribution, verify installs from published artifacts, and make the server and four SDKs available through their normal channels. See [publishing work](docs/publishing.md).
 2. **Set a tested memory budget.** Measure peak RAM under concurrent logins, policy refreshes, and larger flag sets on Linux. Publish a practical recommendation and track regressions.
-3. **Support independent teams in one installation.** Add projects for applications or related services, with API Keys scoped to project and environment. Follow with individual admin accounts, project permissions, and a history of flag changes. This closes the gap between sharing a server and operating an organization-wide platform.
+3. **Add team access controls.** Application scopes and change history are implemented. Individual admin accounts and permissions are the next step for independent teams sharing one installation.
 4. **Support OpenFeature.** Wrap the existing SDKs with providers for the standard feature-flag API, making adoption easier without replacing the Rust evaluator. Keep errors available through the detailed evaluation API.
 5. **Add Java, then .NET.** Close the next backend SDK gaps using the shared evaluator and the same cross-language contract tests.
 6. **Expand flag values when users need them.** Add string, number, and JSON values before weighted variants, while preserving the existing boolean API. This follows the feature gap in the comparison without adding an experimentation platform.
 
-Browser/mobile SDKs, Ruby/PHP, reusable segments, and scheduled rollouts will be prioritized from user demand. SSO, HA, and experimentation analytics remain outside the near-term scope. The first release stays boolean-only with one shared project.
+Browser/mobile SDKs, Ruby/PHP, reusable segments, and scheduled rollouts will be prioritized from user demand. SSO, HA, and experimentation analytics remain outside the near-term scope. The first release stays boolean-only with one admin account.
 
 ## Alpha limits
 

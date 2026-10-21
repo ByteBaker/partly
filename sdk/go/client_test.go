@@ -19,19 +19,19 @@ import (
 	"time"
 )
 
-const policyJSON = `{"schema_version":1,"project":"default","environment":"development","revision":1,
+const policyJSON = `{"schema_version":1,"application_id":"app_test","project":"default","environment":"development","revision":1,
  "flags":{"flag":{"mode":"custom","action":"enable","groups":[[{"k":"age","op":"eq","v":9007199254740993}]]}}}`
 
 func TestBuilder(t *testing.T) {
 	for _, url := range []string{"ftp://host", "http://u:p@host", "http://host/path", "http://host?", "http://host#x", "http://host:99999"} {
-		if _, err := NewClientBuilder().URL(url).SecretKey("key").Build(); err == nil {
+		if _, err := NewClientBuilder().URL(url).Environment("development").ApplicationID("app_test").SecretKey("key").Build(); err == nil {
 			t.Fatalf("accepted %s", url)
 		}
 	}
-	if _, err := NewClientBuilder().URL("http://localhost").SecretKey("key\n").Build(); err == nil {
+	if _, err := NewClientBuilder().URL("http://localhost").Environment("development").ApplicationID("app_test").SecretKey("key\n").Build(); err == nil {
 		t.Fatal("accepted invalid key")
 	}
-	if _, err := NewClientBuilder().URL("http://localhost").SecretKey("key").Timeout(0).Build(); err == nil {
+	if _, err := NewClientBuilder().URL("http://localhost").Environment("development").ApplicationID("app_test").SecretKey("key").Timeout(0).Build(); err == nil {
 		t.Fatal("accepted zero timeout")
 	}
 }
@@ -77,7 +77,7 @@ func TestNativeFloatsKeepTheirValues(t *testing.T) {
 		{"negative float exceeds integer range", "eq", "-1e20", float64(-1e20), Enabled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			policy := fmt.Sprintf(`{"schema_version":1,"project":"default","environment":"development","revision":1,
+			policy := fmt.Sprintf(`{"schema_version":1,"application_id":"app_test","project":"default","environment":"development","revision":1,
 				"flags":{"flag":{"mode":"custom","action":"enable","groups":[[{"k":"value","op":%q,"v":%s}]]}}}`,
 				test.op, test.expected)
 			snapshot, err := newSnapshot([]byte(policy))
@@ -131,7 +131,7 @@ func TestNativeUnsupportedTypesKeepRuleDetails(t *testing.T) {
 }
 
 func TestNativeRejectsInvalidUTF8(t *testing.T) {
-	snapshot, err := newSnapshot([]byte(`{"schema_version":1,"project":"default","environment":"development","revision":1,
+	snapshot, err := newSnapshot([]byte(`{"schema_version":1,"application_id":"app_test","project":"default","environment":"development","revision":1,
 		"flags":{"flag":{"mode":"custom","action":"enable","groups":[[{"k":"text","op":"matches","v":"�"}]]}}}`))
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +187,7 @@ func (r cancelAtEOF) Read(p []byte) (int, error) {
 }
 
 func TestCancelledDownloadPreservesPolicyAndETag(t *testing.T) {
-	client, err := NewClientBuilder().URL("http://localhost").SecretKey("key").Build()
+	client, err := NewClientBuilder().URL("http://localhost").Environment("development").ApplicationID("app_test").SecretKey("key").Build()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestConcurrentInitEvaluationAndClose(t *testing.T) {
 		_, _ = w.Write([]byte(policyJSON))
 	}))
 	defer server.Close()
-	client, err := NewClientBuilder().URL(server.URL).SecretKey("key").Build()
+	client, err := NewClientBuilder().URL(server.URL).Environment("development").ApplicationID("app_test").SecretKey("key").Build()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,5 +290,16 @@ func TestConcurrentInitEvaluationAndClose(t *testing.T) {
 	}
 	if err := client.Init(ctx); !errors.Is(err, ErrClientClosed) {
 		t.Fatalf("init: %v", err)
+	}
+}
+
+func TestApplicationScopeRequired(t *testing.T) {
+	for _, value := range []string{"", "Bad", "app name", "app\n"} {
+		if _, err := NewClientBuilder().URL("http://localhost").SecretKey("key").Environment("development").ApplicationID(value).Build(); err == nil {
+			t.Fatal("invalid application ID accepted")
+		}
+		if _, err := NewClientBuilder().URL("http://localhost").SecretKey("key").Environment(value).ApplicationID("app_test").Build(); err == nil {
+			t.Fatal("invalid environment accepted")
+		}
 	}
 }

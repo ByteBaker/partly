@@ -16,7 +16,7 @@ from partly._native import Snapshot
 
 
 def snapshot(flag):
-    return Snapshot(json.dumps({"schema_version": 1, "project": "default", "environment": "development",
+    return Snapshot(json.dumps({"schema_version": 1, "application_id": "app_test", "project": "default", "environment": "development",
                                 "revision": 1, "flags": {"checkout": flag}}).encode())
 
 

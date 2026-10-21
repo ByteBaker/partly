@@ -14,6 +14,7 @@ ERRORS = {
     "InvalidContextError": "invalid_context",
     "ContextTypeError": "context_type",
     "PolicyNotReadyError": "policy_not_ready",
+    "KeyRevokedError": "key_revoked",
     "AuthenticationError": "authentication",
     "InvalidPolicyError": "invalid_policy",
     "RefreshError": "refresh",
@@ -30,7 +31,7 @@ async def main():
                 op = command["op"]
                 result = {"ok": True}
                 if op == "build":
-                    builder = (Client.builder().url(command["url"]).secret_key(command["key"])
+                    builder = (Client.builder().url(command["url"]).environment(command["environment"]).application_id(command["application_id"]).secret_key(command["key"])
                                .poll_interval(command["interval"]).timeout(command["timeout"]))
                     if command.get("ca_bundle"):
                         builder.ca_bundle(command["ca_bundle"])

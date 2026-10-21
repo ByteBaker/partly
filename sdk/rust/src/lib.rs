@@ -8,7 +8,10 @@ use partly_core::{Policy, MAX_POLICY_BYTES};
 use reqwest::{header, redirect, Certificate, Url};
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex, RwLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, RwLock,
+    },
     time::Duration,
 };
 use tokio::{sync::watch, task::JoinHandle};
@@ -24,6 +27,8 @@ pub enum Error {
     PolicyNotReady,
     #[error("API Key rejected")]
     Authentication,
+    #[error("API Key revoked; build a new client with a valid key")]
+    KeyRevoked,
     #[error("Invalid policy: {0}")]
     InvalidPolicy(String),
     #[error("Policy request failed: {0}")]
@@ -37,6 +42,8 @@ pub enum Error {
 pub struct ClientBuilder {
     url: String,
     key: String,
+    environment: String,
+    application_id: String,
     interval: Duration,
     timeout: Duration,
     ca: Option<PathBuf>,
@@ -47,6 +54,8 @@ impl Default for ClientBuilder {
         Self {
             url: String::new(),
             key: String::new(),
+            environment: String::new(),
+            application_id: String::new(),
             interval: Duration::from_secs(30),
             timeout: Duration::from_secs(5),
             ca: None,
@@ -61,6 +70,14 @@ impl ClientBuilder {
     }
     pub fn secret_key(mut self, value: impl Into<String>) -> Self {
         self.key = value.into();
+        self
+    }
+    pub fn environment(mut self, value: impl Into<String>) -> Self {
+        self.environment = value.into();
+        self
+    }
+    pub fn application_id(mut self, value: impl Into<String>) -> Self {
+        self.application_id = value.into();
         self
     }
     pub fn poll_interval(mut self, value: Duration) -> Self {
@@ -96,6 +113,13 @@ impl ClientBuilder {
                 "supply a nonempty ASCII API Key without whitespace",
             ));
         }
+        if !partly_core::valid_key(&self.environment)
+            || !partly_core::valid_key(&self.application_id)
+        {
+            return Err(Error::Configuration(
+                "supply an environment name and application ID",
+            ));
+        }
         if self.interval.is_zero() || self.timeout.is_zero() {
             return Err(Error::Configuration(
                 "interval and timeout must be positive",
@@ -114,6 +138,7 @@ impl ClientBuilder {
                 serial: tokio::sync::Mutex::new(()),
                 poller: Mutex::new(None),
                 closed,
+                revoked: AtomicBool::new(false),
                 last_error: RwLock::new(None),
             }),
         })
@@ -133,6 +158,7 @@ struct Inner {
     serial: tokio::sync::Mutex<()>,
     poller: Mutex<Option<JoinHandle<()>>>,
     closed: watch::Sender<bool>,
+    revoked: AtomicBool,
     last_error: RwLock<Option<Arc<Error>>>,
 }
 
@@ -204,7 +230,11 @@ impl Client {
                     break;
                 }
                 if let Err(error) = inner.download().await {
+                    let revoked = matches!(error, Error::KeyRevoked);
                     *inner.last_error.write().unwrap() = Some(Arc::new(error));
+                    if revoked {
+                        break;
+                    }
                 }
             }
         });
@@ -222,6 +252,9 @@ impl Client {
     }
 
     pub fn evaluate(&self, key: &str, context: &Context) -> Result<Decision, Error> {
+        if self.inner.revoked.load(Ordering::Acquire) {
+            return Err(Error::KeyRevoked);
+        }
         let policy = self
             .inner
             .accepted
@@ -253,6 +286,9 @@ impl Client {
 
 impl Inner {
     fn check_open(&self) -> Result<(), Error> {
+        if self.revoked.load(Ordering::Acquire) {
+            return Err(Error::KeyRevoked);
+        }
         if *self.closed.borrow() {
             Err(Error::ClientClosed)
         } else {
@@ -280,7 +316,9 @@ impl Inner {
             .map(|a| a.etag.clone());
         let mut request = http
             .get(self.endpoint.clone())
-            .bearer_auth(&self.config.key);
+            .bearer_auth(&self.config.key)
+            .header("x-partly-environment", &self.config.environment)
+            .header("x-partly-application", &self.config.application_id);
         if let Some(etag) = &etag {
             request = request.header(header::IF_NONE_MATCH, etag);
         }
@@ -289,6 +327,20 @@ impl Inner {
             .await
             .map_err(|_| Error::Refresh("network or TLS failure"))?;
         let status = response.status().as_u16();
+        if status == 401
+            && response
+                .headers()
+                .get("x-partly-error")
+                .is_some_and(|v| v == "key_revoked")
+        {
+            self.revoked.store(true, Ordering::Release);
+            *self.accepted.write().unwrap() = None;
+            *self.last_error.write().unwrap() = Some(Arc::new(Error::KeyRevoked));
+            if let Some(task) = self.poller.lock().unwrap().as_ref() {
+                task.abort();
+            }
+            return Err(Error::KeyRevoked);
+        }
         if matches!(status, 401 | 403) {
             return Err(Error::Authentication);
         }
@@ -329,6 +381,13 @@ impl Inner {
             .map_err(|_| Error::Refresh("validation task failed"))?
             .map_err(|_| Error::InvalidPolicy("policy validation failed".into()))?;
         self.check_open()?;
+        if policy.environment != self.config.environment
+            || policy.application_id != self.config.application_id
+        {
+            return Err(Error::InvalidPolicy(
+                "policy does not match configured scope".into(),
+            ));
+        }
         let mut accepted = self.accepted.write().unwrap();
         if accepted.as_ref().is_some_and(|a| {
             a.policy.project != policy.project || a.policy.environment != policy.environment

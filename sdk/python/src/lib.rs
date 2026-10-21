@@ -126,6 +126,11 @@ impl Snapshot {
     }
 
     #[getter]
+    fn application_id(&self) -> &str {
+        &self.policy.application_id
+    }
+
+    #[getter]
     fn environment(&self) -> &str {
         &self.policy.environment
     }

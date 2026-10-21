@@ -28,3 +28,7 @@ Paste the key when `read` waits, then press Enter. Only this diagnostic uses env
 ## License
 
 [Apache-2.0](LICENSE). Preserve license and attribution notices when redistributing.
+
+In **Apps & Keys**, create an app in the chosen environment and select `new_checkout`. Copy its application ID and active API Key into the example. Use one initialized client for all requests.
+
+The rollout script also requires `PARTLY_ENVIRONMENT` and `PARTLY_APPLICATION_ID`, alongside its existing URL and key settings.

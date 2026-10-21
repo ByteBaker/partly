@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -31,6 +32,7 @@ var (
 	ErrInvalidContext = errors.New("invalid context")
 	ErrContextType    = errors.New("wrong context type")
 	ErrPolicyNotReady = errors.New("no policy loaded; call Init first")
+	ErrKeyRevoked     = errors.New("API Key revoked; build a new client with a valid key")
 	ErrAuthentication = errors.New("API Key rejected")
 	ErrInvalidPolicy  = errors.New("invalid policy")
 	ErrRefresh        = errors.New("policy request failed")
@@ -55,16 +57,18 @@ func (e *Error) Is(target error) bool {
 }
 
 type ClientBuilder struct {
-	url, key, ca      string
-	interval, timeout time.Duration
+	url, key, ca, environment, applicationID string
+	interval, timeout                        time.Duration
 }
 
 func NewClientBuilder() *ClientBuilder {
 	return &ClientBuilder{interval: 30 * time.Second, timeout: 5 * time.Second}
 }
-func (b *ClientBuilder) URL(value string) *ClientBuilder       { b.url = value; return b }
-func (b *ClientBuilder) SecretKey(value string) *ClientBuilder { b.key = value; return b }
-func (b *ClientBuilder) CABundle(value string) *ClientBuilder  { b.ca = value; return b }
+func (b *ClientBuilder) URL(value string) *ClientBuilder           { b.url = value; return b }
+func (b *ClientBuilder) SecretKey(value string) *ClientBuilder     { b.key = value; return b }
+func (b *ClientBuilder) Environment(value string) *ClientBuilder   { b.environment = value; return b }
+func (b *ClientBuilder) ApplicationID(value string) *ClientBuilder { b.applicationID = value; return b }
+func (b *ClientBuilder) CABundle(value string) *ClientBuilder      { b.ca = value; return b }
 func (b *ClientBuilder) PollInterval(value time.Duration) *ClientBuilder {
 	b.interval = value
 	return b
@@ -86,6 +90,11 @@ func (b *ClientBuilder) Build() (*Client, error) {
 	if b.key == "" || strings.ContainsFunc(b.key, func(r rune) bool { return r < 33 || r > 126 }) {
 		return nil, errors.New("supply a nonempty ASCII API Key without whitespace")
 	}
+	for _, value := range []string{b.environment, b.applicationID} {
+		if len(value) == 0 || len(value) > 64 || strings.ContainsFunc(value, func(r rune) bool { return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-') }) {
+			return nil, errors.New("supply an environment name and application ID")
+		}
+	}
 	if b.interval <= 0 || b.timeout <= 0 {
 		return nil, errors.New("interval and timeout must be positive")
 	}
@@ -100,6 +109,7 @@ type Client struct {
 	policy    *snapshot
 	etag      string
 	closed    bool
+	revoked   bool
 	lastError error
 	http      *http.Client
 	serial    chan struct{}
@@ -120,6 +130,9 @@ func (c *Client) release() { <-c.serial }
 func (c *Client) open() error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	if c.revoked {
+		return ErrKeyRevoked
+	}
 	if c.closed {
 		return ErrClientClosed
 	}
@@ -209,6 +222,8 @@ func (c *Client) download(ctx context.Context) (updated bool, failure error) {
 		return false, ErrRefresh
 	}
 	request.Header.Set("Authorization", "Bearer "+c.config.key)
+	request.Header.Set("X-Partly-Environment", c.config.environment)
+	request.Header.Set("X-Partly-Application", c.config.applicationID)
 	c.mu.RLock()
 	etag := c.etag
 	c.mu.RUnlock()
@@ -225,6 +240,13 @@ func (c *Client) download(ctx context.Context) (updated bool, failure error) {
 	defer response.Body.Close()
 	switch response.StatusCode {
 	case 401, 403:
+		if response.StatusCode == 401 && response.Header.Get("X-Partly-Error") == "key_revoked" {
+			c.mu.Lock()
+			c.revoked, c.policy, c.etag = true, nil, ""
+			c.cancel()
+			c.mu.Unlock()
+			return false, ErrKeyRevoked
+		}
 		return false, ErrAuthentication
 	case 304:
 		tag := response.Header.Get("ETag")
@@ -259,6 +281,10 @@ func (c *Client) download(ctx context.Context) (updated bool, failure error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	var scope []string
+	if json.Unmarshal([]byte(policy.scope), &scope) != nil || len(scope) != 3 || scope[1] != c.config.environment || scope[2] != c.config.applicationID {
+		return false, ErrInvalidPolicy
+	}
 	if c.policy != nil && c.policy.scope != policy.scope {
 		return false, ErrInvalidPolicy
 	}
@@ -273,6 +299,10 @@ func validETag(tag string) bool {
 
 func (c *Client) Evaluate(flag string, context map[string]any) (Decision, error) {
 	c.mu.RLock()
+	if c.revoked {
+		c.mu.RUnlock()
+		return "", ErrKeyRevoked
+	}
 	policy := c.policy
 	c.mu.RUnlock()
 	if policy == nil {

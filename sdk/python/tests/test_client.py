@@ -24,12 +24,12 @@ from partly import (
     RefreshError,
 )
 
-POLICY = {"schema_version": 1, "project": "default", "environment": "development", "revision": 1,
+POLICY = {"schema_version": 1, "application_id": "app_test", "project": "default", "environment": "development", "revision": 1,
           "flags": {"checkout": {"mode": "percentage", "percentage": 100}}}
 
 
 def mocked(handler, interval=60, timeout=1):
-    client = Client.builder().url("http://partly.test").secret_key("test-key").poll_interval(interval).timeout(timeout).build()
+    client = Client.builder().url("http://partly.test").environment("development").application_id("app_test").secret_key("test-key").poll_interval(interval).timeout(timeout).build()
     client._http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return client
 
@@ -382,7 +382,7 @@ def test_builder_validation_and_no_network(monkeypatch):
     def forbidden(*args, **kwargs): raise AssertionError("build must not create HTTP resources")
     monkeypatch.setattr(httpx, "AsyncClient", forbidden)
     monkeypatch.setattr(ssl, "create_default_context", forbidden)
-    builder = Client.builder().url("http://localhost:8080").secret_key("test")
+    builder = Client.builder().url("http://localhost:8080").environment("development").application_id("app_test").secret_key("test")
     assert builder.build()._http is None
     assert builder.ca_bundle(Path("missing-ca.pem")).build()._ca_bundle == "missing-ca.pem"
     for value in (0, -1, float("inf"), float("nan"), True, 10**1000):
@@ -390,11 +390,11 @@ def test_builder_validation_and_no_network(monkeypatch):
     for url in (None, 42, "", "ftp://localhost", "http://u:p@localhost", "http://@localhost",
                 "http://localhost/path", "http://localhost:99999", "http://localhost?", "http://localhost#",
                 "http://localhost\n"):
-        with pytest.raises(ValueError): Client.builder().url(url).secret_key("test").build()
+        with pytest.raises(ValueError): Client.builder().url(url).environment("development").application_id("app_test").secret_key("test").build()
     for key in ("test\x00key", "test\x7fkey", "test\nkey", "test key"):
-        with pytest.raises(ValueError): Client.builder().url("http://localhost").secret_key(key).build()
+        with pytest.raises(ValueError): Client.builder().url("http://localhost").environment("development").application_id("app_test").secret_key(key).build()
     for path in (42, False, b"ca.pem", "", "bad\0path"):
-        with pytest.raises(ValueError): Client.builder().url("https://localhost").secret_key("test").ca_bundle(path).build()
+        with pytest.raises(ValueError): Client.builder().url("https://localhost").environment("development").application_id("app_test").secret_key("test").ca_bundle(path).build()
 
 
 @pytest.mark.parametrize("initial", ["missing", "invalid"])
@@ -417,7 +417,7 @@ async def test_ca_bundle_failure_is_safe_and_retryable(tmp_path, monkeypatch, in
         return client
 
     monkeypatch.setattr(httpx, "AsyncClient", create_client)
-    client = Client.builder().url("https://partly.test").secret_key("private-key").ca_bundle(bundle).build()
+    client = Client.builder().url("https://partly.test").environment("development").application_id("app_test").secret_key("private-key").ca_bundle(bundle).build()
     try:
         with pytest.raises(RefreshError, match="CA bundle") as caught:
             await client.init()
@@ -461,7 +461,7 @@ async def test_tls_context_loading_is_async_and_cannot_create_client_after_close
 
     monkeypatch.setattr(ssl, "create_default_context", load_context)
     monkeypatch.setattr(httpx, "AsyncClient", create_client)
-    client = Client.builder().url("https://partly.test").secret_key("test-key").build()
+    client = Client.builder().url("https://partly.test").environment("development").application_id("app_test").secret_key("test-key").build()
     init = asyncio.create_task(client.init())
     try:
         await asyncio.wait_for(entered.wait(), 1)
@@ -510,5 +510,50 @@ async def test_response_cleanup_failure_does_not_commit_snapshot():
         with pytest.raises(RefreshError): await client.refresh()
         assert client._etag == '"good"'
         assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.parametrize("field", ["environment", "application_id"])
+@pytest.mark.parametrize("value", [None, "", "wrong scope", "app\n", "A", "x" * 65])
+def test_scope_is_required_and_validated_before_network(field, value):
+    builder = Client.builder().url("http://localhost").secret_key("key").environment("development").application_id("app_test")
+    getattr(builder, field)(value)
+    with pytest.raises(ValueError):
+        builder.build()
+
+
+async def test_revocation_clears_policy_stops_poller_and_rejects_queued_refreshes():
+    from partly import KeyRevokedError
+
+    requests = 0
+    revoked = False
+
+    async def handler(request):
+        nonlocal requests
+        requests += 1
+        assert request.headers["x-partly-environment"] == "development"
+        assert request.headers["x-partly-application"] == "app_test"
+        if revoked:
+            return httpx.Response(401, headers={"X-Partly-Error": "key_revoked"})
+        return httpx.Response(200, headers={"ETag": '"one"'}, json=POLICY)
+
+    client = mocked(handler, interval=0.01)
+    try:
+        await client.init()
+        revoked = True
+        results = await asyncio.gather(client.refresh(), client.refresh(), return_exceptions=True)
+        assert all(isinstance(error, KeyRevokedError) for error in results)
+        assert client._snapshot is None and client._etag is None
+        assert isinstance(client.last_refresh_error, KeyRevokedError)
+        count = requests
+        await asyncio.sleep(0.04)
+        assert requests == count
+        assert client._poll_task.done()
+        with pytest.raises(KeyRevokedError):
+            await client.init()
+        with pytest.raises(KeyRevokedError):
+            client.evaluate("checkout", context={"id": "u"})
+        assert requests == count
     finally:
         await client.aclose()

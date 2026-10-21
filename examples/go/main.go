@@ -12,6 +12,8 @@ import (
 )
 
 const controlPlaneURL = "http://127.0.0.1:8080"
+const environment = "development"
+const applicationID = "YOUR_APPLICATION_ID"
 const apiKey = "YOUR_API_KEY"
 
 func checkout(client *partly.Client, context map[string]any) (string, error) {
@@ -26,7 +28,7 @@ func checkout(client *partly.Client, context map[string]any) (string, error) {
 }
 
 func run() error {
-	client, err := partly.NewClientBuilder().URL(controlPlaneURL).SecretKey(apiKey).Build()
+	client, err := partly.NewClientBuilder().URL(controlPlaneURL).Environment(environment).ApplicationID(applicationID).SecretKey(apiKey).Build()
 	if err != nil {
 		return err
 	}
