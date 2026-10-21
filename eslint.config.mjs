@@ -25,6 +25,7 @@ export default [
   },
   {
     files: ["crates/partly-server/dashboard/*.js"],
+    rules: { "no-alert": "error" },
     languageOptions: {
       sourceType: "script",
       globals: globals.browser,

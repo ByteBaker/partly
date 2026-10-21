@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 "use strict";
-const { Client, Decision } = require("../../sdk/node");
+const { Client, Decision } = require("partly-sdk");
 
 const CONTROL_PLANE_URL = "http://127.0.0.1:8080";
 const ENVIRONMENT = "development";
@@ -15,7 +15,12 @@ function checkout(client, context) {
 }
 
 async function main() {
-  const client = Client.builder().url(CONTROL_PLANE_URL).environment(ENVIRONMENT).applicationId(APPLICATION_ID).secretKey(API_KEY).build();
+  const client = Client.builder()
+    .url(CONTROL_PLANE_URL)
+    .environment(ENVIRONMENT)
+    .applicationId(APPLICATION_ID)
+    .secretKey(API_KEY)
+    .build();
   try {
     await client.init(); // Application startup, before accepting requests.
     // Two example requests reuse the initialized client and its policy.

@@ -841,12 +841,19 @@ async fn serve(
             }),
         )
         .route(
-            "/docs/python.py",
-            get(|| async {
-                (
+            "/docs/{example}",
+            get(|Path(example): Path<String>| async move {
+                let source = match example.as_str() {
+                    "python.py" => include_str!("../../../examples/python/quickstart.py"),
+                    "rust.rs" => include_str!("../../../examples/rust/quickstart.rs"),
+                    "go.go" => include_str!("../../../examples/go/main.go"),
+                    "node.js" => include_str!("../../../examples/node/quickstart.js"),
+                    _ => return Err(StatusCode::NOT_FOUND),
+                };
+                Ok((
                     [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                    include_str!("../../../examples/python/quickstart.py"),
-                )
+                    source,
+                ))
             }),
         )
         .route("/api/status", get(status))

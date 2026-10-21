@@ -4,6 +4,7 @@
 import json
 import subprocess
 
+import httpx
 import pytest
 from conftest import ROOT, make_key, save_flag, scope_for
 
@@ -12,7 +13,12 @@ from conftest import ROOT, make_key, save_flag, scope_for
 def test_language_quickstart(language, server, admin, tmp_path):
     key_id, key = make_key(admin)
     filename = {"rust": "quickstart.rs", "go": "main.go", "node": "quickstart.js"}[language]
-    source = (ROOT / "examples" / language / filename).read_text()
+    endpoint = {"rust": "rust.rs", "go": "go.go", "node": "node.js"}[language]
+    response = admin.get(f"/docs/{endpoint}")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
+    source = response.text
+    assert source == (ROOT / "examples" / language / filename).read_text()
     source = source.replace('"http://127.0.0.1:8080"', json.dumps(server.url))
     source = source.replace('"YOUR_API_KEY"', json.dumps(key))
 
@@ -43,7 +49,8 @@ tokio = {{ version = "1", features = ["macros", "rt-multi-thread"] }}
         command = [str(tmp_path / "quickstart")]
         build = ["go", "build", "-a", "-o", command[0], "."]
     else:
-        source = source.replace('"../../sdk/node"', json.dumps(str(ROOT / "sdk/node")))
+        (tmp_path / "node_modules").mkdir()
+        (tmp_path / "node_modules/partly-sdk").symlink_to(ROOT / "sdk/node", target_is_directory=True)
         build = ["node", str(ROOT / "sdk/node/build.js")]
         command = ["node", str(tmp_path / filename)]
     (tmp_path / filename).write_text(source)
@@ -62,3 +69,8 @@ tokio = {{ version = "1", features = ["macros", "rt-multi-thread"] }}
     assert result.returncode != 0
     assert not result.stdout
     assert key not in result.stderr
+
+
+def test_unknown_docs_example_returns_not_found(server):
+    response = httpx.get(f"{server.url}/docs/Cargo.toml", trust_env=False)
+    assert response.status_code == 404

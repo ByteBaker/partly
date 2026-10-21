@@ -5,6 +5,7 @@ import asyncio
 import os
 import re
 
+import pytest
 from conftest import PASSWORD, ROOT, scope_for
 from playwright.sync_api import expect, sync_playwright
 
@@ -184,6 +185,7 @@ def test_dashboard_setup_flags_keys_and_restart(server):
         expect(page.get_by_text("No flags in this environment")).to_be_visible()
         page.get_by_role("tab", name="Apps & Keys").click()
         page.get_by_role("button", name="Revoke", exact=True).click()
+        page.get_by_role("dialog", name="Revoke API Key?").get_by_role("button", name="Revoke key", exact=True).click()
         expect(page.get_by_text("Revoked keys (1)")).to_be_visible()
         page.get_by_role("button", name="Sign out").click()
         expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
@@ -196,7 +198,8 @@ def test_dashboard_setup_flags_keys_and_restart(server):
 def test_docs_navigation_and_complete_example(server, admin):
     with sync_playwright() as playwright:
         browser = launch_browser(playwright)
-        page = browser.new_page(viewport={"width": 1280, "height": 1000}, permissions=["clipboard-read", "clipboard-write"])
+        page = browser.new_page(viewport={"width": 1280, "height": 1000})
+        page.add_init_script("Object.defineProperty(navigator, 'clipboard', {value: {writeText: async text => { window.partlyCopied = text; }}})")
         login(page, server)
         flags = page.get_by_role("tab", name="Feature flags")
         keys = page.get_by_role("tab", name="Apps & Keys")
@@ -210,19 +213,29 @@ def test_docs_navigation_and_complete_example(server, admin):
         expect(docs).to_have_attribute("aria-selected", "true")
         expect(page.get_by_label("Language", exact=True)).to_have_attribute("value", "python")
         page.get_by_label("Language", exact=True).click()
-        expect(page.locator("#dropdown-options").get_by_role("option")).to_have_count(1)
+        expect(page.locator("#dropdown-options").get_by_role("option")).to_have_text(["Python", "Rust", "Go", "Node.js"])
         expect(page.locator("#dropdown-options").get_by_role("option", name="Python", exact=True)).to_be_visible()
         page.keyboard.press("Escape")
         expect(page.get_by_role("button", name="Copy code")).to_be_enabled()
         expect(page.locator("#docs-code .token-keyword").first).to_be_visible()
         expect(page.locator("#docs-code .token-string").first).to_be_visible()
         expect(page.get_by_role("button", name="Copy code")).to_have_attribute("title", "Copy code")
-        code = (ROOT / "examples/python/quickstart.py").read_text()
-        assert page.locator("#docs-code").text_content() == code
-        page.get_by_role("button", name="Copy code").click()
-        expect(page.get_by_role("status")).to_have_text("Copied")
-        expect(page.locator(".code-heading").get_by_role("status")).to_have_text("Copied")
-        assert page.evaluate("navigator.clipboard.readText()") == code
+        for language, label, filename in [("python", "Python", "quickstart.py"), ("rust", "Rust", "quickstart.rs"),
+                                          ("go", "Go", "main.go"), ("node", "Node.js", "quickstart.js")]:
+            if language != "python":
+                choose(page, page.get_by_label("Language", exact=True), language)
+            expect(page.get_by_role("button", name="Copy code")).to_be_enabled()
+            if language != "python":
+                expect(page.get_by_label("Language", exact=True)).to_be_focused()
+            expect(page.locator("#docs-filename")).to_have_text(filename)
+            expect(page.get_by_label(f"Complete {label} example", exact=True)).to_be_visible()
+            code = (ROOT / "examples" / language / filename).read_text()
+            assert page.locator("#docs-code").text_content() == code
+            for kind in ("keyword", "comment", "string"):
+                expect(page.locator(f"#docs-code .token-{kind}").first).to_be_visible()
+            page.get_by_role("button", name="Copy code").click()
+            expect(page.locator(".code-heading").get_by_role("status")).to_have_text("Copied")
+            assert page.evaluate("window.partlyCopied") == code
         artifacts = ROOT / "test-results"
         artifacts.mkdir(exist_ok=True)
         page.screenshot(path=str(artifacts / "docs-desktop.png"), full_page=True)
@@ -747,6 +760,7 @@ def test_success_feedback_never_moves_existing_content(server, admin):
         artifacts.mkdir(exist_ok=True)
         for width in (1280, 390, 320):
             page.set_viewport_size({"width": width, "height": 900})
+            expect(page.locator(".key-row")).to_have_count(2)
             key_elements = ".workspace-heading, .key-row, .key-row input, .key-row button, #apps-screen > .hint"
             before = geometry(page, key_elements)
             row = page.locator(".key-row").first
@@ -790,18 +804,27 @@ def test_success_feedback_never_moves_existing_content(server, admin):
         browser.close()
 
 
-def test_docs_highlighting_preserves_literal_source_and_never_renders_html(server, admin):
-    source = '''# Literal example containing HTML-like data
+@pytest.mark.parametrize("language, endpoint, source", [
+    ("python", "python.py", '''# Literal example containing HTML-like data
 API_KEY = "<img src=x onerror=alert(1)>"
 async def main():
     count = 18
     print(f"Value: {count}")
-'''
+'''),
+    ("rust", "rust.rs", '// Literal source\nfn main() { let value = "<img src=x onerror=alert(1)>"; let count = 18; }\n'),
+    ("go", "go.go", '// Literal source\npackage main\nconst value = `<img src=x onerror=alert(1)>`\nconst count = 18\n'),
+    ("node", "node.js", '// Literal source\nconst value = `<img src=x onerror=alert(1)>`;\nconst count = 18;\n'),
+])
+def test_docs_highlighting_preserves_literal_source_and_never_renders_html(server, admin, language, endpoint, source):
     with sync_playwright() as playwright:
         browser = launch_browser(playwright)
-        page = browser.new_page(permissions=["clipboard-read", "clipboard-write"])
-        page.route("**/docs/python.py", lambda route: route.fulfill(status=200, content_type="text/plain", body=source))
+        page = browser.new_page()
+        page.add_init_script("Object.defineProperty(navigator, 'clipboard', {value: {writeText: async text => { window.partlyCopied = text; }}})")
+        page.route(f"**/docs/{endpoint}", lambda route: route.fulfill(status=200, content_type="text/plain", body=source))
         login(page, server, screen="docs")
+        expect(page.get_by_role("button", name="Copy code", exact=True)).to_be_enabled()
+        if language != "python":
+            choose(page, page.get_by_label("Language", exact=True), language)
         code = page.locator("#docs-code")
         expect(code).to_have_text(source)
         assert code.text_content() == source
@@ -812,7 +835,38 @@ async def main():
         assert len(colors) >= 3
         page.get_by_role("button", name="Copy code", exact=True).click()
         expect(page.get_by_role("status")).to_have_text("Copied")
-        assert page.evaluate("navigator.clipboard.readText()") == source
+        assert page.evaluate("window.partlyCopied") == source
+        browser.close()
+
+
+def test_docs_loading_failure_never_copies_a_different_language(server, admin):
+    with sync_playwright() as playwright:
+        browser = launch_browser(playwright)
+        page = browser.new_page()
+        login(page, server, "docs")
+        copy = page.get_by_role("button", name="Copy code", exact=True)
+        language = page.get_by_label("Language", exact=True)
+        expect(copy).to_be_enabled()
+        pending = []
+        page.route("**/docs/rust.rs", lambda route: pending.append(route))
+        language.focus()
+        page.keyboard.press("ArrowDown")
+        page.keyboard.press("ArrowDown")
+        page.keyboard.press("Enter")
+        expect(language).to_be_disabled()
+        expect(copy).to_be_disabled()
+        expect(page.locator("#docs-code")).to_have_text("Loading example…")
+        assert len(pending) == 1
+        pending.pop().fulfill(status=503, body="Unavailable")
+        expect(page.get_by_role("alert")).to_contain_text("Could not load the Rust example")
+        expect(language).to_be_enabled()
+        expect(language).to_be_focused()
+        expect(copy).to_be_disabled()
+        expect(page.locator("#docs-code")).to_have_text("Example unavailable.")
+        choose(page, language, "go")
+        expect(copy).to_be_enabled()
+        expect(page.get_by_role("alert")).to_be_hidden()
+        assert page.locator("#docs-code").text_content() == (ROOT / "examples/go/main.go").read_text()
         browser.close()
 
 
@@ -1017,6 +1071,8 @@ def test_app_selection_typed_confirmation_revoked_history_and_audits(server, adm
         choose(page, page.get_by_label("Rollout mode for shared", exact=True), "disabled")
         page.get_by_role("button", name="Save shared", exact=True).click()
         expect(modal.locator("li")).to_have_text(["Billing", "Storefront"])
+        expect(modal.locator("#confirm-flag-label code")).to_have_text("development/shared")
+        expect(modal.get_by_label("Type development/shared to confirm", exact=True)).to_be_visible()
         modal.locator("#confirm-flag-input").fill("development/Shared")
         expect(modal.locator("#confirm-flag-submit")).to_be_disabled()
         artifacts = ROOT / "test-results"
@@ -1028,8 +1084,8 @@ def test_app_selection_typed_confirmation_revoked_history_and_audits(server, adm
         expect(latest.locator(".type-pill")).to_have_text("Flag")
         latest.locator("summary").click()
         expect(latest.locator(".audit-detail")).to_contain_text("Billing, Storefront")
-        expect(latest.locator(".audit-detail")).to_contain_text('"enabled"')
-        expect(latest.locator(".audit-detail")).to_contain_text('"disabled"')
+        expect(latest.locator(".audit-value")).to_have_text(["Enabled for everyone", "Disabled for everyone"])
+        expect(latest.locator(".audit-arrow")).to_have_text("→")
         choose(page, page.get_by_label("Filter by action", exact=True), "updated")
         choose(page, page.get_by_label("Filter by application", exact=True), application_id)
         expect(page.locator(".audit-row")).to_have_count(2)
@@ -1043,8 +1099,8 @@ def test_app_selection_typed_confirmation_revoked_history_and_audits(server, adm
         assert secret.startswith(mask[:7]) and secret.endswith(mask[-4:])
         billing.get_by_role("button", name="Hide", exact=True).click()
         expect(secret_field).to_have_value(mask)
-        page.on("dialog", lambda dialog: dialog.accept())
         billing.get_by_role("button", name="Revoke", exact=True).click()
+        page.get_by_role("dialog", name="Revoke API Key?").get_by_role("button", name="Revoke key", exact=True).click()
         expect(billing.get_by_text("Revoked keys (1)", exact=True)).to_be_visible()
         billing.locator(".revoked-keys summary").click()
         expect(billing.locator(".revoked-key code")).to_have_text(mask)
@@ -1056,5 +1112,161 @@ def test_app_selection_typed_confirmation_revoked_history_and_audits(server, adm
         page.set_viewport_size({"width": 390, "height": 844})
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.screenshot(path=str(artifacts / "apps-mobile.png"), full_page=True)
+        assert not errors
+        browser.close()
+
+
+def test_key_revocation_modal_cancel_focus_failure_and_retry(server, admin):
+    with sync_playwright() as playwright:
+        browser = launch_browser(playwright)
+        page = browser.new_page(viewport={"width": 1280, "height": 900})
+        native_dialogs, requests, errors = [], [], []
+        def unexpected_dialog(dialog):
+            native_dialogs.append(dialog.type)
+            dialog.dismiss()
+        page.on("dialog", unexpected_dialog)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.on("request", lambda request: requests.append(request.url) if request.method == "DELETE" else None)
+        login(page, server, "apps")
+        create_key(page, "Worker <legacy>")
+        create_key(page, "Spare")
+        row = page.locator(".key-row").filter(has=page.get_by_label("Name for Worker <legacy>", exact=True))
+        revoke = row.get_by_role("button", name="Revoke", exact=True)
+        modal = page.get_by_role("dialog", name="Revoke API Key?", exact=True)
+        cancel = modal.get_by_role("button", name="Cancel", exact=True)
+        confirm = modal.get_by_role("button", name="Revoke key", exact=True)
+        for dismiss in ("Cancel", "Escape"):
+            revoke.click()
+            expect(modal).to_be_visible()
+            expect(cancel).to_be_focused()
+            expect(modal.locator("#revoke-key-context")).to_have_text("Revoke Worker <legacy> for Test application in development.")
+            expect(modal.locator("legacy")).to_have_count(0)
+            expect(modal).to_contain_text("Disconnected SDKs keep their cached policy until they reconnect.")
+            if dismiss == "Cancel":
+                page.keyboard.press("Enter")
+            else:
+                page.keyboard.press("Escape")
+            expect(modal).to_be_hidden()
+            expect(revoke).to_be_focused()
+            expect(row.get_by_role("button", name="Reveal", exact=True)).to_be_enabled()
+            assert requests == []
+
+        page.route("**/api/keys/*", lambda route: route.fulfill(status=503, json={"error": "Temporary failure"}))
+        revoke.click()
+        artifacts = ROOT / "test-results"
+        artifacts.mkdir(exist_ok=True)
+        page.screenshot(path=str(artifacts / "revoke-key-desktop.png"), full_page=True)
+        page.set_viewport_size({"width": 390, "height": 844})
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.screenshot(path=str(artifacts / "revoke-key-mobile.png"), full_page=True)
+        confirm.click()
+        expect(modal).to_be_hidden()
+        expect(row.get_by_role("alert")).to_have_text("Temporary failure")
+        expect(revoke).to_be_enabled()
+        expect(revoke).to_be_focused()
+        expect(page.locator(".revoked-keys")).to_be_hidden()
+        assert len(requests) == 1
+        page.unroute("**/api/keys/*")
+        revoke.click()
+        confirm.click()
+        expect(row).to_have_count(0)
+        expect(page.get_by_text("Revoked keys (1)", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Create key", exact=True)).to_be_focused()
+        expect(page.get_by_label("Name for Spare", exact=True)).to_be_visible()
+        assert len(requests) == 2 and not native_dialogs and not errors
+        browser.close()
+
+
+def test_audit_readable_states_creation_and_responsive_layout(server, admin):
+    base = "/api/environments/development"
+    assert admin.post(f"{base}/flags", json={"key": "checkout", "mode": "percentage", "percentage": 0}).status_code == 201
+    rules = {
+        "mode": "custom", "action": "enable", "groups": [
+            [{"k": "age", "op": "ge", "v": 18},
+             {"k": "email", "op": "suffix", "v": '<img src=x onerror="alert(1)">'},
+             {"k": "staff", "op": "is", "v": False}],
+            [{"k": "plan", "op": "matches", "v": ""}],
+        ],
+    }
+    assert admin.put(f"{base}/flags/checkout", json=rules).status_code == 200
+    assert admin.post(f"{base}/flags", json={"key": "blocked", **rules, "action": "disable"}).status_code == 201
+    response = admin.post(f"{base}/apps", json={"name": "Storefront", "flags": []})
+    assert response.status_code == 201
+    app = response.json()
+    assert admin.put(f"{base}/apps/{app['id']}", json={"name": "Shop", "flags": ["checkout"]}).status_code == 200
+    key = app["keys"][0]
+    assert admin.put(f"/api/keys/{key['id']}", json={"name": "Checkout server"}).status_code == 204
+    assert admin.delete(f"/api/keys/{key['id']}").status_code == 204
+    assert admin.delete(f"{base}/flags/blocked").status_code == 204
+
+    with sync_playwright() as playwright:
+        browser = launch_browser(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        login(page, server, "audits")
+        rows = page.locator(".audit-row")
+        expect(rows).to_have_count(9)
+
+        def entry(name, action):
+            row = rows.filter(has=page.locator(".audit-item").get_by_text(name, exact=True)).filter(
+                has=page.locator("summary").get_by_text(action, exact=True))
+            row.locator("summary").click()
+            return row
+
+        created = entry("checkout", "Created")
+        expect(created.locator(".audit-label")).to_have_text(["Created"])
+        expect(created.locator(".audit-value")).to_have_text("0% of users")
+        expect(created.locator(".audit-arrow")).to_have_count(0)
+        updated = entry("checkout", "Updated")
+        expect(updated.locator(".audit-label")).to_have_text(["Before", "After"])
+        expect(updated.locator(".audit-value")).to_have_text(["0% of users", "Custom rules"])
+        expect(updated.locator(".audit-condition")).to_have_text([
+            "age ≥ 18", 'email ends with “<img src=x onerror="alert(1)">”', "staff is false", "plan matches “”",
+        ])
+        expect(updated.locator(".audit-join")).to_have_text(["AND", "AND", "OR"])
+        expect(updated.locator(".audit-state").last).to_contain_text("Enable when a group matches")
+        expect(updated.locator(".audit-state").last).to_contain_text("Otherwise disabled.")
+        deleted = entry("blocked", "Deleted")
+        expect(deleted.locator(".audit-label")).to_have_text(["Deleted"])
+        expect(deleted.locator(".audit-state")).to_contain_text("Disable when a group matches")
+        expect(deleted.locator(".audit-state")).to_contain_text("Otherwise enabled.")
+        expect(deleted.locator(".audit-arrow")).to_have_count(0)
+        app_created = entry("Storefront", "Created")
+        expect(app_created.locator(".audit-value")).to_have_text("Storefront")
+        expect(app_created.locator(".audit-state")).to_contain_text("No flags selected")
+        expect(app_created.locator(".audit-detail")).not_to_contain_text("Shop")
+        app_updated = entry("Shop", "Updated")
+        expect(app_updated.locator(".audit-value")).to_have_text(["Storefront", "Shop"])
+        expect(app_updated.locator(".audit-flags")).to_have_text("checkout")
+        key_created = entry("Default", "Created")
+        expect(key_created.locator(".audit-value")).to_have_text("Active")
+        expect(key_created.locator(".audit-state code")).to_have_text(key["masked_secret"])
+        expect(entry("Checkout server", "Renamed").locator(".audit-value")).to_have_text(["Default", "Checkout server"])
+        expect(entry("Checkout server", "Revoked").locator(".audit-value")).to_have_text(["Active", "Revoked"])
+        assert page.locator(".audit-detail pre, .audit-detail img").count() == 0
+        assert "null" not in page.locator("#audits").inner_text()
+        assert key["secret"] not in page.locator("#audits").inner_text()
+
+        # State columns share the available width; metadata reaches the right edge.
+        states = updated.locator(".audit-state")
+        left, right = [state.bounding_box() for state in states.all()]
+        assert abs(left["width"] - right["width"]) < 2
+        assert right["x"] > left["x"] + left["width"]
+        summary = updated.locator("summary").bounding_box()
+        timestamp = updated.locator("time").bounding_box()
+        assert abs(summary["x"] + summary["width"] - timestamp["x"] - timestamp["width"]) <= 9
+        artifacts = ROOT / "test-results"
+        artifacts.mkdir(exist_ok=True)
+        page.evaluate("window.scrollTo(0, 0)")
+        page.screenshot(path=str(artifacts / "audit-states-desktop.png"), full_page=True)
+        for width in (768, 390):
+            page.set_viewport_size({"width": width, "height": 844})
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        left, right = [state.bounding_box() for state in states.all()]
+        assert abs(left["x"] - right["x"]) < 2
+        assert right["y"] > left["y"] + left["height"]
+        page.evaluate("window.scrollTo(0, 0)")
+        page.screenshot(path=str(artifacts / "audit-states-mobile.png"), full_page=True)
         assert not errors
         browser.close()

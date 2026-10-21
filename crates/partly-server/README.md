@@ -81,8 +81,8 @@ Use a current browser; dropdowns require the Popover API. Sign in at `/`. The en
 
 - **Feature flags:** create and edit flags in the current environment. Choose everyone, percentage, custom rules, or nobody. Unsaved changes trigger navigation warnings; saving one flag preserves other drafts. Existing edits and deletions always list affected apps (including an empty list) and require the exact `environment/flag_name`. Concurrent changes invalidate the confirmation.
 - **Apps & Keys:** create an app, select its flags, and copy its permanent application ID. A Default API Key is generated automatically. Create extra keys for rotation; rename, copy, reveal, or revoke active keys. Revoked keys remain in history with a partial identifier and dates, but no copy/reveal. Apps are separate in each environment; newly created flags are not automatically assigned.
-- **Audits:** browse admin changes with item types, before/after details, affected applications, and action/application filters. Entries and their changes are saved in one transaction. The shared admin account identifies the account, not individual teammates using it.
-- **Docs:** copy the tested [Python quickstart](../../examples/python/quickstart.py) and replace its URL, environment, application ID, and API Key constants.
+- **Audits:** browse readable state changes, affected applications, and action/application filters. Updates show before → after; creation shows the initial state. Entries and their changes are saved in one transaction. The shared admin account identifies the account, not individual teammates using it.
+- **Docs:** choose Python, Rust, Go, or Node.js. Copy the tested quickstart and replace its URL, environment, application ID, and API Key constants. Each example initializes once, reuses the client for local evaluation, handles errors, and closes at shutdown.
 
 API Keys only read policies. Masking hides keys visually; authenticated browsers still hold their values. When a refresh confirms revocation, the SDK clears its policy and stops evaluation and polling. Disconnected SDKs cannot discover revocation until they communicate again. Ordinary network and server failures preserve the accepted policy.
 
@@ -127,4 +127,4 @@ There is no `/reveal` endpoint. Storage failures return a generic `500`, with de
 
 ## License
 
-The control plane and dashboard are source-available under the [Elastic License 2.0](../../LICENSE). The bundled evaluator and Python quickstart retain their Apache-2.0 license. See [licensing boundaries](../../LICENSING.md) before redistributing the executable.
+The control plane and dashboard are source-available under the [Elastic License 2.0](../../LICENSE). The bundled evaluator and quickstart examples retain their Apache-2.0 license. See [licensing boundaries](../../LICENSING.md) before redistributing the executable.

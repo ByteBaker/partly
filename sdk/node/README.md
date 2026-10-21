@@ -13,13 +13,14 @@ The Linux archive requires glibc 2.34 or newer. It does not run on Alpine.
 Requires Rust and a C compiler:
 
 ```sh
+npm ci --ignore-scripts
 node sdk/node/build.js
 node examples/node/quickstart.js
 ```
 
-Replace the constants in [the example](../../examples/node/quickstart.js) first. It loads the local SDK. The package is private until its public name and distribution are confirmed.
+Replace the constants in [the example](../../examples/node/quickstart.js) first. It imports `partly-sdk`; `npm ci` links the local workspace package. The package remains private until registry publication.
 
-The build creates `sdk/node/native/<platform>-<arch>/partly.node`. No npm dependencies are needed.
+The build creates `sdk/node/native/<platform>-<arch>/partly.node`. The SDK has no npm runtime dependencies.
 
 ## Client contract
 

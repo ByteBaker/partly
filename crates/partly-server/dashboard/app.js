@@ -14,6 +14,12 @@ let unloading = false;
 let modalEditor;
 let nextId = 0;
 let docsSource = '';
+const docsExamples = {
+  python: { name: 'Python', file: 'quickstart.py', url: '/docs/python.py' },
+  rust: { name: 'Rust', file: 'quickstart.rs', url: '/docs/rust.rs' },
+  go: { name: 'Go', file: 'main.go', url: '/docs/go.go' },
+  node: { name: 'Node.js', file: 'quickstart.js', url: '/docs/node.js' },
+};
 let availableFlags = [];
 let keyApplication;
 let appSelection;
@@ -95,9 +101,11 @@ async function action(trigger, operation, errorArea) {
     if (state) state.pending = false;
     if (trigger && !form) trigger.disabled = false;
     updateDirty();
-    if (document.activeElement === document.body && scope?.isConnected) {
-      const target = focused?.isConnected && !focused.disabled
-        ? focused
+    const closedDialog = document.activeElement.closest('dialog:not([open])');
+    if ((document.activeElement === document.body || closedDialog) && scope?.isConnected) {
+      const preferred = closedDialog ? trigger : focused;
+      const target = preferred?.isConnected && !preferred.disabled
+        ? preferred
         : scope.querySelector('input:not([disabled]), button:not([disabled])');
       target?.focus();
     }
@@ -144,14 +152,17 @@ function markSaved(element) {
 }
 document.addEventListener('input', updateDirty);
 document.addEventListener('change', updateDirty);
-function confirmDiscard() {
-  const dialog = $('discard-dialog'); dialog.showModal();
+function confirmDialog(dialog, cancel, submit) {
+  dialog.showModal(); cancel.focus();
   return new Promise(resolve => {
-    const finish = answer => { dialog.close(); $('keep-editing').onclick = null; $('discard-changes').onclick = null; dialog.oncancel = null; resolve(answer); };
-    $('keep-editing').onclick = () => finish(false);
-    $('discard-changes').onclick = () => finish(true);
+    const finish = answer => { dialog.close(); cancel.onclick = null; submit.onclick = null; dialog.oncancel = null; resolve(answer); };
+    cancel.onclick = () => finish(false);
+    submit.onclick = () => finish(true);
     dialog.oncancel = event => { event.preventDefault(); finish(false); };
   });
+}
+function confirmDiscard() {
+  return confirmDialog($('discard-dialog'), $('keep-editing'), $('discard-changes'));
 }
 async function navigate(path, focusTab = false) {
   if (isDirty() && !await confirmDiscard()) return false;
@@ -345,7 +356,7 @@ async function confirmFlag(key, deleting) {
     ? `This change affects the following applications in ${environment} after their next successful refresh.${deleting ? ' Evaluating this flag will then return an unknown-flag error.' : ''}`
     : 'No applications use this flag.';
   $('flag-impact-apps').replaceChildren(...impact.applications.map(app => node('li', app.name)));
-  $('confirm-flag-label').textContent = `Type ${expected} to confirm`;
+  $('confirm-flag-label').replaceChildren('Type ', node('code', expected, 'confirmation-target'), ' to confirm');
   const field = $('confirm-flag-input'); field.value = '';
   const submit = $('confirm-flag-submit'); submit.textContent = deleting ? 'Delete flag' : 'Save changes'; submit.disabled = true;
   $('confirm-flag-error').hidden = true;
@@ -413,12 +424,14 @@ function addKey(key, application) {
     showNotice('Copied', row);
   }));
   const revoke = button('Revoke', 'quiet danger', () => {
-    if (!confirm('Revoke this API Key? Connected SDKs will clear their policy and stop evaluating when their next refresh receives the revocation. Disconnected SDKs cannot receive it yet.')) return;
     action(revoke, async () => {
+      $('revoke-key-context').replaceChildren('Revoke ', node('strong', name), ' for ', node('strong', application.name), ' in ', node('strong', environment), '.');
+      if (!await confirmDialog($('revoke-key-dialog'), $('cancel-key-revocation'), $('confirm-key-revocation'))) return;
       await api(`/keys/${id}`, 'DELETE'); untrack(rename);
       secret = null; key.secret = null; key.revoked_at = new Date().toISOString();
       const replacement = addKey(key, application); row.remove(); application.revoked.append(replacement); application.updateRevoked();
       showNotice('Revoked', application.heading.querySelector('button'));
+      application.heading.querySelector('button').focus();
     });
   });
   const error = node('p', '', 'notice error item-error'); error.hidden = true; error.setAttribute('role', 'alert');
@@ -483,6 +496,62 @@ $('new-app').addEventListener('submit', event => {
   });
 });
 
+function auditState(type, value, title) {
+  const state = node('div', '', 'audit-state');
+  state.append(node('h3', title, 'audit-label'));
+  if (type === 'flag') {
+    const modes = { enabled: 'Enabled for everyone', disabled: 'Disabled for everyone', percentage: `${value.percentage}% of users`, custom: 'Custom rules' };
+    state.append(node('p', modes[value.mode], 'audit-value'));
+    if (value.mode === 'custom') {
+      state.append(node('p', value.action === 'enable' ? 'Enable when a group matches' : 'Disable when a group matches'));
+      value.groups.forEach((group, index) => {
+        if (index) state.append(node('p', 'OR', 'audit-join'));
+        const conditions = node('div', '', 'audit-rule-group');
+        group.forEach((condition, index) => {
+          if (index) conditions.append(node('p', 'AND', 'audit-join'));
+          const rule = node('p', '', 'audit-condition');
+          const value = typeof condition.v === 'string' ? `“${condition.v}”` : String(condition.v);
+          rule.append(node('code', condition.k), ` ${ops[condition.op][0].toLowerCase()} `, node('span', value));
+          conditions.append(rule);
+        });
+        state.append(conditions);
+      });
+      state.append(node('p', value.action === 'enable' ? 'Otherwise disabled.' : 'Otherwise enabled.', 'muted small'));
+    }
+  } else {
+    state.append(node('p', value.name || value.status, 'audit-value'));
+    if (type === 'app') {
+      state.append(node('p', 'Selected flags', 'audit-label'));
+      if (value.flags.length) {
+        const flags = node('ul', '', 'audit-flags');
+        value.flags.forEach(key => { const item = node('li'); item.append(node('code', key)); flags.append(item); });
+        state.append(flags);
+      } else state.append(node('p', 'No flags selected', 'muted'));
+    }
+  }
+  return state;
+}
+
+function auditChange(entry) {
+  const change = node('div', '', 'audit-change');
+  const { before, after, masked_secret: maskedSecret } = entry.details;
+  if (entry.action === 'created') {
+    const state = auditState(entry.item_type, after || { status: 'Active' }, 'Created');
+    if (maskedSecret) state.append(node('p', 'Key identifier', 'audit-label'), node('code', maskedSecret));
+    change.append(state);
+  } else if (entry.action === 'deleted') {
+    change.append(auditState(entry.item_type, before, 'Deleted'));
+  } else {
+    change.classList.add('audit-transition');
+    const arrow = node('span', '→', 'audit-arrow'); arrow.setAttribute('aria-hidden', 'true');
+    change.append(
+      auditState(entry.item_type, before || { status: 'Active' }, 'Before'), arrow,
+      auditState(entry.item_type, after || { status: 'Revoked' }, 'After'),
+    );
+  }
+  return change;
+}
+
 async function setupAudits() {
   const { applications } = await api(`/environments/${environment}/apps`);
   const actionFilter = createDropdown([['', 'All actions'], ...['created', 'updated', 'deleted', 'renamed', 'revoked'].map(value => [value, value[0].toUpperCase() + value.slice(1)])], '', 'action');
@@ -500,21 +569,18 @@ async function setupAudits() {
       const { audits } = await api(`/environments/${environment}/audits?${params}`);
       if (reset) {
         const heading = node('div', '', 'audit-summary audit-heading'); heading.setAttribute('aria-hidden', 'true');
-        heading.append(...['Time', 'Who', 'Action', 'Item'].map(text => node('span', text)));
+        heading.append(...['Item', 'Action', 'Who', 'Time'].map(text => node('span', text)));
         $('audits').replaceChildren(heading);
       }
       for (const entry of audits) {
         const row = node('details', '', 'audit-row'); const summary = node('summary', '', 'audit-summary');
         const time = node('time', new Date(entry.created_at).toLocaleString()); time.dateTime = entry.created_at;
         const item = node('span', '', 'audit-item'); item.append(node('span', { flag: 'Flag', app: 'App', api_key: 'API Key' }[entry.item_type], 'type-pill'), node('span', entry.item_name));
-        summary.append(time, node('span', entry.actor), node('span', entry.action[0].toUpperCase() + entry.action.slice(1)), item);
+        summary.append(item, node('span', entry.action[0].toUpperCase() + entry.action.slice(1)), node('span', entry.actor), time);
         const detail = node('div', '', 'audit-detail');
-        if (entry.details.application_id) detail.append(node('p', `Application: ${applications.find(app => app.id === entry.details.application_id)?.name || entry.details.application_id}`));
-        if (entry.details.applications) detail.append(node('p', entry.details.applications.length ? `Affected applications: ${entry.details.applications.map(app => app.name).join(', ')}` : 'No applications used this flag.'));
-        for (const [key, value] of Object.entries(entry.details)) {
-          if (key === 'applications' || key === 'application_id') continue;
-          detail.append(node('h3', key === 'before' ? 'Before' : key === 'after' ? 'After' : 'Key identifier'), node('pre', JSON.stringify(value, null, 2)));
-        }
+        detail.append(auditChange(entry));
+        if (entry.item_type === 'api_key') detail.append(node('p', `Application: ${applications.find(app => app.id === entry.details.application_id)?.name || entry.details.application_id}`, 'audit-context'));
+        if (entry.details.applications) detail.append(node('p', entry.details.applications.length ? `Affected applications: ${entry.details.applications.map(app => app.name).join(', ')}` : 'No applications used this flag.', 'audit-context'));
         row.append(summary, detail); $('audits').append(row);
       }
       if (!$('audits').querySelector('.audit-row')) $('audits').append(node('p', 'No audit entries match.', 'empty'));
@@ -568,7 +634,7 @@ $('cancel-key').addEventListener('click', closeKey);
 $('key-dialog').addEventListener('cancel', event => { event.preventDefault(); closeKey(); });
 for (const [id, options, value, label] of [
   ['environment', [['development', 'Development'], ['production', 'Production']], environment, 'Environment'],
-  ['docs-language', [['python', 'Python']], 'python', 'Language'],
+  ['docs-language', Object.entries(docsExamples).map(([value, example]) => [value, example.name]), 'python', 'Language'],
 ]) {
   const control = createDropdown(options, value, id);
   control.id = id; control.setAttribute('aria-label', label);
@@ -599,8 +665,17 @@ $('copy-example').addEventListener('click', () => action($('copy-example'), asyn
   try { await navigator.clipboard.writeText(docsSource); } catch { throw new Error('Could not copy. Select the example and copy it manually.'); }
   showNotice('Copied', $('copy-example'));
 }));
-function highlightPython(source) {
-  const tokens = /(?<comment>#[^\r\n]*)|(?<string>(?:\b(?:fr|rf|f|r|b))?(?:"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'))|(?<keyword>\b(?:async|await|def|from|import|as|try|except|finally|if|elif|else|raise|return|with|for|in|not|and|or|is|None|True|False)\b)|(?<number>\b\d+(?:\.\d+)?\b)/g;
+function highlightCode(source, language) {
+  const keywords = {
+    python: 'async|await|def|from|import|as|try|except|finally|if|elif|else|raise|return|with|for|in|not|and|or|is|None|True|False',
+    rust: 'use|const|fn|pub|async|await|let|mut|match|if|else|return|for|in|true|false|impl|struct|enum|Self|self|where|move|dyn|type|as',
+    go: 'package|import|const|var|func|defer|if|else|for|range|return|nil|true|false|map|type|struct|interface|go|select|case',
+    node: 'const|let|var|function|async|await|try|catch|finally|throw|if|else|return|for|of|in|new|true|false|null|undefined',
+  };
+  const literals = language === 'python'
+    ? /(?<comment>#[^\r\n]*)|(?<string>(?:\b(?:fr|rf|f|r|b))?(?:"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'))/.source
+    : /(?<comment>\/\/[^\r\n]*|\/\*[\s\S]*?\*\/)|(?<string>"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|`(?:\\[\s\S]|[^`\\])*`)/.source;
+  const tokens = new RegExp(`${literals}|(?<keyword>\\b(?:${keywords[language]})\\b)|(?<number>\\b\\d+(?:\\.\\d+)?\\b)`, 'g');
   const fragment = document.createDocumentFragment();
   let cursor = 0;
   for (const match of source.matchAll(tokens)) {
@@ -612,6 +687,29 @@ function highlightPython(source) {
   fragment.append(document.createTextNode(source.slice(cursor)));
   $('docs-code').replaceChildren(fragment);
 }
+async function loadExample() {
+  const focused = document.activeElement === $('docs-language');
+  const language = $('docs-language').value;
+  const example = docsExamples[language];
+  $('docs-language').disabled = true; $('copy-example').disabled = true; docsSource = '';
+  $('docs-filename').textContent = example.file;
+  $('docs-code').parentElement.setAttribute('aria-label', `Complete ${example.name} example`);
+  $('docs-code').textContent = 'Loading example…';
+  try {
+    const response = await fetch(example.url);
+    if (!response.ok) throw new Error('Example request failed');
+    const source = await response.text();
+    highlightCode(source, language);
+    docsSource = source; $('copy-example').disabled = false;
+  } catch {
+    $('docs-code').textContent = 'Example unavailable.';
+    throw new Error(`Could not load the ${example.name} example. Select another language or reload to try again.`);
+  } finally {
+    $('docs-language').disabled = false;
+    if (focused && document.activeElement === document.body) $('docs-language').focus({ preventScroll: true });
+  }
+}
+$('docs-language').addEventListener('change', () => action(null, loadExample));
 $('logout').addEventListener('click', async () => {
   if (isDirty() && !await confirmDiscard()) return;
   action($('logout'), async () => { await api('/logout', 'POST'); unloading = true; window.removeEventListener('beforeunload', beforeUnload); location.reload(); });
@@ -647,10 +745,7 @@ async function boot() {
   } else if (currentScreen === 'audits') {
     await setupAudits();
   } else {
-    const response = await fetch('/docs/python.py'); if (!response.ok) throw new Error('Could not load the Python example. Reload to try again.');
-    docsSource = await response.text();
-    highlightPython(docsSource);
-    $('copy-example').disabled = false;
+    await loadExample();
   }
   if (sessionStorage.getItem('partly-focus-tab')) { sessionStorage.removeItem('partly-focus-tab'); $(`${currentScreen}-tab`).focus(); }
 }
