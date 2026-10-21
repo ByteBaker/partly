@@ -6,7 +6,7 @@ All four SDKs must pass before committing. Missing packages, build errors, and m
 
 ## Run
 
-Follow the [local setup guide](../../README.md) and install the [test dependencies](../../RELEASING.md#build-and-verify). Rust, Go, and Node.js need their respective toolchains on `PATH`.
+Follow the [local setup guide](../../README.md) and install the [test dependencies](../../docs/releasing.md#build-and-verify). Rust, Go, and Node.js need their respective toolchains on `PATH`.
 
 From the repository root, with the Python virtual environment active:
 

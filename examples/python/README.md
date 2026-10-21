@@ -2,7 +2,7 @@
 
 Start with [quickstart.py](quickstart.py), also shown in the dashboard's **Docs** tab. It initializes one client at startup, passes it to a local `checkout` handler for two example requests, and closes it at shutdown.
 
-Follow the [root setup guide](../../README.md) to create `new_checkout`, generate an API Key, and install the SDK. Set the URL and key constants in `quickstart.py`, then run from the repository root:
+Follow the [server setup](../../README.md#run-locally) to create `new_checkout` and an app that selects it, then [install the Python SDK](../../sdk/python/README.md#build-locally). Set the URL, environment, application ID, and API Key constants in `quickstart.py`, then run from the repository root:
 
 ```sh
 python examples/python/quickstart.py
@@ -16,6 +16,8 @@ It prints `Use the new checkout` or `Use the current checkout` for each request.
 
 ```bash
 export PARTLY_URL=http://127.0.0.1:8080
+export PARTLY_ENVIRONMENT=development
+export PARTLY_APPLICATION_ID=YOUR_APPLICATION_ID
 read -r -s PARTLY_SDK_KEY
 export PARTLY_SDK_KEY
 python examples/python/rollout.py
@@ -28,7 +30,3 @@ Paste the key when `read` waits, then press Enter. Only this diagnostic uses env
 ## License
 
 [Apache-2.0](LICENSE). Preserve license and attribution notices when redistributing.
-
-In **Apps & Keys**, create an app in the chosen environment and select `new_checkout`. Copy its application ID and active API Key into the example. Use one initialized client for all requests.
-
-The rollout script also requires `PARTLY_ENVIRONMENT` and `PARTLY_APPLICATION_ID`, alongside its existing URL and key settings.

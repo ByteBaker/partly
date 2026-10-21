@@ -18,7 +18,7 @@ runs:
         python-version: "3.14"
         cache: pip
         cache-dependency-path: |
-          requirements-dev.txt
+          config/requirements-dev.txt
           sdk/python/pyproject.toml
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
@@ -33,7 +33,7 @@ runs:
       run: |
         rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
         rustup default "$RUST_TOOLCHAIN"
-        python -m pip install -r requirements-dev.txt
+        python -m pip install -r config/requirements-dev.txt
         python - <<'PY'
         import subprocess
         import sys

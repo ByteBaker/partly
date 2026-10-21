@@ -127,4 +127,4 @@ There is no `/reveal` endpoint. Storage failures return a generic `500`, with de
 
 ## License
 
-The control plane and dashboard are source-available under the [Elastic License 2.0](../../LICENSE). The bundled evaluator and quickstart examples retain their Apache-2.0 license. See [licensing boundaries](../../LICENSING.md) before redistributing the executable.
+The control plane and dashboard are source-available under the [Elastic License 2.0](../../LICENSE). The bundled evaluator and quickstart examples retain their Apache-2.0 license. See [licensing boundaries](../../docs/licensing.md) before redistributing the executable.

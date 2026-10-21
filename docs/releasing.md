@@ -2,9 +2,11 @@
 
 Current candidate: `0.1.0-alpha.1` (Python: `0.1.0a1`). The root Cargo workspace is the release version source. Keep Node metadata, the internal Rust dependency pin, and Go example/contract requirements aligned; refresh `Cargo.lock` and build every component from the same commit. `tests/test_release_versions.py` enforces this in the default CI suite.
 
-See [publishing each package and using alpha versions](docs/publishing.md) for registry setup, commands, and the remaining npm/Go distribution work.
+See [publishing each package and using alpha versions](publishing.md) for registry setup, commands, and the remaining npm/Go distribution work.
 
 ## Distribution targets
+
+The packaging results below describe earlier candidates. Rebuild and rerun the release workflow on the final commit before publishing.
 
 | Artifact | Target | Status |
 | --- | --- | --- |
@@ -12,33 +14,23 @@ See [publishing each package and using alpha versions](docs/publishing.md) for r
 | Server | Linux x86_64, static musl | No dynamic dependencies; packaged HTTPS smoke passed under emulation |
 | Python SDK | macOS ARM64, CPython 3.14 | Built from source archive; installed-wheel HTTPS smoke passed |
 | Python SDK | Linux x86_64, manylinux2014, CPython 3.14 | Native CI must build and verify the new version-specific wheel |
-| Rust, Go, Node.js SDKs | macOS ARM64 | Standalone packages passed all 11 shared contract checks |
+| Rust, Go, Node.js SDKs | macOS ARM64 | Standalone packages passed the shared contract checks |
 | Rust, Go, Node.js SDKs | Linux x86_64 | Built and tested outside the checkout under emulation |
 
 Python support and CI target regular CPython 3.14 only, using version-specific `cp314` wheels. Other Python versions, Windows, Linux ARM64, Intel macOS, Alpine Python, and free-threaded Python are outside this release. The Linux wheel requires glibc; the server is static. Earlier ABI3 candidate wheels are superseded and must not be published.
 
 The prebuilt Linux Node.js addon requires glibc 2.34+. Go consumers need cgo and a C compiler. Neither prebuilt package requires a Rust toolchain.
 
-Browser coverage on macOS: the full suite in Chromium, six focused dashboard tests each in Firefox and WebKit. Linux Chromium crashed inside QEMU before running a dashboard test; a native Linux CI run remains required. Safari releases and physical mobile devices are untested.
+Recent dashboard checks passed in Chromium, including audits and modal confirmations. Docs checks also passed in Firefox and WebKit; the served examples ran against all four SDKs. Safari releases and physical mobile devices remain untested.
 
-The CPython 3.14 macOS wheel builds from its source archive and passed the original 204 application tests, strict package metadata checks, and the HTTPS smoke test outside the checkout. Its wheel tags and package metadata restrict installation to regular CPython 3.14. Clippy, formatting, dependency notices, and the minimum Rust compiler check pass with this build.
-
-One initial run hit the shared contract's 200 ms request deadline during concurrent builds. The isolated check and full rerun passed without changing the SDK or test assertions.
-
-The previous candidate passed 20 Rust tests, 8 Go race tests, 3 Node.js tests, and dependency audits on macOS. The Linux results below also describe that candidate; native Linux must verify the new Python wheel before release.
-
-Minimum-version checks: Rust 1.89 builds every workspace target; Go 1.22.12 and Node.js 22.0.0 pass their unit and shared contract tests.
-
-Linux x86_64 checks ran on Ubuntu 24.04 under QEMU: 159 backend/Python tests, 20 Rust tests, 8 Go race tests, and 3 Node.js tests pass. The extracted static server and installed manylinux2014 wheel pass the HTTPS release smoke test outside the checkout. Compiler workarounds were needed under emulation; Go vet crashed there and remains covered by macOS and the configured native Linux CI job.
-
-All four packaged SDKs pass their shared contract scenarios on Linux. The Go full-contract test reused the client from its passing refresh-validation test after emulated compiler/linker crashes; the test assertions and Go runtime settings were unchanged.
+Earlier candidates passed Rust, Python, Go race, Node.js, packaging, and HTTPS smoke tests on macOS. Minimum-version checks covered Rust 1.89, Go 1.22.12, and Node.js 22.0.0. Linux checks ran under QEMU with compiler workarounds; Chromium and Go vet could not complete there. Native Linux CI must verify the current source and artifacts.
 
 ## Build and verify
 
-Follow the [root setup guide](README.md), then run from the repository root with the CPython 3.14 virtual environment active. The full suite also needs Go and Node.js (locally tested with Go 1.27.3 and Node.js 26.10.0):
+Follow the [server setup](../README.md#run-locally) and [Python SDK build](../sdk/python/README.md#build-locally), then run from the repository root with that virtual environment active. The full suite also needs Go and Node.js (locally tested with Go 1.27.3 and Node.js 26.10.0):
 
 ```sh
-python -m pip install -r requirements-dev.txt
+python -m pip install -r config/requirements-dev.txt
 python -m playwright install chromium
 cargo fmt --all --check
 python -m ruff check .
@@ -66,7 +58,9 @@ python -m pytest -q
 
 Tests use temporary servers and databases. `PARTLY_BINARY` selects an absolute executable path. `PARTLY_BROWSER=firefox` or `webkit` selects an installed browser for focused checks. Test reports and screenshots stay outside Git.
 
-The [four-language contract](tests/sdk_contract/README.md) and minimal examples run in the default suite. All must pass before committing. Go links a bundled Rust static library; use `-a` after replacing it because Go's cache does not track archive changes.
+Python checks discover settings in the root `pyproject.toml`. Frontend settings live in `config/`; use the npm commands above so each tool loads the right file. CI uses those same commands and installs `config/requirements-dev.txt`.
+
+The [four-language contract](../tests/sdk_contract/README.md) and minimal examples run in the default suite. All must pass before committing. Go links a bundled Rust static library; use `-a` after replacing it because Go's cache does not track archive changes.
 
 Build standalone SDK packages and run the same contracts outside the checkout (Python 3.14):
 
@@ -85,10 +79,10 @@ Each tier can run on its own from **Actions → select workflow → Run workflow
 
 | Workflow | Runs automatically | Includes |
 | --- | --- | --- |
-| [Lint and types](.github/workflows/lint.yml) | Called by Verify | Formatting, source lint, Python/TypeScript types, version consistency |
-| [Verify](.github/workflows/verify.yml) | PRs and main pushes | Lint/types, Rust and Go compiler analysis, vulnerability scans |
-| [Build and test](.github/workflows/build.yml) | Called by Release artifacts | Verify, component builds, unit tests, SDK contract, Chromium E2E |
-| [Release artifacts](.github/workflows/release-checks.yml) | `v*` tags | Build-and-test, compatibility, licenses, Linux/macOS packages and smoke tests |
+| [Lint and types](../.github/workflows/lint.yml) | Called by Verify | Formatting, source lint, Python/TypeScript types, version consistency |
+| [Verify](../.github/workflows/verify.yml) | PRs and main pushes | Lint/types, Rust and Go compiler analysis, vulnerability scans |
+| [Build and test](../.github/workflows/build.yml) | Called by Release artifacts | Verify, component builds, unit tests, SDK contract, Chromium E2E |
+| [Release artifacts](../.github/workflows/release-checks.yml) | `v*` tags | Build-and-test, compatibility, licenses, Linux/macOS packages and smoke tests |
 
 ```mermaid
 flowchart LR
@@ -117,7 +111,7 @@ Clippy performs Rust compiler checks as well as linting, so verification does no
 | HTML/CSS | HTML-validate and Biome's recommended CSS checks |
 | Shell/workflows | ShellCheck and actionlint |
 
-The [vulnerability workflow](.github/workflows/vulnerabilities.yml) uses RustSec, pip-audit, govulncheck, and npm audit. It runs on every PR/release workflow and daily, and fails on findings or scanner errors. Python and npm scans include development dependencies; Go scans include the standard library. The Node SDK has no JavaScript runtime dependencies today. Package audits do not audit Node/Python interpreters themselves; keep their supported patch versions current. Release Go builds use 1.27.3; Go 1.22 is checked only for compatibility.
+The [vulnerability workflow](../.github/workflows/vulnerabilities.yml) uses RustSec, pip-audit, govulncheck, and npm audit. It runs on every PR/release workflow and daily, and fails on findings or scanner errors. Python and npm scans include development dependencies; Go scans include the standard library. The Node SDK has no JavaScript runtime dependencies today. Package audits do not audit Node/Python interpreters themselves; keep their supported patch versions current. Release Go builds use 1.27.3; Go 1.22 is checked only for compatibility.
 
 Release jobs build the Python wheel from its source archive and test installed packages outside the checkout, including HTTPS and shutdown. They produce archives and checksums, without publishing. Require a green run on the exact release commit.
 
@@ -135,12 +129,12 @@ Run `python -m twine check --strict` on the wheel and source archive. Verify dow
 
 ## Before public upload
 
-1. Verify packaged licenses, dependency terms, and contributor rights against [LICENSING.md](LICENSING.md).
+1. Verify packaged licenses, dependency terms, and contributor rights against [licensing boundaries](licensing.md).
 2. Use [ByteBaker/partly](https://github.com/ByteBaker/partly) as the source repository and confirm ownership of `partly-sdk` on PyPI.
 3. Deploy `https://partly.sh/install` and `https://partly.sh/docs`, or replace these placeholder metadata links.
 4. Pass **Release artifacts** on the final commit, resolve advisories, and test the downloaded artifacts.
 5. Configure PyPI Trusted Publishing or a scoped credential outside source control.
-6. Publish approved archives, wheels, source, checksums, and release notes. Link the [backup and upgrade procedure](crates/partly-server/README.md#backup-restore-and-upgrades).
+6. Publish approved archives, wheels, source, checksums, and release notes. Link the [backup and upgrade procedure](../crates/partly-server/README.md#backup-restore-and-upgrades).
 
 Signing, notarization, and an automatic installer are not included in this alpha.
 
@@ -151,7 +145,7 @@ Notices are tracked. After dependency or target changes, regenerate them from th
 ```sh
 cargo install cargo-about --version 0.9.2 --locked
 cargo fetch --locked
-cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-server/Cargo.toml --target x86_64-unknown-linux-musl --target aarch64-apple-darwin licenses/third-party.hbs --output-file THIRD_PARTY_NOTICES.txt
+cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-server/Cargo.toml --target x86_64-unknown-linux-musl --target aarch64-apple-darwin licenses/third-party.hbs --output-file licenses/THIRD_PARTY_NOTICES.txt
 cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path sdk/python/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/python/THIRD_PARTY_NOTICES.txt
 for language in rust node; do
   cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path "sdk/$language/Cargo.toml" --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file "sdk/$language/THIRD_PARTY_NOTICES.txt"
@@ -165,6 +159,4 @@ Release builds pin Rust 1.98.1. When changing compilers, update the workflow pin
 
 The Linux server archive includes its build runner's musl copyright file; the archive smoke check compares it with that source file. Separately installed Python dependencies carry their own notices.
 
-The new audits caught Rust certificate trust advisories in `rustls-webpki` and `webpki-roots`; the lockfile now uses patched 0.103.16 and 1.0.10. Go scans pass on 1.27.3. Existing local artifacts built before these updates must be rebuilt before release.
-
-Local validation of the CI changes: 206 application tests, 21 Rust tests, Go race tests, Node tests, strict mypy and the native stub check, all source linters, and the HTTPS smoke test passed. After the markup/CSS cleanup, all 19 Chromium dashboard tests and six scenarios each in Firefox and WebKit also passed. The Python wheel and source archive include the native stub and `py.typed`. RustSec, pip-audit, govulncheck, and npm audit were clean after the dependency/toolchain updates. Hosted job execution and artifact transfer still need the first GitHub Actions run.
+Dependency scans passed after the previous TLS and Go updates. Run them again for the release commit; earlier scan results do not validate newly built artifacts.

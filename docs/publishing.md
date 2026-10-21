@@ -29,7 +29,7 @@ Release every component from the same verified commit, including an SDK-only fix
 
 ## Before uploading
 
-Complete the [release checks](../RELEASING.md#before-public-upload), confirm package ownership, replace placeholder links, and download the artifacts from the green workflow for the chosen commit. Verify their checksums. Use a clean release staging directory so older builds cannot be uploaded by a wildcard.
+Complete the [release checks](releasing.md#before-public-upload), confirm package ownership, replace placeholder links, and download the artifacts from the green workflow for the chosen commit. Verify their checksums. Use a clean release staging directory so older builds cannot be uploaded by a wildcard.
 
 The commands below are instructions, not actions performed by CI. No release packages have been published. Account credentials belong outside the repository.
 

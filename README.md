@@ -20,26 +20,20 @@ cargo build --release --locked -p partly-server
 1. Open <http://127.0.0.1:8080> and create an admin account (password: at least 12 characters).
 2. In **Development**, create `new_checkout` with **Enabled for everyone**.
 3. Under **Apps & Keys**, create an app, select its flags, and copy its application ID and API Key.
+4. Open **Docs**, choose your language, and copy the complete SDK example.
 
 Setup creates the database. Reuse its path on restart. For remote access, [configure HTTPS](crates/partly-server/README.md#https).
 
-## Try Python
+## Connect an application
 
-Use regular CPython 3.14. In another terminal, from the repository root:
+| Language | Setup and API | Runnable example |
+| --- | --- | --- |
+| Python (CPython 3.14) | [SDK guide](sdk/python/README.md) | [Quickstart](examples/python/README.md) |
+| Rust | [SDK guide](sdk/rust/README.md) | [Quickstart](examples/rust/README.md) |
+| Go | [SDK guide](sdk/go/README.md) | [Quickstart](examples/go/README.md) |
+| Node.js / TypeScript | [SDK guide](sdk/node/README.md) | [Quickstart](examples/node/README.md) |
 
-```sh
-python3.14 -m venv .venv
-source .venv/bin/activate
-python -m pip install 'maturin>=1.9.4,<2'
-maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels -i python3.14
-python -m pip install target/wheels/partly_sdk-0.1.0a1-cp314-cp314-*.whl
-```
-
-Set the environment and replace `YOUR_APPLICATION_ID` and `YOUR_API_KEY` in [quickstart.py](examples/python/quickstart.py), then run:
-
-```sh
-python examples/python/quickstart.py
-```
+Set the server URL, environment, application ID, and API Key. Initialize once at application startup, reuse the client for local evaluations, and close it at shutdown. The dashboard shows these same tested examples, including error handling.
 
 ## How it compares
 
@@ -74,7 +68,9 @@ flowchart LR
     CP -->|Policy download and refresh| C[Worker: local SDK]
 ```
 
-One instance has Development and Production environments and one admin. Apps select shared flags within their environment; each key can download only its app's selection. Multiple keys support rotation, and revoked keys remain identifiable in history. The Audits tab records admin changes. Team permissions and organization-wide capacity testing remain future work.
+One instance has Development and Production environments and one admin. Apps select shared flags within their environment; each key can download only its app's selection. Multiple keys support rotation, and revoked keys remain identifiable in history.
+
+Before changing a flag, review the affected apps and type `environment/flag_name` to confirm. The Audits tab records admin changes as readable state transitions. Team permissions and organization-wide capacity testing remain future work.
 
 ### SDKs
 
@@ -125,16 +121,30 @@ Browser/mobile SDKs, Ruby/PHP, reusable segments, and scheduled rollouts will be
 ## Alpha limits
 
 - One server and one admin. API Keys are stored as plaintext in SQLite and backups; keep these files private.
-- Policies stay in SDK memory. Running clients keep working during outages; new processes need the server to initialize.
-- Release targets: macOS ARM64 and Linux x86_64. See [verified coverage](RELEASING.md).
+- Policies stay in SDK memory. Running clients keep working during outages; new processes need the server to initialize. Revocation takes effect when the client receives it.
+- Release targets: macOS ARM64 and Linux x86_64. See [verified coverage](docs/releasing.md).
 
 ## Guides
 
 - [Server: HTTPS, backups, and password recovery](crates/partly-server/README.md)
-- SDK guides: [Python](sdk/python/README.md), [Rust](sdk/rust/README.md), [Go](sdk/go/README.md), [Node.js](sdk/node/README.md)
 - [Evaluation rules and percentage consistency](crates/partly-core/README.md)
-- [Development checks and release preparation](RELEASING.md)
+- [Development checks and release preparation](docs/releasing.md)
+
+## Project layout
+
+```text
+crates/     Shared Rust evaluator, native bindings, and control plane
+sdk/        Python, Rust, Go, and Node.js SDKs
+examples/   Runnable application examples
+tests/      Integration, browser, and cross-language tests
+config/     Frontend checks and development dependencies
+scripts/    Packaging and release checks
+docs/       Guides and README images
+licenses/   Dependency notices and their generation settings
+```
+
+Workspace manifests stay at the root. Python lint, type, and test settings share `pyproject.toml`.
 
 ## License
 
-The control plane and dashboard are source-available under **Elastic License 2.0**. The SDKs, shared evaluator, native bindings, and application examples use **Apache-2.0**. See [licensing details](LICENSING.md).
+The control plane and dashboard are source-available under **Elastic License 2.0**. The SDKs, shared evaluator, native bindings, and application examples use **Apache-2.0**. See [licensing details](docs/licensing.md).

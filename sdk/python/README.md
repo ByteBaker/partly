@@ -6,15 +6,17 @@ The package includes type hints for mypy and editors, including the native evalu
 
 ## Build locally
 
-From the repository root, with a CPython 3.14 virtual environment active:
+From the repository root, create a CPython 3.14 virtual environment and install the SDK:
 
 ```sh
+python3.14 -m venv .venv
+source .venv/bin/activate
 python -m pip install 'maturin>=1.9.4,<2'
 maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels -i python3.14
 python -m pip install target/wheels/partly_sdk-0.1.0a1-cp314-cp314-*.whl
 ```
 
-Supports regular CPython 3.14 only. Source builds also require Rust and a C compiler; a matching prebuilt wheel needs no Rust compiler. Free-threaded Python is not supported. Public downloads are not available yet; see [release targets and status](../../RELEASING.md#distribution-targets).
+Supports regular CPython 3.14 only. Source builds also require Rust and a C compiler; a matching prebuilt wheel needs no Rust compiler. Free-threaded Python is not supported. Public downloads are not available yet; see [release targets and status](../../docs/releasing.md#distribution-targets).
 
 ## Use a reusable client
 
@@ -134,7 +136,7 @@ Install the wheel before testing. From the repository root:
 python -m pytest -q sdk/python/tests tests/e2e/test_sdk.py tests/e2e/test_https.py
 ```
 
-Tests exercise both the native boundary and the real control plane. See [development checks](../../RELEASING.md#build-and-verify) for browser and full-workspace checks.
+Tests exercise both the native boundary and the real control plane. See [development checks](../../docs/releasing.md#build-and-verify) for browser and full-workspace checks.
 
 The [shared SDK contract](../../tests/sdk_contract/README.md) runs the same end-to-end scenarios for each language.
 

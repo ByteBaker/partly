@@ -16,7 +16,7 @@ export default [
     },
   },
   {
-    files: ["sdk/node/**/*.{js,ts}", "examples/node/*.js", "tests/sdk_contract/node/*.mjs", "eslint.config.mjs"],
+    files: ["sdk/node/**/*.{js,ts}", "examples/node/*.js", "tests/sdk_contract/node/*.mjs", "config/*.mjs"],
     languageOptions: { globals: globals.node },
   },
   {

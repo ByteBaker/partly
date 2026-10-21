@@ -10,5 +10,5 @@
     "types": [],
     "lib": ["ES2022"]
   },
-  "include": ["sdk/node/index.d.ts", "tests/typescript/**/*.ts"]
+  "include": ["../sdk/node/index.d.ts", "../tests/typescript/**/*.ts"]
 }

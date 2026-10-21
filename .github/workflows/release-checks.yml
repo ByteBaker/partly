@@ -74,7 +74,7 @@ jobs:
         run: |
           cargo install cargo-about --version 0.9.2 --locked
           cargo fetch --locked
-          cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-server/Cargo.toml --target x86_64-unknown-linux-musl --target aarch64-apple-darwin licenses/third-party.hbs --output-file THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/server-licenses.log"
+          cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-server/Cargo.toml --target x86_64-unknown-linux-musl --target aarch64-apple-darwin licenses/third-party.hbs --output-file licenses/THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/server-licenses.log"
           cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path sdk/python/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/python/THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/sdk-licenses.log"
           for language in rust node; do
             cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path "sdk/$language/Cargo.toml" --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file "sdk/$language/THIRD_PARTY_NOTICES.txt" 2>&1 | tee "$RUNNER_TEMP/$language-licenses.log"
@@ -83,7 +83,7 @@ jobs:
           if grep -q 'failed to validate all files specified in clarification' "$RUNNER_TEMP/"*-licenses.log; then
             exit 1
           fi
-          git diff --exit-code -- THIRD_PARTY_NOTICES.txt sdk/*/THIRD_PARTY_NOTICES.txt
+          git diff --exit-code -- licenses/THIRD_PARTY_NOTICES.txt sdk/*/THIRD_PARTY_NOTICES.txt
 
   artifacts:
     needs: [build, compatibility, notices]
@@ -168,7 +168,7 @@ jobs:
         env:
           BINARY_TARGET: ${{ matrix.binary-target }}
         run: |
-          python -m pip install -r requirements-dev.txt dist/*.whl
+          python -m pip install -r config/requirements-dev.txt dist/*.whl
           python scripts/package_sdks.py --output dist
           PARTLY_BINARY="$PWD/target/$BINARY_TARGET/release/partly" PARTLY_SDK_PACKAGES="$PWD/dist" python -m pytest -q tests/e2e/test_sdk_contract.py
       - name: Package the server and checksums
@@ -176,7 +176,8 @@ jobs:
           BINARY_TARGET: ${{ matrix.binary-target }}
         run: |
           mkdir -p "$RUNNER_TEMP/partly-package"
-          cp "target/$BINARY_TARGET/release/partly" LICENSE LICENSING.md NOTICE THIRD_PARTY_NOTICES.txt "$RUNNER_TEMP/partly-package/"
+          cp "target/$BINARY_TARGET/release/partly" LICENSE NOTICE licenses/THIRD_PARTY_NOTICES.txt "$RUNNER_TEMP/partly-package/"
+          cp docs/licensing.md "$RUNNER_TEMP/partly-package/LICENSING.md"
           cp crates/partly-core/LICENSE "$RUNNER_TEMP/partly-package/LICENSE-APACHE"
           cp sdk/python/RUST_STDLIB_NOTICES.html "$RUNNER_TEMP/partly-package/"
           if [ "$RUNNER_OS" = Linux ]; then
@@ -200,9 +201,11 @@ jobs:
           mkdir "$RUNNER_TEMP/partly-unpacked"
           tar -xzf "dist/partly-$BINARY_TARGET.tar.gz" -C "$RUNNER_TEMP/partly-unpacked"
           test -x "$RUNNER_TEMP/partly-unpacked/partly"
-          for notice in LICENSE LICENSING.md NOTICE THIRD_PARTY_NOTICES.txt; do
+          for notice in LICENSE NOTICE; do
             cmp "$notice" "$RUNNER_TEMP/partly-unpacked/$notice"
           done
+          cmp docs/licensing.md "$RUNNER_TEMP/partly-unpacked/LICENSING.md"
+          cmp licenses/THIRD_PARTY_NOTICES.txt "$RUNNER_TEMP/partly-unpacked/THIRD_PARTY_NOTICES.txt"
           cmp crates/partly-core/LICENSE "$RUNNER_TEMP/partly-unpacked/LICENSE-APACHE"
           cmp sdk/python/RUST_STDLIB_NOTICES.html "$RUNNER_TEMP/partly-unpacked/RUST_STDLIB_NOTICES.html"
           if [ "$RUNNER_OS" = Linux ]; then
