@@ -2,11 +2,15 @@
 # SPDX-License-Identifier: Elastic-2.0
 
 import json
+import os
+import shutil
 import subprocess
+from pathlib import Path
 
 import httpx
 import pytest
 from conftest import ROOT, make_key, save_flag, scope_for
+from test_sdk_contract import install_node_package, unpack_package
 
 
 @pytest.mark.parametrize("language", ["rust", "go", "node"])
@@ -23,8 +27,11 @@ def test_language_quickstart(language, server, admin, tmp_path):
     source = source.replace('"YOUR_API_KEY"', json.dumps(key))
 
     source = source.replace("YOUR_APPLICATION_ID", scope_for(key)[1])
+    packages = Path(os.environ["PARTLY_SDK_PACKAGES"]).resolve() if "PARTLY_SDK_PACKAGES" in os.environ else None
 
     if language == "rust":
+        sdk = unpack_package("partly-rust-*.crate", tmp_path, packages) if packages else ROOT / "sdk/rust"
+        core = unpack_package("partly-core-*.crate", tmp_path, packages) if packages else ROOT / "crates/partly-core"
         (tmp_path / "Cargo.toml").write_text(f"""
 [package]
 name = "partly-quickstart-check"
@@ -35,35 +42,55 @@ edition = "2021"
 name = "quickstart"
 path = "quickstart.rs"
 [dependencies]
-partly = {{ package = "partly-rust", path = {json.dumps(str(ROOT / "sdk/rust"))} }}
+partly = {{ package = "partly-rust", path = {json.dumps(str(sdk))}, features = ["openfeature"] }}
+open-feature = "0.3.0"
 tokio = {{ version = "1", features = ["macros", "rt-multi-thread"] }}
+[patch.crates-io]
+partly-core = {{ path = {json.dumps(str(core))} }}
 """)
-        target = ROOT / "target/sdk-examples"
+        target = tmp_path.parent / "packaged-examples-target" if packages else ROOT / "target/sdk-examples"
         build = ["cargo", "build", "--offline", "--target-dir", str(target)]
         command = [str(target / "debug/quickstart")]
     elif language == "go":
-        subprocess.run(["sh", str(ROOT / "sdk/go/build.sh")],
-                       cwd=ROOT, check=True, capture_output=True, timeout=120)
-        (tmp_path / "go.mod").write_text((ROOT / "examples/go/go.mod").read_text().replace(
-            "../../sdk/go", json.dumps(str(ROOT / "sdk/go"))))
+        sdk = unpack_package("partly-go-*.tar.gz", tmp_path, packages) if packages else ROOT / "sdk/go"
+        if not packages:
+            subprocess.run(["sh", str(ROOT / "sdk/go/build.sh")],
+                           cwd=ROOT, check=True, capture_output=True, timeout=120)
+        (tmp_path / "go.mod").write_text((ROOT / "examples/go/go.mod").read_text()
+                                        .replace("../../sdk/go/openfeature", json.dumps(str(sdk / "openfeature")))
+                                        .replace("../../sdk/go", json.dumps(str(sdk))))
+        shutil.copy2(ROOT / "examples/go/go.sum", tmp_path / "go.sum")
         command = [str(tmp_path / "quickstart")]
         build = ["go", "build", "-a", "-o", command[0], "."]
     else:
-        (tmp_path / "node_modules").mkdir()
-        (tmp_path / "node_modules/partly-sdk").symlink_to(ROOT / "sdk/node", target_is_directory=True)
-        build = ["node", str(ROOT / "sdk/node/build.js")]
+        if packages:
+            install_node_package(tmp_path, packages, openfeature=True)
+            build = None
+        else:
+            (tmp_path / "node_modules").mkdir()
+            (tmp_path / "node_modules/partly-sdk").symlink_to(ROOT / "sdk/node", target_is_directory=True)
+            (tmp_path / "node_modules/@openfeature").symlink_to(ROOT / "node_modules/@openfeature", target_is_directory=True)
+            build = ["node", str(ROOT / "sdk/node/build.js")]
         command = ["node", str(tmp_path / filename)]
     (tmp_path / filename).write_text(source)
-    result = subprocess.run(build, cwd=tmp_path, capture_output=True, text=True,
-                            timeout=300 if language == "go" else 120)
-    assert result.returncode == 0, result.stdout + result.stderr
+    if build:
+        result = subprocess.run(build, cwd=tmp_path, capture_output=True, text=True, timeout=300)
+        assert result.returncode == 0, result.stdout + result.stderr
 
+    # Unknown flags must not silently use OpenFeature's supplied false fallback.
+    result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=10)
+    assert result.returncode != 0 and not result.stdout
+    assert key not in result.stderr
     for enabled, expected in [(True, "Use the new checkout"), (False, "Use the current checkout")]:
         save_flag(admin, enabled=enabled)
         result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=10)
         assert result.returncode == 0, result.stderr
         assert result.stdout.splitlines() == [expected, expected]
         assert key not in result.stdout + result.stderr
+    save_flag(admin, flag={"mode": "custom", "action": "enable", "groups": [[{"k": "age", "op": "ge", "v": 18}]]})
+    result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=10)
+    assert result.returncode != 0 and not result.stdout
+    assert key not in result.stderr
     assert admin.delete(f"/api/keys/{key_id}").status_code == 204
     result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=10)
     assert result.returncode != 0

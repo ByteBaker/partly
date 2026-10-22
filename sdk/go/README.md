@@ -1,14 +1,18 @@
 # Partly Go SDK
 
-Go handles HTTP and polling; a statically linked Rust library evaluates policies. Call `Init` once during application startup, then keep the client in application state and reuse it across handlers and goroutines. Request handlers only call `Evaluate`; call `Close` at application shutdown.
+Go handles HTTP and polling; a statically linked Rust library evaluates policies. Call `Init` once during application startup, then keep the client in application state and reuse it across handlers and goroutines. Request handlers use the official OpenFeature client for local checks; call `Close` at application shutdown. See the [complete quickstart](../../examples/go/main.go).
 
 ## Use a release archive
 
-Requires Go 1.22+ and a C compiler with cgo enabled. Extract the archive for your platform into `third_party/partly-go` in your application, then add:
+The OpenFeature integration requires Go 1.26+ and a C compiler with cgo enabled. Native-only use supports Go 1.22+. Extract the archive for your platform into `third_party/partly-go` in your application, then add:
 
 ```go
-require partly.sh/sdk/go v0.1.0-alpha.1
+require (
+    partly.sh/sdk/go v0.1.0-alpha.1
+    partly.sh/sdk/go/openfeature v0.1.0-alpha.1
+)
 replace partly.sh/sdk/go => ./third_party/partly-go
+replace partly.sh/sdk/go/openfeature => ./third_party/partly-go/openfeature
 ```
 
 The archive includes its Rust library under `native/`; consumers do not need Rust or the Partly checkout. Supported targets are macOS ARM64 and Linux x86_64. Public module hosting is still pending.
@@ -17,7 +21,7 @@ Go 1.22 is the compatibility minimum. Use a supported Go release with current se
 
 ## Build from source
 
-Requires Go 1.22+, Rust, and a C compiler. From the repository root:
+The OpenFeature example requires Go 1.26+, Rust, and a C compiler. From the repository root:
 
 ```sh
 sh sdk/go/build.sh
@@ -25,11 +29,11 @@ cd examples/go
 go run -a .
 ```
 
-First replace the URL and API Key in [the example](../../examples/go/main.go). Its `go.mod` uses a local replacement for this SDK. `partly.sh/sdk/go` is a local module identifier; public module hosting is not configured.
+First replace the URL and API Key in [the example](../../examples/go/main.go). Its `go.mod` replaces both the native SDK and provider modules locally. `partly.sh/sdk/go` is a local module identifier; public module hosting is not configured.
 
 The build copies the Rust library into `sdk/go/native/<os>_<arch>/`. Build it for the same machine as the Go application. After replacing the native library, use `go build -a`, `go run -a`, or `go test -a`: Go's cache does not track changes to this archive.
 
-## Client contract
+## Native client reference
 
 Build with `NewClientBuilder().URL(url).Environment(env).ApplicationID(appID).SecretKey(key).Build()`. Construction does not contact the server.
 

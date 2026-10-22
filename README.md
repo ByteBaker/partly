@@ -35,7 +35,7 @@ Setup creates the database. Reuse its path on restart. For remote access, [confi
 
 Set the server URL, environment, application ID, and API Key. Initialize once at application startup, reuse the client for local evaluations, and close it at shutdown. The dashboard shows these same tested examples, including error handling.
 
-[OpenFeature providers](docs/openfeature.md) are available for all four languages. Register one after Partly initializes, then use the official OpenFeature SDK for local Boolean checks. Python, Go, and Node return your chosen fallback with error details; Rust returns `Result`. The [tested versions and limits](docs/openfeature.md#coverage-and-limits) describe what is verified, including Rust's upstream gaps. The quickstarts and dashboard examples currently use Partly's native API.
+The quickstarts and dashboard use [OpenFeature](docs/openfeature.md) as the application API. Register a provider after Partly initializes, then reuse the official OpenFeature client for local Boolean checks. Examples handle errors explicitly. Native APIs remain available. See [tested versions and limits](docs/openfeature.md#coverage-and-limits), including Rust's upstream differences.
 
 ## How it compares
 
@@ -108,13 +108,13 @@ Flipt leaves resource settings unset; its commented 128 MiB example is not a rec
 
 Partly's figure is an earlier baseline of sampled server memory in a one-flag local test, excluding the application SDK and browser. A production RAM recommendation still needs load testing. These figures use different workloads and deployment sizes, so they do not establish a memory ranking.
 
-The same [local benchmark](tests/benchmark.py) measured about **0.32 µs per Python evaluation**, including the Rust binding: five batches of 100,000 calls with one percentage flag and a fixed user. This is a batch average, not tail latency or a cross-product speed comparison.
+The same [local benchmark](tests/benchmark.py) measured about **0.32 µs per native Python SDK evaluation**, including the Rust binding and excluding OpenFeature: five batches of 100,000 calls with one percentage flag and a fixed user. This is a batch average, not tail latency or a cross-product speed comparison.
 
 ## Roadmap
 
 Agreed order, keeping the single executable and local evaluation. OpenFeature providers and RBAC are implemented; remaining work is noted below.
 
-1. **OpenFeature.** Providers now have checks through the official SDKs and real server for context, lifecycle, errors, refresh, and revocation. Next, make OpenFeature the recommended quickstart and dashboard example. Keep Boolean flags and track per-language specification baselines and Rust upstream gaps in the [OpenFeature guide](docs/openfeature.md#coverage-and-limits).
+1. **OpenFeature.** Providers now have checks through the official SDKs and real server for context, lifecycle, errors, refresh, and revocation. All quickstarts and dashboard examples now use OpenFeature; release checks exercise installed SDK packages. Keep Boolean flags and track per-language specification baselines and Rust upstream gaps in the [OpenFeature guide](docs/openfeature.md#coverage-and-limits).
 2. **Role-based access control (RBAC).** Implemented: individual accounts, environment permissions, restricted API Key secrets, and audit attribution, with API and dashboard tests. SSO and invitations remain outside the alpha.
 3. **Git integration and approvals.** Support reviewed changes, environment promotion, and authenticated automation with an explicit source of truth. Build approval permissions on RBAC.
 4. **Flag lifecycle.** Add owners, purpose, review dates, reminders, and archival. Expiry initially means review is due; it does not automatically disable a flag.

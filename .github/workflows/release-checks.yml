@@ -171,7 +171,7 @@ jobs:
         run: |
           python -m pip install -r config/requirements-dev.txt dist/*.whl
           python scripts/package_sdks.py --output dist
-          PARTLY_BINARY="$PWD/target/$BINARY_TARGET/release/partly" PARTLY_SDK_PACKAGES="$PWD/dist" python -m pytest -q tests/e2e/test_sdk_contract.py
+          PARTLY_BINARY="$PWD/target/$BINARY_TARGET/release/partly" PARTLY_SDK_PACKAGES="$PWD/dist" python -m pytest -q tests/e2e/test_sdk_contract.py tests/e2e/test_openfeature.py tests/e2e/test_sdk_examples.py tests/e2e/test_sdk.py
       - name: Package the server and checksums
         env:
           BINARY_TARGET: ${{ matrix.binary-target }}

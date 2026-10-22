@@ -8,7 +8,8 @@ Requires Rust 1.89+. Until publication, extract the `partly-core` and `partly-ru
 
 ```toml
 [dependencies]
-partly = { package = "partly-rust", version = "=0.1.0-alpha.1", path = "third_party/partly-rust-0.1.0-alpha.1" }
+partly = { package = "partly-rust", version = "=0.1.0-alpha.1", path = "third_party/partly-rust-0.1.0-alpha.1", features = ["openfeature"] }
+open-feature = "0.3.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [patch.crates-io]
@@ -17,17 +18,9 @@ partly-core = { path = "third_party/partly-core-0.1.0-alpha.1" }
 
 The archives build without this checkout. For development inside the repository, use `sdk/rust` as the dependency path.
 
-```rust
-use partly::{Client, Context, Decision, Error};
+Use the [complete OpenFeature quickstart](../../examples/rust/quickstart.rs) for connection settings, provider registration, two requests sharing one initialized client, error handling, and shutdown. Handlers only evaluate locally. See [context mapping and upstream Rust limitations](../../docs/openfeature.md#rust).
 
-fn checkout(client: &Client, context: &Context) -> Result<bool, Error> {
-    Ok(client.evaluate("new_checkout", context)? == Decision::Enabled)
-}
-```
-
-The [runnable quickstart](../../examples/rust/quickstart.rs) shows startup with the URL and API Key, two requests sharing one initialized client, error handling, and shutdown. Handlers do not initialize or refresh the client.
-
-## Client contract
+## Native client reference
 
 - `build()` validates settings without network access. `init().await` downloads the first policy and starts one poller; failed initialization can be retried.
 - Malformed URLs return `Error::UrlParse(UrlParseError)` with the original parser error, also available through `std::error::Error::source()`. Valid URLs that violate the allowed origin format return `Error::Configuration`. Neither error includes the supplied URL or API Key.

@@ -1,10 +1,10 @@
 # Partly Node.js SDK
 
-Async HTTP downloads with local Rust evaluation through Node-API. Supports server-side Node.js 22+; not browsers. Await `init()` once at application startup, before accepting requests. Keep the client in application state and pass it to handlers for local `evaluate()` calls; close it at application shutdown.
+Async HTTP downloads with local Rust evaluation through Node-API. Supports server-side Node.js 22+; not browsers. Await `init()` once at application startup, before accepting requests. Register the OpenFeature provider and keep both clients in application state for local flag checks; close it at application shutdown.
 
 ## Install a release archive
 
-Install the `.tgz` for your platform with `npm install ./partly-node-<version>-<platform>.tgz`, then import from `partly-sdk`. It includes the native library; consumers do not need Rust or this checkout. Supported targets are macOS ARM64 and Linux x86_64. The tarballs are platform-specific; npm publishing remains separate.
+Install the `.tgz` for your platform with `npm install ./partly-node-<version>-<platform>.tgz @openfeature/server-sdk@^1.23.0`, then import from `partly-sdk`. It includes the native library; consumers do not need Rust or this checkout. Supported targets are macOS ARM64 and Linux x86_64. The tarballs are platform-specific; npm publishing remains separate.
 
 The Linux archive requires glibc 2.34 or newer. It does not run on Alpine.
 
@@ -22,7 +22,7 @@ Replace the constants in [the example](../../examples/node/quickstart.js) first.
 
 The build creates `sdk/node/native/<platform>-<arch>/partly.node`. Native SDK use has no npm runtime dependencies; the optional OpenFeature adapter uses the official server SDK.
 
-## Client contract
+## Native client reference
 
 Build with `Client.builder().url(url).environment(env).applicationId(appID).secretKey(key).build()`. Reuse one instance; building it makes no requests.
 

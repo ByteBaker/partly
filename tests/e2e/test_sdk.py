@@ -156,9 +156,9 @@ async def test_rejected_init_and_empty_valid_policy(server, admin):
 @pytest.mark.parametrize("scenario, expected", [
     ("enabled", "Use the new checkout"),
     ("disabled", "Use the current checkout"),
-    ("unknown_flag", "is not defined in the loaded policy"),
-    ("missing_context", "required key is missing"),
-    ("wrong_context_type", "expected number, got string"),
+    ("unknown_flag", "FLAG_NOT_FOUND"),
+    ("missing_context", "INVALID_CONTEXT"),
+    ("wrong_context_type", "INVALID_CONTEXT"),
     ("invalid_key", "SDK key rejected"),
     ("empty_key", "Supply a non-empty ASCII SDK secret key"),
     ("invalid_url", "Supply a control-plane URL"),

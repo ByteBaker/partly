@@ -4,7 +4,7 @@ Use Partly through the official OpenFeature SDK for Python, Rust, Go, or Node.js
 
 OpenFeature defines the application and provider interfaces, not a policy download format. The server keeps its current JSON policy; the provider maps OpenFeature context into the shared Rust evaluator. Adopting the provider does not change your flags or percentage assignments.
 
-Build the native client with its URL, environment, application ID, and API Key as shown in the [SDK guides](../README.md#connect-an-application). Initialize it **once at application startup**, then register the provider. Keep both clients in application state. Request handlers only evaluate flags; the native client handles polling and manual refresh. The snippets below show where to add OpenFeature to that lifecycle; the runnable quickstarts and dashboard still use the native API.
+Build the native client with its URL, environment, application ID, and API Key as shown in the [SDK guides](../README.md#connect-an-application). Initialize it **once at application startup**, then register the provider. Keep both clients in application state. Request handlers only evaluate flags; the native client handles polling and manual refresh. The runnable quickstarts and dashboard use OpenFeature by default. They check errors before using a result, so the required fallback does not silently hide an unknown flag or invalid context. Native APIs remain available.
 
 ## Evaluation contract
 
@@ -17,64 +17,30 @@ Build the native client with its URL, environment, application ID, and API Key a
 
 OpenFeature reduces application API changes when switching tools. Flag definitions, targeting rules, and rollout assignments still require migration; percentage cohorts are not portable across vendors.
 
+## Quickstarts
+
+These complete examples are also served in the dashboard. Each initializes once, handles two requests with the same client, reports errors, and closes at shutdown.
+
+| Language | Install / configure | Complete example |
+| --- | --- | --- |
+| Python | `partly-sdk[openfeature]`; CPython 3.14 | [quickstart.py](../examples/python/quickstart.py) |
+| Rust | `partly-rust` with `features = ["openfeature"]`, plus `open-feature = "0.3"` | [quickstart.rs](../examples/rust/quickstart.rs) |
+| Go | `partly.sh/sdk/go/openfeature`; Go 1.26+ | [main.go](../examples/go/main.go) |
+| Node.js / TypeScript | `partly-sdk` and `@openfeature/server-sdk` | [quickstart.js](../examples/node/quickstart.js) |
+
+Public package hosting is still pending. Use the [SDK guides](../README.md#connect-an-application) for local builds and release archives.
+
 ## Python
 
-Install `partly-sdk[openfeature]` once packages are published. For a local wheel, install it with `openfeature-sdk>=0.10,<0.11` separately. Supports CPython 3.14.
+Install a local wheel with `openfeature-sdk>=0.10,<0.11`. Register `partly.openfeature.PartlyProvider` using `api.set_provider_and_wait(provider, "partly")`, then retain `api.get_client("partly")`. Registration is synchronous but performs no HTTP work. Both synchronous and asynchronous OpenFeature evaluation methods use the local policy.
 
-```python
-from openfeature import api
-from openfeature.evaluation_context import EvaluationContext
-from partly.openfeature import PartlyProvider
+## Rust
 
-# Startup: native is a Partly client built with your connection settings.
-await native.init()
-api.set_provider_and_wait(PartlyProvider(native), "partly")
-flags = api.get_client("partly")
-
-# Request handler: reuse flags; this evaluates locally.
-result = flags.get_boolean_details(
-    "new_checkout", False,
-    EvaluationContext(targeting_key="user-123", attributes={"age": 23}),
-)
-if result.error_code:
-    raise RuntimeError(result.error_code)  # Or deliberately use result.value as a fallback.
-enabled = result.value
-
-# Shutdown, after requests finish.
-api.shutdown()
-await native.aclose()
-```
-
-Python's provider registration is synchronous, but performs no HTTP work. Both synchronous and asynchronous OpenFeature evaluation methods use the local policy.
-
-## Node.js / TypeScript
-
-Install `@openfeature/server-sdk` alongside `partly-sdk`. The supported peer range is `^1.23.0`; tests pin `1.23.0`. Import the optional adapter from `partly-sdk/openfeature`; native SDK users do not need OpenFeature.
-
-```javascript
-const { OpenFeature } = require('@openfeature/server-sdk');
-const { PartlyProvider } = require('partly-sdk/openfeature');
-
-// Startup, inside your async application lifecycle.
-await native.init();
-await OpenFeature.setProviderAndWait('partly', new PartlyProvider(native));
-const flags = OpenFeature.getClient('partly');
-
-// Request handler: reuse flags; no HTTP request is made here.
-const result = await flags.getBooleanDetails('new_checkout', false, { targetingKey: 'user-123' });
-if (result.errorCode) throw new Error(result.errorCode);
-const enabled = result.value;
-
-// Shutdown.
-await OpenFeature.close();
-await native.close();
-```
+Register `partly::openfeature::PartlyProvider` with an initialized `Arc<partly::Client>`. The official Rust SDK returns `EvaluationResult` instead of accepting a default. Check its error; see the upstream differences below.
 
 ## Go
 
-The adapter is a separate module: `partly.sh/sdk/go/openfeature`. It requires Go 1.26+ for the official OpenFeature Go SDK; the native Partly SDK still supports Go 1.22+. Use a supported, patched Go toolchain.
-
-Until public module hosting is ready, add both replacements to your application, pointing at the extracted Partly Go archive:
+The provider is a separate module requiring Go 1.26+; the native SDK still supports Go 1.22+. Until public module hosting is ready, point both modules at the extracted Go archive:
 
 ```go
 require partly.sh/sdk/go/openfeature v0.1.0-alpha.1
@@ -82,46 +48,11 @@ replace partly.sh/sdk/go => ./third_party/partly-go
 replace partly.sh/sdk/go/openfeature => ./third_party/partly-go/openfeature
 ```
 
-Use `of "github.com/open-feature/go-sdk/openfeature"` and `provider "partly.sh/sdk/go/openfeature"`:
+Register `provider.New(client)` using `of.SetNamedProviderAndWait("partly", provider.New(client))`. Keep the returned client from `of.NewClient("partly")` for requests. Boolean getters return both the value and an error; check the error first.
 
-```go
-// Startup. native is a constructed Partly client; ctx is your startup context.
-if err := native.Init(ctx); err != nil { return err }
-if err := of.SetNamedProviderAndWait("partly", provider.New(native)); err != nil { return err }
-flags := of.NewClient("partly")
+## Node.js / TypeScript
 
-// Request handler. Return or handle err before using the caller's fallback.
-result, err := flags.BooleanValueDetails(ctx, "new_checkout", false, of.NewEvaluationContext("user-123", nil))
-if err != nil { return err }
-enabled := result.Value
-
-// Shutdown.
-of.Shutdown()
-if err := native.Close(ctx); err != nil { return err }
-```
-
-## Rust
-
-Enable the `openfeature` feature on `partly-rust` and add `open-feature = "0.3"`. The provider borrows an `Arc<partly::Client>`:
-
-```rust
-use partly::openfeature::PartlyProvider;
-use open_feature::{EvaluationContext, OpenFeature};
-
-// Startup. native is an Arc<Client> built with your connection settings.
-native.init().await?;
-let mut api = OpenFeature::default();
-api.set_provider(PartlyProvider::new(native.clone())).await;
-let flags = api.create_client();
-
-// Request handler: propagate or handle the Result; no implicit fallback.
-let context = EvaluationContext::default().with_targeting_key("user-123");
-let enabled = flags.get_bool_value("new_checkout", Some(&context), None).await?;
-
-// Shutdown.
-api.shutdown().await;
-native.close().await?;
-```
+Import `PartlyProvider` from `partly-sdk/openfeature`. Await `OpenFeature.setProviderAndWait("partly", new PartlyProvider(client))`, then retain `OpenFeature.getClient("partly")`. The optional peer dependency supports `@openfeature/server-sdk` `^1.23.0`; tests pin `1.23.0`.
 
 ## Coverage and limits
 
@@ -163,13 +94,13 @@ cargo test --locked -p partly-rust --features openfeature openfeature::tests
 node --test sdk/node/test/openfeature.test.js
 ```
 
-The Python test starts the real server and builds the Rust, Go, and Node contract drivers. The normal build-and-test CI runs these tests. PR verification checks compilation, formatting and types, including the separate Go OpenFeature contract module; it does not build release artifacts. See the [test harness](../tests/sdk_contract/README.md#openfeature-contract).
+The Python test starts the real server and builds the Rust, Go, and Node contract drivers. The normal build-and-test CI runs these tests. Release CI repeats the native and OpenFeature contracts plus the runnable quickstarts against installed/extracted packages in temporary consumer directories; Python must use an installed wheel. PR verification checks compilation, formatting and types, including the separate Go OpenFeature contract module; it does not build release artifacts. See the [test harness](../tests/sdk_contract/README.md#openfeature-contract).
 
 ## Acceptance target
 
 The target remains the smallest supported provider contract with Boolean flags and local evaluation. Optional tracking, static-context reconciliation, remote evaluation, and richer flag types are outside this scope. No OFREP endpoint or alternate server policy format is needed.
 
-Before describing Partly as **OpenFeature-first**, change the runnable quickstarts and dashboard snippets to recommend OpenFeature. Keep native clients available for refresh and cleanup. Track the Rust differences above and review newer specification requirements separately; prefer focused upstream contributions over a replacement SDK.
+**OpenFeature-first** describes the recommended application API: all runnable quickstarts and dashboard snippets use it. It does not mean full specification conformance. Native clients remain available for refresh and cleanup. Track the Rust differences above and review newer specification requirements separately; prefer focused upstream contributions over a replacement SDK.
 
 OpenFeature's [provider conformance assets](https://github.com/open-feature/spec/tree/specification/assets/provider-tck/v0.1.0/specification/assets/provider-tck) are experimental and separate from the SDK test suites. Use their relevant scenarios as additional evidence, with exclusions explained. Their fixture set includes non-Boolean flags, so a selected subset is not a full-suite pass or certification.
 

@@ -2,16 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 "use strict";
-const { Client, Decision } = require("partly-sdk");
+const { OpenFeature } = require("@openfeature/server-sdk");
+const { Client } = require("partly-sdk");
+const { PartlyProvider } = require("partly-sdk/openfeature");
 
 const CONTROL_PLANE_URL = "http://127.0.0.1:8080";
 const ENVIRONMENT = "development";
 const APPLICATION_ID = "YOUR_APPLICATION_ID";
 const API_KEY = "YOUR_API_KEY";
 
-function checkout(client, context) {
-  const decision = client.evaluate("new_checkout", context);
-  return decision === Decision.ENABLED ? "Use the new checkout" : "Use the current checkout";
+async function checkout(flags, context) {
+  const result = await flags.getBooleanDetails("new_checkout", false, context);
+  if (result.errorCode) throw new Error(result.errorCode);
+  return result.value ? "Use the new checkout" : "Use the current checkout";
 }
 
 async function main() {
@@ -23,12 +26,18 @@ async function main() {
     .build();
   try {
     await client.init(); // Application startup, before accepting requests.
-    // Two example requests reuse the initialized client and its policy.
-    for (const id of ["user-123", "user-456"]) {
-      console.log(checkout(client, { id }));
+    await OpenFeature.setProviderAndWait("partly", new PartlyProvider(client));
+    const flags = OpenFeature.getClient("partly");
+    // Two example requests reuse the client; evaluation is local.
+    for (const targetingKey of ["user-123", "user-456"]) {
+      console.log(await checkout(flags, { targetingKey }));
     }
   } finally {
-    await client.close(); // Application shutdown.
+    try {
+      await OpenFeature.close();
+    } finally {
+      await client.close(); // Application shutdown.
+    }
   }
 }
 

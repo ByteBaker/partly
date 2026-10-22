@@ -80,7 +80,29 @@ class Driver:
         self.log.close()
 
 
-def packaged_driver(language, directory, packages):
+def unpack_package(pattern, directory, packages):
+    archives = list(packages.glob(pattern))
+    assert len(archives) == 1, f"Expected one {pattern} in {packages}"
+    with tarfile.open(archives[0]) as archive:
+        root = archive.getnames()[0].split("/")[0]
+        archive.extractall(directory, filter="data")
+    return directory / root
+
+
+def install_node_package(directory, packages, *, openfeature=False):
+    archives = list(packages.glob("partly-node-*.tgz"))
+    assert len(archives) == 1, f"Expected one Node package in {packages}"
+    dependencies = [str(archives[0])]
+    if openfeature:
+        version = json.loads((ROOT / "package.json").read_text())["devDependencies"]["@openfeature/server-sdk"]
+        dependencies.append(f"@openfeature/server-sdk@{version}")
+    # A fresh CI cache may lack the optional peer's registry metadata after npm ci.
+    subprocess.run(["npm", "install", *([] if openfeature else ["--offline"]), "--ignore-scripts", "--no-audit", "--no-fund",
+                    "--prefix", str(directory), *dependencies],
+                   cwd=directory, check=True, stdout=subprocess.DEVNULL, timeout=120)
+
+
+def packaged_driver(language, directory, packages, *, openfeature=False):
     """Use only extracted packages and copied drivers in a fresh application directory."""
     def check_notices(package, *, compiled=False):
         assert "Apache License" in (package / "LICENSE").read_text()
@@ -90,28 +112,25 @@ def packaged_driver(language, directory, packages):
         for name in names:
             assert (package / name).stat().st_size > 0, f"Missing packaged notice: {name}"
 
-    def unpack(pattern):
-        archives = list(packages.glob(pattern))
-        assert len(archives) == 1, f"Expected one {pattern} in {packages}"
-        with tarfile.open(archives[0]) as archive:
-            root = archive.getnames()[0].split("/")[0]
-            archive.extractall(directory, filter="data")
-        return directory / root
-
     if language == "python":
         entry = directory / "driver.py"
         shutil.copy2(DRIVERS / "python/driver.py", entry)
         return [sys.executable, "-I", str(entry)]
     if language == "rust":
-        core = unpack("partly-core-*.crate")
-        sdk = unpack("partly-rust-*.crate")
+        core = unpack_package("partly-core-*.crate", directory, packages)
+        sdk = unpack_package("partly-rust-*.crate", directory, packages)
         assert "Apache License" in (core / "LICENSE").read_text()
         assert (core / "NOTICE").stat().st_size > 0
         check_notices(sdk)
         application = directory / "rust"
         shutil.copytree(DRIVERS / "rust", application)
         manifest = application / "Cargo.toml"
-        manifest.write_text(manifest.read_text().replace(
+        content = manifest.read_text()
+        if openfeature:
+            shutil.copy2(application / "openfeature.rs", application / "src/main.rs")
+            content = content.replace('path = "../../../sdk/rust"', 'path = "../../../sdk/rust", features = ["openfeature"]')
+            content += '\nopen-feature = "0.3.0"\n'
+        manifest.write_text(content.replace(
             'path = "../../../sdk/rust"', f"path = {json.dumps(str(sdk))}",
         ) + f'\n[patch.crates-io]\npartly-core = {{ path = {json.dumps(str(core))} }}\n')
         shutil.copy2(sdk / "Cargo.lock", application / "Cargo.lock")
@@ -120,24 +139,23 @@ def packaged_driver(language, directory, packages):
                        stdout=subprocess.DEVNULL, timeout=300)
         return [str(target / "debug/partly-sdk-contract")]
     if language == "go":
-        sdk = unpack("partly-go-*.tar.gz")
+        sdk = unpack_package("partly-go-*.tar.gz", directory, packages)
         check_notices(sdk, compiled=True)
         application = directory / "go"
-        shutil.copytree(DRIVERS / "go", application)
+        shutil.copytree(DRIVERS / ("go_openfeature" if openfeature else "go"), application)
         manifest = application / "go.mod"
-        manifest.write_text(manifest.read_text().replace("../../../sdk/go", json.dumps(str(sdk))))
+        manifest.write_text(manifest.read_text()
+                            .replace("../../../sdk/go/openfeature", json.dumps(str(sdk / "openfeature")))
+                            .replace("../../../sdk/go", json.dumps(str(sdk))))
         entry = application / "driver"
         subprocess.run(["go", "build", "-a", "-o", str(entry), "."], cwd=application,
                        check=True, stdout=subprocess.DEVNULL, timeout=300)
         return [str(entry)]
-    archives = list(packages.glob("partly-node-*.tgz"))
-    assert len(archives) == 1, f"Expected one Node package in {packages}"
-    subprocess.run(["npm", "install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund",
-                    "--prefix", str(directory), str(archives[0])],
-                   cwd=directory, check=True, stdout=subprocess.DEVNULL, timeout=120)
+    install_node_package(directory, packages, openfeature=openfeature)
     check_notices(directory / "node_modules/partly-sdk", compiled=True)
     entry = directory / "driver.mjs"
-    entry.write_text((DRIVERS / "node/driver.mjs").read_text().replace('"../../../sdk/node"', '"partly-sdk"'))
+    entry.write_text((DRIVERS / ("node/openfeature.mjs" if openfeature else "node/driver.mjs"))
+                     .read_text().replace("../../../sdk/node", "partly-sdk"))
     return ["node", str(entry)]
 
 

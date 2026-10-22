@@ -9,6 +9,7 @@ import socket
 import ssl
 import subprocess
 import time
+from importlib.metadata import distribution
 from pathlib import Path
 
 import httpx
@@ -19,6 +20,17 @@ RULE_CASES = json.loads((ROOT / "tests/sdk_contract/rules.json").read_text())
 PASSWORD = "local-test-password"
 ADMIN_HEADERS = {"X-Partly-Request": "dashboard"}
 KEY_SCOPES = {}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def require_installed_wheel_for_artifact_tests():
+    if os.environ.get("PARTLY_SDK_PACKAGES"):
+        import partly
+        import partly.openfeature
+
+        package = Path(distribution("partly-sdk").locate_file("partly")).resolve()
+        assert Path(partly.__file__).resolve().parent == package, "Install the release wheel, not an editable SDK"
+        assert Path(partly.openfeature.__file__).resolve().parent == package
 
 
 def scope_for(key):

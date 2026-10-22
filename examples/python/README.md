@@ -1,14 +1,15 @@
 # Python examples
 
-Start with [quickstart.py](quickstart.py), also shown in the dashboard's **Docs** tab. It initializes one client at startup, passes it to a local `checkout` handler for two example requests, and closes it at shutdown.
+Start with [quickstart.py](quickstart.py), also shown in the dashboard's **Docs** tab. It initializes Partly and registers its OpenFeature provider once at startup. Two example requests share the OpenFeature client, then both clients close at shutdown.
 
 Follow the [server setup](../../README.md#build-locally) to create `new_checkout` and an app that selects it, then [install the Python SDK](../../sdk/python/README.md#build-locally). Set the URL, environment, application ID, and API Key constants in `quickstart.py`, then run from the repository root:
 
 ```sh
+python -m pip install 'openfeature-sdk>=0.10,<0.11'
 python examples/python/quickstart.py
 ```
 
-It prints `Use the new checkout` or `Use the current checkout` for each request. In a web application, await `init()` in the startup hook and keep the client in application state. Request handlers call `evaluate()` on that client; they do not initialize, refresh, or close it. Close it in the shutdown hook. See the [SDK guide](../../sdk/python/README.md) for refresh, context, and errors.
+It prints `Use the new checkout` or `Use the current checkout` for each request. In a web application, initialize and register in the startup hook, then keep both clients in application state. Handlers call the detailed Boolean getter and check errors. Close both clients in the shutdown hook. See the [SDK guide](../../sdk/python/README.md) for refresh, context, and errors.
 
 ## Check a larger rollout
 

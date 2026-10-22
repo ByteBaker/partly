@@ -18,44 +18,15 @@ python -m pip install target/wheels/partly_sdk-0.1.0a1-cp314-cp314-*.whl
 
 Supports regular CPython 3.14 only. Source builds also require Rust and a C compiler; a matching prebuilt wheel needs no Rust compiler. Free-threaded Python is not supported. Public downloads are not available yet; see [release targets and status](../../docs/releasing.md#distribution-targets).
 
-## Use a reusable client
+## Use OpenFeature
 
-Await `init()` once in your application's startup hook, before accepting requests. Keep the client in application state and pass it to handlers. It holds the downloaded policy and refreshes it in the background; handlers only call `evaluate()`. Close it at application shutdown.
+Start with the [complete quickstart](../../examples/python/quickstart.py), also shown in the dashboard. Install `openfeature-sdk>=0.10,<0.11` alongside the local wheel, or use `partly-sdk[openfeature]` after publication.
 
-Create `new_checkout` and an API Key in the same environment, then replace the constants below:
+Await native `init()` once at startup, then register `PartlyProvider`. Keep the native and OpenFeature clients in application state. Handlers use OpenFeature's detailed Boolean getter and check its error before using the value. Polling and manual refresh update the same policy; close both clients at shutdown. See [context mapping, errors, and tested limits](../../docs/openfeature.md).
 
-```python
-import asyncio
-from partly import Client, Decision
+## Native client reference
 
-CONTROL_PLANE_URL = "http://127.0.0.1:8080"
-ENVIRONMENT = "development"
-APPLICATION_ID = "YOUR_APPLICATION_ID"
-API_KEY = "YOUR_API_KEY"
-
-def checkout(client, context):
-    return client.evaluate("new_checkout", context=context) is Decision.ENABLED
-
-async def main():
-    client = (
-        Client.builder()
-        .url(CONTROL_PLANE_URL)
-        .environment(ENVIRONMENT)
-        .application_id(APPLICATION_ID)
-        .secret_key(API_KEY)
-        .build()
-    )
-    try:
-        await client.init()  # Application startup.
-        for user_id in ("user-123", "user-456"):
-            print("Enabled:", checkout(client, {"id": user_id}))
-    finally:
-        await client.aclose()  # Application shutdown.
-
-asyncio.run(main())
-```
-
-See the [runnable quickstart](../../examples/python/quickstart.py) for error handling.
+The native API remains available without OpenFeature:
 
 | Method | Behavior |
 | --- | --- |
@@ -93,7 +64,7 @@ The path accepts a string or `Path`. This bundle replaces the default trust root
 
 `init()` reads the file asynchronously. An unreadable or invalid bundle, or failed certificate verification, raises `RefreshError`. Correct the configuration and retry initialization, or close the client.
 
-## Decisions and errors
+## Native decisions and errors
 
 | Result or exception | Meaning |
 | --- | --- |
@@ -110,7 +81,7 @@ The path accepts a string or `Path`. This bundle replaces the default trust root
 
 Compare with `decision is Decision.ENABLED`; boolean conversion raises `TypeError`. All listed exceptions inherit `PartlyError`. The SDK never chooses a fallback decision for an error.
 
-## Context and custom rules
+## Native context and custom rules
 
 Pass a flat dictionary with string keys and string, number, or boolean values. Context stays in your application:
 
@@ -149,9 +120,3 @@ The SDK and evaluator use [Apache-2.0](LICENSE), including use in proprietary ap
 Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.environment("development").application_id("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
 
 A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `KeyRevokedError` (an `AuthenticationError` subclass). Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh reaches the server.
-
-## OpenFeature
-
-The optional `partly-sdk[openfeature]` extra provides `partly.openfeature.PartlyProvider`. After awaiting native `init()` once, register the provider with the official OpenFeature SDK. Registration makes no network requests; flag checks reuse the same local policy.
-
-OpenFeature returns the caller's fallback on errors, with details such as `FLAG_NOT_FOUND` or `INVALID_CONTEXT`. Use detailed getters when you need to handle those errors. Keep the native client for refresh and close it at shutdown. See the [integration guide](../../docs/openfeature.md#python) and [tested compatibility](../../docs/openfeature.md#coverage-and-limits).

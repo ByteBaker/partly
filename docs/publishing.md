@@ -33,7 +33,7 @@ Complete the [release checks](releasing.md#before-public-upload), confirm packag
 
 The commands below are instructions, not actions performed by CI. No release packages have been published. Account credentials belong outside the repository.
 
-OpenFeature ships as an optional Python extra, Rust Cargo feature, Node entry point with an optional peer dependency, and a separate Go module. Include these adapters in the same release; see the [tested versions and limits](openfeature.md#coverage-and-limits). The current OpenFeature server tests use the source checkout. Run the providers against the final installed artifacts before advertising package-level verification.
+OpenFeature ships as an optional Python extra, Rust Cargo feature, Node entry point with an optional peer dependency, and a separate Go module. Include these adapters in the same release; see the [tested versions and limits](openfeature.md#coverage-and-limits). Release CI runs the native and OpenFeature contracts and runnable quickstarts against installed wheel/tarball packages and extracted Rust/Go archives. Require these checks on the final artifacts for each supported platform.
 
 ## Python: PyPI
 

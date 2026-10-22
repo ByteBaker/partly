@@ -5,7 +5,11 @@
 import asyncio
 import os
 
-from partly import Client, Decision
+from openfeature import api
+from openfeature.evaluation_context import EvaluationContext
+
+from partly import Client
+from partly.openfeature import PartlyProvider
 
 
 async def main() -> None:
@@ -19,15 +23,20 @@ async def main() -> None:
     )
     try:
         await client.init()
+        api.set_provider_and_wait(PartlyProvider(client), "partly")
+        flags = api.get_client("partly")
         flag = os.environ.get("PARTLY_FLAG", "new_checkout")
         users = 10_000
-        enabled = sum(
-            client.evaluate(flag, context={"id": f"user-{number}"}) is Decision.ENABLED
-            for number in range(1, users + 1)
-        )
+        enabled = 0
+        for number in range(1, users + 1):
+            result = flags.get_boolean_details(flag, False, EvaluationContext(targeting_key=f"user-{number}"))
+            if result.error_code:
+                raise RuntimeError(result.error_code)
+            enabled += result.value
         print(f"Enabled for {enabled:,} of {users:,} users ({enabled / users:.1%}).")
         print("Policy updated:", await client.refresh())
     finally:
+        api.shutdown()
         await client.aclose()
 
 

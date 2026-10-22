@@ -30,13 +30,13 @@ def test_release_versions_match():
     assert "version" in python["dynamic"] and "version" not in python
     provider = (ROOT / "sdk/go/openfeature/go.mod").read_text()
     assert re.findall(r"^\s*partly\.sh/sdk/go (\S+)$", provider, re.MULTILINE) == [f"v{version}"]
-    contract = (ROOT / "tests/sdk_contract/go_openfeature/go.mod").read_text()
-    for module in ("partly.sh/sdk/go", "partly.sh/sdk/go/openfeature"):
-        assert re.findall(rf"^\s*{re.escape(module)} (\S+)$", contract, re.MULTILINE) == [f"v{version}"]
+    for name in ("tests/sdk_contract/go_openfeature/go.mod", "examples/go/go.mod"):
+        contract = (ROOT / name).read_text()
+        for module in ("partly.sh/sdk/go", "partly.sh/sdk/go/openfeature"):
+            assert re.findall(rf"^\s*{re.escape(module)} (\S+)$", contract, re.MULTILINE) == [f"v{version}"]
     assert json.loads((ROOT / "sdk/node/package.json").read_text())["version"] == version
-    for name in ("examples/go/go.mod", "tests/sdk_contract/go/go.mod"):
-        required = re.findall(r"^require partly\.sh/sdk/go (\S+)$", (ROOT / name).read_text(), re.MULTILINE)
-        assert required == [f"v{version}"], name
+    native_contract = (ROOT / "tests/sdk_contract/go/go.mod").read_text()
+    assert re.findall(r"^require partly\.sh/sdk/go (\S+)$", native_contract, re.MULTILINE) == [f"v{version}"]
 
 
 def test_packaging_rejects_version_drift_before_building(tmp_path, monkeypatch):

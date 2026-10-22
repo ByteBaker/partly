@@ -25,7 +25,7 @@ Recent dashboard checks passed in Chromium, including audits and modal confirmat
 
 Earlier candidates passed Rust, Python, Go race, Node.js, packaging, and HTTPS smoke tests on macOS. Minimum-version checks covered Rust 1.89, Go 1.22.12, and Node.js 22.0.0. Linux checks ran under QEMU with compiler workarounds; Chromium and Go vet could not complete there. Native Linux CI must verify the current source and artifacts.
 
-The current OpenFeature source checks passed in all four languages: real-server refresh, outages and revocation, plus provider lifecycle, context precedence, hooks, typed errors and isolation. These use the installed development Python extension and locally built Rust/Go/Node code, not final published artifacts. See the [compatibility record](openfeature.md#coverage-and-limits); Rust's upstream limits remain explicit.
+OpenFeature source checks passed in all four languages for lifecycle, context precedence, hooks, typed errors and isolation. The macOS ARM64 package check also passed 37 native/OpenFeature contract and quickstart tests using an installed CPython 3.14 wheel built from its source archive, extracted Rust/Go packages, and an npm-installed tarball. These cover refresh, outages, revocation, and the runnable dashboard examples. Packages remain unpublished; native Linux CI must repeat the checks. See the [compatibility record](openfeature.md#coverage-and-limits); Rust's upstream limits remain explicit.
 
 This candidate also adds individual accounts and environment permissions. The development schema remains v1, with no migration from older POC layouts. Use a fresh database path for an incompatible older database; the server rejects it without modifying it. See [storage and recovery](../crates/partly-server/README.md#setup-and-storage).
 
@@ -118,7 +118,7 @@ Clippy performs Rust compiler checks as well as linting, so verification does no
 
 The [vulnerability workflow](../.github/workflows/vulnerabilities.yml) uses RustSec, pip-audit, govulncheck, and npm audit. It runs on every PR/release workflow and daily, and fails on findings or scanner errors. Python and npm scans include development dependencies; Go scans include the standard library. Native Node usage has no JavaScript runtime dependencies; its optional OpenFeature adapter requires the official server SDK. Package audits do not audit Node/Python interpreters themselves; keep their supported patch versions current. Release Go builds use 1.27.3; Go 1.22 is checked only for native-client compatibility. The separate OpenFeature Go module requires Go 1.26+.
 
-Release jobs build the Python wheel from its source archive and test installed packages outside the checkout, including HTTPS and shutdown. They produce archives and checksums, without publishing. Require a green run on the exact release commit.
+Release jobs build the Python wheel from its source archive and test installed packages outside the checkout, including HTTPS, shutdown, OpenFeature contracts, and all four quickstarts. They produce archives and checksums, without publishing. Require a green run on the exact release commit.
 
 Remaining automation gaps: checksums are generated but uploaded artifacts are not downloaded and verified; the Linux Node.js addon's documented glibc minimum is not enforced. macOS runs packaged SDK contracts and smoke tests; the full application/browser suite runs on Linux.
 

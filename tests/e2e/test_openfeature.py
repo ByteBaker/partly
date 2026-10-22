@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: Elastic-2.0
 
 import asyncio
+import os
 import subprocess
 import threading
 from contextlib import closing
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from conftest import app_id, make_key, save_flag
@@ -14,7 +16,7 @@ from openfeature.evaluation_context import EvaluationContext
 from openfeature.event import ProviderEvent
 from openfeature.exception import ErrorCode, ProviderFatalError, ProviderNotReadyError
 from openfeature.hook import Hook
-from test_sdk_contract import DRIVERS, ROOT, Driver
+from test_sdk_contract import DRIVERS, ROOT, Driver, packaged_driver
 
 from partly import Client, KeyRevokedError, RefreshError
 from partly.openfeature import PartlyProvider
@@ -96,7 +98,10 @@ async def test_openfeature_context_hooks_lifecycle_and_provider_isolation(server
 @pytest.fixture(params=["rust", "go", "node"])
 def of_driver(request, tmp_path):
     language = request.param
-    if language == "rust":
+    packages = os.environ.get("PARTLY_SDK_PACKAGES")
+    if packages:
+        command = packaged_driver(language, tmp_path, Path(packages).resolve(), openfeature=True)
+    elif language == "rust":
         subprocess.run(["cargo", "build", "--locked", "--offline", "-p", "partly-rust", "--features", "openfeature",
                         "--example", "openfeature-contract"], cwd=ROOT, check=True, timeout=180)
         command = [str(ROOT / "target/debug/examples/openfeature-contract")]
@@ -107,7 +112,7 @@ def of_driver(request, tmp_path):
     else:
         subprocess.run(["node", str(ROOT / "sdk/node/build.js")], cwd=ROOT, check=True, timeout=120)
         command = ["node", str(DRIVERS / "node/openfeature.mjs")]
-    instance = Driver(command, tmp_path)
+    instance = Driver(command, tmp_path, cwd=tmp_path if packages else ROOT)
     try:
         yield language, instance
         instance.finish()

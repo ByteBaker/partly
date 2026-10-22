@@ -8,6 +8,6 @@ cd examples/go
 go run -a .
 ```
 
-The `-a` option rebuilds Go code so it links the current Rust library. The example initializes once at application startup, then passes the same client to `checkout` for two example requests. Keep that pointer in application state and reuse it across handlers and goroutines. Only call `Close` at application shutdown; the example also closes before returning an error. See the [SDK guide](../../sdk/go/README.md).
+Requires Go 1.26+. The `-a` option rebuilds Go code so it links the current Rust library. The example initializes Partly and registers its OpenFeature provider once at startup. Two requests reuse the OpenFeature client for local checks and handle errors explicitly. Keep both clients in application state and close them at shutdown. See the [SDK guide](../../sdk/go/README.md).
 
-The dashboard serves this same source, and the end-to-end suite runs it for enabled, disabled, and rejected-key cases.
+The dashboard serves this same source, and the end-to-end suite runs it for enabled, disabled, unknown-flag, invalid-context, and rejected-key cases, including installed release packages.
