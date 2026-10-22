@@ -1,6 +1,6 @@
 # SDK contract tests
 
-One end-to-end contract runs against Python, Rust, Go, and Node.js, in that order. Each language driver calls its real SDK. Pytest starts a temporary HTTPS server, changes flags, and checks the driver's results.
+One end-to-end contract runs against Python, Rust, Go, and Node.js. Each language driver calls its real SDK. The Rust harness starts a temporary HTTPS server, changes flags, and checks the driver's results.
 
 All four SDKs must pass before committing. Missing packages, build errors, and missing toolchains fail normally; nothing is skipped or marked as an expected failure.
 
@@ -11,15 +11,15 @@ Follow the [local setup guide](../../README.md) and install the [test dependenci
 From the repository root, with the Python virtual environment active:
 
 ```sh
-cargo build --locked -p partly-sdk-contract
-python -m pytest -q tests/e2e/test_sdk_contract.py
-python -m pytest -q tests/e2e/test_sdk_contract.py -k python
-python -m pytest -q tests/e2e/test_sdk_contract.py -k rust
-python -m pytest -q tests/e2e/test_sdk_contract.py -k go
-python -m pytest -q tests/e2e/test_sdk_contract.py -k node
+cargo build --locked -p partly-server
+cargo test --locked -p partly-e2e --test e2e sdk::contract:: -- --test-threads=4
+cargo test --locked -p partly-e2e --test e2e sdk::contract::python::
+cargo test --locked -p partly-e2e --test e2e sdk::contract::rust::
+cargo test --locked -p partly-e2e --test e2e sdk::contract::go::
+cargo test --locked -p partly-e2e --test e2e sdk::contract::node::
 ```
 
-The default server is `target/debug/partly`; `PARTLY_BINARY` can select an absolute path. The normal `python -m pytest` run also includes this contract.
+The default server is `target/debug/partly`; `PARTLY_BINARY` can select an absolute path. See the [E2E guide](../e2e/README.md) for browser tests and failure artifacts.
 
 Python uses the installed wheel. Rust builds against `sdk/rust`; Go uses a local module replacement for `sdk/go`; Node.js loads the package entry from `sdk/node`. The fixture builds the Go static library and Node native extension first. Go builds use `-a` because its build cache does not track changes to the Rust archive.
 
@@ -40,7 +40,7 @@ The existing SDK unit tests continue to cover detailed validation and concurrenc
 
 ## OpenFeature contract
 
-`python -m pytest -q tests/e2e/test_openfeature.py` exercises the official OpenFeature SDKs against the real server, including changed/unchanged refresh, local evaluation during an outage, and confirmed revocation. Python calls its provider directly; the other languages reuse the JSON-line driver transport. Rust returns errors through `Result`; the other official SDKs return caller defaults with error details.
+`cargo test --locked -p partly-e2e --test e2e openfeature` exercises the official OpenFeature SDKs against the real server, including changed/unchanged refresh, local evaluation during an outage, and confirmed revocation. All four languages use JSON-line drivers. Rust returns errors through `Result`; the other official SDKs return caller defaults with error details.
 
 The Go OpenFeature driver has its own Go 1.26+ module so it does not raise the native SDK's Go 1.22 minimum. Provider unit tests also cover typed getters, context precedence, hooks, lifecycle, and isolation. With `PARTLY_SDK_PACKAGES` set, the same tests use extracted release crates and Go modules, an npm-installed tarball, and an installed Python wheel. An editable Python install fails this mode. Release CI also runs the dashboard quickstarts against these packages. See the [OpenFeature evidence and limits](../../docs/openfeature.md#coverage-and-limits).
 
@@ -50,13 +50,13 @@ Drivers read one JSON command per line from stdin and write one JSON result per 
 
 | Command | Inputs | Successful result |
 | --- | --- | --- |
-| `build` | `url`, `key`, `interval`, `timeout`, optional `ca_bundle`; times in seconds | `{"ok": true}` |
+| `build` | `url`, `key`, `environment`, `application_id`, `interval`, `timeout`, optional `ca_bundle`; times in seconds | `{"ok": true}` |
 | `init` | None | `{"ok": true}` |
 | `evaluate` | `flag`, `context` | `{"decision": "enabled"}` or `{"decision": "disabled"}` |
 | `refresh` | None | `{"updated": true}` or `{"updated": false}` |
 | `close` | None | `{"ok": true}` |
 
-SDK errors return `{"error": "code"}`. Codes are `flag_not_found`, `invalid_context`, `context_type`, `policy_not_ready`, `authentication`, `invalid_policy`, `refresh`, and `client_closed`. Unexpected errors terminate the driver and fail the test.
+SDK errors return `{"error": "code"}`. Codes are `flag_not_found`, `invalid_context`, `context_type`, `policy_not_ready`, `authentication`, `key_revoked`, `invalid_policy`, `refresh`, and `client_closed`. Unexpected errors terminate the driver and fail the test.
 
 `context_type` also returns `flag_key`, `k`, `op`, `expected_type`, and `actual_type`; `op` is `null` when no rule operator applies. Drivers preserve numeric precision when reading commands.
 

@@ -855,7 +855,7 @@ async fn main() {
 }
 
 fn reset_password(db: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let store = Store::open(db).map_err(|e| e.1)?;
+    let mut store = Store::open(db).map_err(|e| e.1)?;
     if !store.ready() {
         return Err("Database does not exist; complete setup first".into());
     }

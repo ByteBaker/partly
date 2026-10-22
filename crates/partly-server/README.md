@@ -64,7 +64,7 @@ python3 -c 'import getpass; print(getpass.getpass("New admin password: "))' | \
 
 Passwords must be 12–1024 UTF-8 bytes. The command reads one line from standard input and refuses direct terminal input; the prompt above hides your typing. Keep passwords out of command arguments and shell history.
 
-The username, flags, and API Keys stay unchanged. Restart afterward and sign in again. Missing or invalid databases are rejected without replacement.
+The username, flags, and API Keys stay unchanged. The password reset is recorded in each environment's audit log as `offline recovery`, without the password or its hash. If that audit write fails, the password stays unchanged. Restart afterward and sign in again. Missing or invalid databases are rejected without replacement.
 
 ## Backup, restore, and upgrades
 

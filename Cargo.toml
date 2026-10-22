@@ -2,7 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [workspace]
-members = ["crates/partly-core", "crates/partly-server", "sdk/python", "sdk/rust", "crates/partly-ffi", "sdk/node", "tests/sdk_contract/rust"]
+members = [
+    "crates/partly-core",
+    "crates/partly-server",
+    "crates/partly-ffi",
+    "sdk/python",
+    "sdk/rust",
+    "sdk/node",
+    "tests/sdk_contract/rust",
+    "tests/e2e",
+]
 default-members = ["crates/partly-core", "crates/partly-server"]
 resolver = "2"
 

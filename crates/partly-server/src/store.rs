@@ -377,9 +377,20 @@ impl Store {
         Ok((0, hash, false))
     }
 
-    pub fn reset_password(&self, hash: &str) -> Result<(), ApiError> {
-        self.db()?
-            .execute("UPDATE users SET password_hash = ?1 WHERE id = 1", [hash])?;
+    pub fn reset_password(&mut self, hash: &str) -> Result<(), ApiError> {
+        let user = Self::read_user(self.db()?, 1)?;
+        self.save_user(
+            "offline recovery",
+            Some(user.id),
+            &UserInput {
+                username: user.username,
+                password: None,
+                is_admin: user.is_admin,
+                enabled: user.enabled,
+                permissions: user.permissions,
+            },
+            Some(hash),
+        )?;
         Ok(())
     }
 

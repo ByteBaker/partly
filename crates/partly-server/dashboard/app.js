@@ -68,7 +68,9 @@ async function api(path, method = 'GET', body, headers = {}) {
   if (!response.ok) {
     let message = await response.text();
     try { message = JSON.parse(message).error || message; } catch { /* Validation may return plain text. */ }
-    if (response.status === 401) message = 'Your session has ended. Save a copy of your edits, then reload to sign in.';
+    if (response.status === 401) message = path === '/login'
+      ? 'Username or password is incorrect.'
+      : 'Your session has ended. Save a copy of your edits, then reload to sign in.';
     throw new Error(message || `Request failed (${response.status})`);
   }
   return response.status === 204 ? undefined : response.json();
@@ -105,10 +107,11 @@ async function action(trigger, operation, errorArea) {
     if (state) state.pending = false;
     if (trigger && !form) trigger.disabled = false;
     updateDirty();
-    const closedDialog = document.activeElement.closest('dialog:not([open])');
-    if ((document.activeElement === document.body || closedDialog) && scope?.isConnected) {
+    const active = document.activeElement;
+    const closedDialog = active.closest('dialog:not([open])');
+    if ((active === document.body || closedDialog || (scope?.contains(active) && active.disabled)) && scope?.isConnected) {
       const preferred = closedDialog ? trigger : focused;
-      const target = preferred?.isConnected && !preferred.disabled
+      const target = preferred !== document.body && preferred?.isConnected && !preferred.disabled
         ? preferred
         : scope.querySelector('input:not([disabled]), button:not([disabled])');
       target?.focus();
@@ -348,7 +351,10 @@ function flagRow(key, flag) {
       const replacement = flagRow(saved.key, saved);
       untrack(form);
       form.replaceWith(replacement);
-      if (document.activeElement === document.body) replacement.querySelector('[name=mode]').focus();
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (active === document.body || active.closest('dialog:not([open])')) replacement.querySelector('[name=mode]').focus();
+      });
       showNotice('Saved', replacement);
     });
   });
@@ -789,7 +795,7 @@ $('auth-form').addEventListener('submit', event => {
   event.preventDefault(); action($('auth-submit'), async () => {
     await api(setupRequired ? '/setup' : '/login', 'POST', { username: $('username').value, password: $('password').value });
     $('password').value = ''; location.replace(route ? `/environments/${environment}/${currentScreen}` : '/');
-  });
+  }, $('auth-error'));
 });
 async function boot() {
   if (location.pathname !== '/' && !route) throw new Error('Unknown environment or screen. Open /environments/development/flags or /environments/production/flags.');
@@ -799,6 +805,7 @@ async function boot() {
     $('auth-title').textContent = setupRequired ? 'Create admin account' : 'Sign in';
     $('auth-description').textContent = setupRequired ? 'Set up your account to manage feature flags.' : 'Enter your account credentials.';
     $('auth-submit').textContent = setupRequired ? 'Create admin account' : 'Sign in';
+    $('password-help').textContent = setupRequired ? 'Use at least 12 characters.' : '';
     $('password').minLength = setupRequired ? 12 : 1; $('password').autocomplete = setupRequired ? 'new-password' : 'current-password'; $('setup-note').hidden = !setupRequired;
     $('username').focus(); return;
   }

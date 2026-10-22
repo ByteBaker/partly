@@ -11,7 +11,7 @@ select = ["E4", "E9", "F", "B", "I", "ASYNC"]
 known-first-party = ["partly"]
 
 [tool.ruff.lint.per-file-ignores]
-# These harnesses synchronously control a separate server process.
+# Language drivers may call synchronous APIs while the Rust harness owns the server.
 "tests/**/*.py" = ["ASYNC"]
 
 [tool.mypy]

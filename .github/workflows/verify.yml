@@ -42,6 +42,8 @@ jobs:
       # Clippy includes compiler checks; a separate cargo check repeats them.
       - name: Check Rust targets with Clippy
         if: matrix.language == 'rust'
+        env:
+          PLAYWRIGHT_SKIP_DRIVER_DOWNLOAD: "1"
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Run Go vet and Staticcheck
         if: matrix.language == 'go'

@@ -129,6 +129,8 @@ pre code { font: inherit; }
 .auth-card form { display: grid; gap: 10px; margin: 24px 0 18px; }
 .auth-card form label { margin-top: 8px; }
 .auth-card button { margin-top: 14px; }
+.auth-feedback { min-height: 36px; font-size: 12px; color: var(--danger); }
+#password-help:empty { display: none; }
 .notice { margin: 0 0 20px; padding: 10px 14px; border: 1px solid var(--border); border-left: 3px solid var(--accent); background: var(--inset); font-size: 12px; }
 .notice:empty { display: none; }
 .notice.error { border-left-color: var(--danger); color: var(--danger); }

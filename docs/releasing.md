@@ -21,7 +21,7 @@ Python support and CI target regular CPython 3.14 only, using version-specific `
 
 The prebuilt Linux Node.js addon requires glibc 2.34+. Go consumers need cgo and a C compiler. Neither prebuilt package requires a Rust toolchain.
 
-Recent dashboard checks passed in Chromium, including audits and modal confirmations. Docs checks also passed in Firefox and WebKit; the served examples ran against all four SDKs. Safari releases and physical mobile devices remain untested.
+The Rust E2E suite covers the API, SDKs, recovery, and dashboard. All 27 dashboard tests passed locally in Chromium, Firefox, and WebKit, including audits, modal confirmations, and served examples. Safari releases and physical mobile devices remain untested.
 
 Earlier candidates passed Rust, Python, Go race, Node.js, packaging, and HTTPS smoke tests on macOS. Minimum-version checks covered Rust 1.89, Go 1.22.12, and Node.js 22.0.0. Linux checks ran under QEMU with compiler workarounds; Chromium and Go vet could not complete there. Native Linux CI must verify the current source and artifacts.
 
@@ -35,7 +35,7 @@ Follow the [server setup](../README.md#build-locally) and [Python SDK build](../
 
 ```sh
 python -m pip install -r config/requirements-dev.txt
-python -m playwright install chromium
+cargo run --locked -p partly-e2e --features browser --bin partly-test-browsers -- chromium
 cargo fmt --all --check
 python -m ruff check .
 python -m mypy
@@ -49,8 +49,8 @@ go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
 for module in sdk/go sdk/go/openfeature examples/go tests/sdk_contract/go tests/sdk_contract/go_openfeature; do
   (cd "$module" && go vet ./... && staticcheck ./...)
 done
-PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo test --locked --workspace --all-features
+PLAYWRIGHT_SKIP_DRIVER_DOWNLOAD=1 PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo test --locked --workspace --all-features --exclude partly-e2e
 python -m mypy.stubtest partly._native
 cargo build --locked -p partly-server -p partly-sdk-contract
 sh sdk/go/build.sh
@@ -59,19 +59,21 @@ node sdk/node/build.js
 (cd sdk/go/openfeature && go test -a -race ./...)
 node --test sdk/node/test/*.test.js
 python -m pytest -q
+cargo test --locked -p partly-e2e --features browser --test e2e -- --test-threads=4
 ```
 
 Tests use temporary servers and databases. `PARTLY_BINARY` selects an absolute executable path. `PARTLY_BROWSER=firefox` or `webkit` selects an installed browser for focused checks. Test reports and screenshots stay outside Git.
 
 Python checks discover settings in the root `pyproject.toml`. Frontend settings live in `config/`; use the npm commands above so each tool loads the right file. CI uses those same commands and installs `config/requirements-dev.txt`.
 
-The [four-language contract](../tests/sdk_contract/README.md), [OpenFeature tests](../tests/sdk_contract/README.md#openfeature-contract), RBAC tests, and minimal examples run in the default suite. All must pass before committing. Go links a bundled Rust static library; use `-a` after replacing it because Go's cache does not track archive changes.
+The [Rust E2E harness](../tests/e2e/README.md) runs the [four-language contract](../tests/sdk_contract/README.md), [OpenFeature tests](../tests/sdk_contract/README.md#openfeature-contract), RBAC tests, and minimal examples. All must pass before committing. Go links a bundled Rust static library; use `-a` after replacing it because Go's cache does not track archive changes.
 
 Build standalone SDK packages and run the same contracts outside the checkout (Python 3.14):
 
 ```sh
 python scripts/package_sdks.py --output target/sdk-packages
-PARTLY_SDK_PACKAGES="$PWD/target/sdk-packages" python -m pytest -q tests/e2e/test_sdk_contract.py
+PARTLY_SDK_PACKAGES="$PWD/target/sdk-packages" cargo test --locked -p partly-e2e --test e2e sdk::contract:: -- --test-threads=4
+PARTLY_SDK_PACKAGES="$PWD/target/sdk-packages" cargo test --locked -p partly-e2e --test e2e sdk::examples:: -- --test-threads=4
 ```
 
 The output contains two Rust `.crate` files, a Go archive with its static library and optional provider module, and a Node npm tarball with its native extension and provider. Rust packaging verifies all features in a fresh temporary registry to avoid reusing an older unpublished alpha at the same version. Go and Node archives target the build machine; build both macOS ARM64 and Linux x86_64. Consumers do not need Rust for those prebuilt archives. During development only, `--allow-dirty` tests uncommitted packaging changes. Publishing to registries remains a separate step.

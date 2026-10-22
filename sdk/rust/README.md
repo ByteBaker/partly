@@ -37,7 +37,7 @@ Context is a flat map of strings, numbers, and booleans. See [shared evaluation 
 
 ```sh
 cargo test -p partly-rust
-python -m pytest -q tests/e2e/test_sdk_contract.py -k rust
+cargo test --locked -p partly-e2e --test e2e sdk::contract::rust::
 ```
 
 [Apache-2.0](LICENSE).

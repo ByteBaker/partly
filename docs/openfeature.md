@@ -88,13 +88,13 @@ Run the focused checks after installing the native extensions and development de
 
 ```sh
 cargo build --locked -p partly-server
-python -m pytest -q tests/e2e/test_openfeature.py
+cargo test --locked -p partly-e2e --test e2e openfeature
 cargo test --locked -p partly-rust --features openfeature openfeature::tests
 (cd sdk/go/openfeature && go test -race ./...)
 node --test sdk/node/test/openfeature.test.js
 ```
 
-The Python test starts the real server and builds the Rust, Go, and Node contract drivers. The normal build-and-test CI runs these tests. Release CI repeats the native and OpenFeature contracts plus the runnable quickstarts against installed/extracted packages in temporary consumer directories; Python must use an installed wheel. PR verification checks compilation, formatting and types, including the separate Go OpenFeature contract module; it does not build release artifacts. See the [test harness](../tests/sdk_contract/README.md#openfeature-contract).
+The Rust harness starts the real server and runs all four language drivers. The normal build-and-test CI runs these tests. Release CI repeats the native and OpenFeature contracts plus the runnable quickstarts against installed/extracted packages in temporary consumer directories; Python must use an installed wheel. PR verification checks compilation, formatting and types, including the separate Go OpenFeature contract module; it does not build release artifacts. See the [test harness](../tests/sdk_contract/README.md#openfeature-contract).
 
 ## Acceptance target
 

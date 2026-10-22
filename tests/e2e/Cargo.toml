@@ -1,0 +1,36 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
+[package]
+name = "partly-e2e"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+license = "Elastic-2.0"
+
+[features]
+browser = ["dep:playwright-rs"]
+
+[dependencies]
+playwright-rs = { version = "=0.20.1", optional = true, default-features = false, features = ["ring"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "time", "net", "sync"] }
+
+[dev-dependencies]
+futures-util = "0.3"
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "cookies", "rustls-tls-webpki-roots"] }
+serde_json.workspace = true
+sha2.workspace = true
+tempfile = "3"
+rusqlite = { version = "0.40", features = ["bundled"] }
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls-pemfile = "2"
+time = "0.3"
+flate2 = "1"
+tar = "0.4"
+
+[[bin]]
+name = "partly-test-browsers"
+path = "src/bin/install_browsers.rs"
+required-features = ["browser"]

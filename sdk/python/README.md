@@ -104,7 +104,9 @@ Dashboard rules match all conditions within a group and any group within a flag.
 Install the wheel before testing. From the repository root:
 
 ```sh
-python -m pytest -q sdk/python/tests tests/e2e/test_sdk.py tests/e2e/test_https.py
+python -m pytest -q sdk/python/tests
+cargo test --locked -p partly-e2e --test e2e python
+cargo test --locked -p partly-e2e --test e2e api::https::
 ```
 
 Tests exercise both the native boundary and the real control plane. See [development checks](../../docs/releasing.md#build-and-verify) for browser and full-workspace checks.

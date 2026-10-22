@@ -45,7 +45,7 @@ Ordinary failed refreshes keep the policy and ETag. Local evaluation still works
 
 ```sh
 node --test sdk/node/test/*.test.js
-python -m pytest -q tests/e2e/test_sdk_contract.py -k node
+cargo test --locked -p partly-e2e --test e2e sdk::contract::node::
 ```
 
 [Apache-2.0](LICENSE).

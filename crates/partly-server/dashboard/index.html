@@ -37,8 +37,10 @@
       <p id="auth-description" class="muted"></p>
       <form id="auth-form">
         <label for="username">Username</label><input type="text" id="username" name="username" autocomplete="username" maxlength="64" required>
-        <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="1024" required>
+        <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" aria-describedby="password-help" maxlength="1024" required>
+        <p id="password-help" class="small muted"></p>
         <button id="auth-submit" class="primary" type="submit">Continue</button>
+        <div class="auth-feedback"><p id="auth-error" role="alert" hidden></p></div>
       </form>
       <p id="setup-note" class="small muted" hidden>Your database is created when you finish setup.</p>
     </section>
