@@ -149,3 +149,9 @@ The SDK and evaluator use [Apache-2.0](LICENSE), including use in proprietary ap
 Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.environment("development").application_id("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
 
 A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `KeyRevokedError` (an `AuthenticationError` subclass). Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh reaches the server.
+
+## OpenFeature
+
+The optional `partly-sdk[openfeature]` extra provides `partly.openfeature.PartlyProvider`. After awaiting native `init()` once, register the provider with the official OpenFeature SDK. Registration makes no network requests; flag checks reuse the same local policy.
+
+OpenFeature returns the caller's fallback on errors, with details such as `FLAG_NOT_FOUND` or `INVALID_CONTEXT`. Use detailed getters when you need to handle those errors. Keep the native client for refresh and close it at shutdown. See the [integration guide](../../docs/openfeature.md#python) and [tested compatibility](../../docs/openfeature.md#coverage-and-limits).

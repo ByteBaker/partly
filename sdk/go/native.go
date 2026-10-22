@@ -48,11 +48,15 @@ func newSnapshot(body []byte) (*snapshot, error) {
 	return value, nil
 }
 
-func (s *snapshot) evaluate(flag string, context map[string]any) (Decision, error) {
+func (s *snapshot) hasFlag(flag string) bool {
 	key := append([]byte(flag), 0)
 	exists := C.partly_snapshot_has_flag(s.ptr, (*C.uint8_t)(unsafe.Pointer(&key[0])), C.size_t(len(flag)))
 	runtime.KeepAlive(s)
-	if exists == 0 {
+	return exists != 0
+}
+
+func (s *snapshot) evaluate(flag string, context map[string]any) (Decision, error) {
+	if !s.hasFlag(flag) {
 		return "", &Error{Kind: ErrFlagNotFound, Message: "Flag is not defined in the loaded policy", FlagKey: flag}
 	}
 	values := make(map[string]any, len(context))

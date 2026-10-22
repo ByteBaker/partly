@@ -181,6 +181,14 @@ class Client:
             raise TypeError("flag_key must be a string")
         return Decision.ENABLED if snapshot.evaluate(flag_key, context) else Decision.DISABLED
 
+    def has_flag(self, flag_key: str) -> bool:
+        """Check the loaded policy without evaluating context; unavailable policies still raise."""
+        if self._revoked:
+            raise KeyRevokedError("API Key revoked; build a new client with a valid key")
+        if self._snapshot is None:
+            raise PolicyNotReadyError("No policy loaded; await client.init()")
+        return self._snapshot.contains_flag(flag_key)
+
     def _check_open(self) -> None:
         if self._revoked:
             raise KeyRevokedError("API Key revoked; build a new client with a valid key")

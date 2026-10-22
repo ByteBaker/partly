@@ -84,7 +84,7 @@ def test_password_reset_requires_offline_database_and_preserves_flags_keys(serve
     assert new_password not in reset.stdout + reset.stderr
     assert database_records(server.db) == before
     with sqlite3.connect(server.db) as db:
-        username, hashed = db.execute("SELECT username, password_hash FROM admin").fetchone()
+        username, hashed = db.execute("SELECT username, password_hash FROM users").fetchone()
         assert username == "admin" and hashed.startswith("$argon2id$")
         assert new_password not in hashed
         assert db.execute("PRAGMA user_version").fetchone()[0] == 1

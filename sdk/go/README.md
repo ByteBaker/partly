@@ -63,3 +63,9 @@ go test -a -race ./...
 Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.Environment("development").ApplicationID("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
 
 A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `ErrKeyRevoked`. Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh reaches the server.
+
+## OpenFeature
+
+The optional `partly.sh/sdk/go/openfeature` module requires Go 1.26+; the native SDK still supports Go 1.22+. Initialize the native client once, then register `openfeature.New(client)` with the official OpenFeature SDK. Registration makes no network requests; evaluations use the same local policy.
+
+OpenFeature returns your fallback together with an error when evaluation fails. Keep the native client for refresh and close it at shutdown. See the [integration guide](../../docs/openfeature.md#go) and [tested compatibility](../../docs/openfeature.md#coverage-and-limits).

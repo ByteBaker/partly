@@ -49,8 +49,8 @@ input[type=radio] { min-height: 16px; width: 16px; height: 16px; margin: 0; acce
 .session { display: flex; gap: 18px; align-items: end; }
 .environment-label { flex-direction: row; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; }
 .environment-label .dropdown { min-width: 154px; }
-.screen-tabs { display: flex; gap: 28px; padding-inline: max(32px, calc((100% - 1120px) / 2)); background: var(--inset); border-bottom: 1px solid var(--border); }
-.screen-tabs button { padding: 12px 1px 11px; border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); }
+.screen-tabs { overflow-x: auto; display: flex; gap: 28px; padding-inline: max(32px, calc((100% - 1120px) / 2)); background: var(--inset); border-bottom: 1px solid var(--border); }
+.screen-tabs button { flex-shrink: 0; padding: 12px 1px 11px; border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); }
 .screen-tabs button[aria-selected=true] { border-bottom-color: var(--accent); color: var(--accent-ink); }
 .screen-tabs button:focus-visible { outline-offset: -3px; }
 main { max-width: 1184px; margin: auto; padding: 30px 32px 20px; }
@@ -271,4 +271,19 @@ dialog::backdrop { background: rgb(19 32 52 / 38%); }
   .audit-detail { padding-left: 28px; }
   .audit-transition { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .audit-arrow { transform: rotate(90deg); justify-self: center; }
+}
+
+.user-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 0; border-bottom: 1px solid var(--border); }
+.user-row > div { min-width: 0; overflow-wrap: anywhere; }
+.user-row h2 { margin: 0 0 6px; font-size: 15px; }
+#user-dialog { width: min(600px, calc(100% - 32px)); }
+.user-fields { display: grid; gap: 16px; }
+.user-fields input:not([type=checkbox]) { display: block; width: 100%; max-width: none; margin-top: 6px; }
+.user-switches { display: flex; flex-wrap: wrap; gap: 16px; }
+.user-switches label { flex-direction: row; display: flex; align-items: center; gap: 8px; }
+.user-switches input { width: 16px; min-height: 16px; margin: 0; }
+.user-permissions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.user-row button > .action-notice { bottom: calc(100% + 6px); right: 0; left: auto; padding: 3px 7px; border: 1px solid var(--border); background: var(--surface); }
+@media (max-width: 480px) {
+  .user-permissions { grid-template-columns: minmax(0, 1fr); }
 }

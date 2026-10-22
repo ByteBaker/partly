@@ -111,6 +111,10 @@ fn context_values(key: &str, context: &Bound<'_, PyAny>) -> PyResult<Context> {
 
 #[pymethods]
 impl Snapshot {
+    fn contains_flag(&self, key: &str) -> bool {
+        self.policy.flags.contains_key(key)
+    }
+
     #[new]
     fn new(py: Python<'_>, body: &[u8]) -> PyResult<Self> {
         Ok(Self {

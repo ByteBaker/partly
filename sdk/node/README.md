@@ -20,7 +20,7 @@ node examples/node/quickstart.js
 
 Replace the constants in [the example](../../examples/node/quickstart.js) first. It imports `partly-sdk`; `npm ci` links the local workspace package. The package remains private until registry publication.
 
-The build creates `sdk/node/native/<platform>-<arch>/partly.node`. The SDK has no npm runtime dependencies.
+The build creates `sdk/node/native/<platform>-<arch>/partly.node`. Native SDK use has no npm runtime dependencies; the optional OpenFeature adapter uses the official server SDK.
 
 ## Client contract
 
@@ -55,3 +55,9 @@ python -m pytest -q tests/e2e/test_sdk_contract.py -k node
 Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.environment("development").applicationId("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
 
 A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `KeyRevokedError` (an `AuthenticationError` subclass). Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh reaches the server.
+
+## OpenFeature
+
+Install the optional peer `@openfeature/server-sdk` and import `PartlyProvider` from `partly-sdk/openfeature`. Initialize the native client once before registering the provider. Registration makes no network requests; evaluations use the same local policy.
+
+OpenFeature returns your fallback on errors. Use detailed getters to inspect `errorCode` before accepting that value. Keep the native client for refresh and close it at shutdown. See the [integration guide](../../docs/openfeature.md#nodejs--typescript) and [tested compatibility](../../docs/openfeature.md#coverage-and-limits).

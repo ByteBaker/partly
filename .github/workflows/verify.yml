@@ -42,12 +42,12 @@ jobs:
       # Clippy includes compiler checks; a separate cargo check repeats them.
       - name: Check Rust targets with Clippy
         if: matrix.language == 'rust'
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Run Go vet and Staticcheck
         if: matrix.language == 'go'
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
-          for module in sdk/go examples/go tests/sdk_contract/go; do
+          for module in sdk/go sdk/go/openfeature examples/go tests/sdk_contract/go tests/sdk_contract/go_openfeature; do
             (cd "$module" && go vet ./... && staticcheck ./...)
           done
 

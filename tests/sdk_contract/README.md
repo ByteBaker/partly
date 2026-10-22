@@ -32,11 +32,17 @@ To verify release packages, set `PARTLY_SDK_PACKAGES` to the output of `scripts/
 - Every rule operator, AND/OR groups, both match actions, and explicit errors for unknown flags, missing context, and wrong types.
 - Exact large integers, floating-point comparisons, and structured type-error details across languages.
 - Unchanged and changed refresh responses, environment isolation, and background polling.
-- Key revocation and server outages preserve accepted policies; cold starts fail.
+- Ordinary outages preserve accepted policies; cold starts fail. Confirmed key revocation clears the policy and stops evaluation.
 - Invalid or oversized policy responses, invalid ETags, changed scope, redirects, and whole-download timeouts. Rejected responses preserve both the last policy and its ETag.
 - Repeated shutdown, local evaluation after closing, and rejected network operations after closing.
 
 The existing SDK unit tests continue to cover detailed validation and concurrency cases.
+
+## OpenFeature contract
+
+`python -m pytest -q tests/e2e/test_openfeature.py` exercises the official OpenFeature SDKs against the real server, including changed/unchanged refresh, local evaluation during an outage, and confirmed revocation. Python calls its provider directly; the other languages reuse the JSON-line driver transport. Rust returns errors through `Result`; the other official SDKs return caller defaults with error details.
+
+The Go OpenFeature driver has its own Go 1.26+ module so it does not raise the native SDK's Go 1.22 minimum. Provider unit tests also cover typed getters, context precedence, hooks, lifecycle, and isolation. These tests use the source checkout, not the extracted release archives. See the [OpenFeature evidence and limits](../../docs/openfeature.md#coverage-and-limits).
 
 ## Driver contract
 

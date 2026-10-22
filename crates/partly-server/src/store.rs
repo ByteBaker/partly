@@ -10,7 +10,7 @@ use rand::{
     RngCore,
 };
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
@@ -23,8 +23,90 @@ use std::{
 pub struct Store {
     path: PathBuf,
     connection: Option<Connection>,
-    sessions: HashMap<String, Instant>,
+    sessions: HashMap<String, (i64, Instant)>,
     lock: Option<File>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    Viewer,
+    Editor,
+    Manager,
+}
+
+#[derive(Clone, Serialize)]
+pub struct User {
+    pub id: i64,
+    pub username: String,
+    pub is_admin: bool,
+    pub enabled: bool,
+    pub permissions: BTreeMap<String, Role>,
+}
+
+impl User {
+    pub fn allows(&self, env: &str, role: Role) -> bool {
+        self.enabled
+            && (self.is_admin
+                || self
+                    .permissions
+                    .get(env)
+                    .is_some_and(|assigned| *assigned >= role))
+    }
+    pub fn require(&self, env: &str, role: Role) -> Result<(), ApiError> {
+        if self.allows(env, role) {
+            Ok(())
+        } else {
+            Err(ApiError::forbidden())
+        }
+    }
+    pub fn require_admin(&self) -> Result<(), ApiError> {
+        if self.enabled && self.is_admin {
+            Ok(())
+        } else {
+            Err(ApiError::forbidden())
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UserInput {
+    pub username: String,
+    pub is_admin: bool,
+    pub enabled: bool,
+    pub permissions: BTreeMap<String, Role>,
+    pub password: Option<String>,
+}
+
+impl UserInput {
+    pub fn validate(&self) -> Result<(), ApiError> {
+        if self.username.trim() != self.username
+            || self.username.is_empty()
+            || self.username.len() > 64
+            || self.username.chars().any(char::is_control)
+        {
+            return Err(ApiError::bad(
+                "Use a username of 1–64 bytes without control characters or surrounding whitespace",
+            ));
+        }
+        if self
+            .permissions
+            .keys()
+            .any(|env| !matches!(env.as_str(), "development" | "production"))
+        {
+            return Err(ApiError::bad("Unknown permission environment"));
+        }
+        if self.is_admin && !self.permissions.is_empty() {
+            return Err(ApiError::bad(
+                "Administrators already have access to all environments",
+            ));
+        }
+        if let Some(password) = &self.password {
+            crate::auth::validate_password(password)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Serialize)]
@@ -45,17 +127,25 @@ pub struct Application {
     keys: Vec<SdkKey>,
 }
 
+impl Application {
+    pub fn hide_secrets(&mut self) {
+        for key in &mut self.keys {
+            key.secret = None;
+        }
+    }
+}
+
 fn audit(
     db: &Connection,
-    env: &str,
+    scope: (&str, &str),
     action: &str,
     kind: &str,
     id: &str,
     name: &str,
     details: Value,
 ) -> Result<(), ApiError> {
-    db.execute("INSERT INTO audits (environment, actor, action, item_type, item_id, item_name, application_id, details) SELECT ?1, username, ?2, ?3, ?4, ?5, ?6, ?7 FROM admin WHERE id = 1",
-        params![env, action, kind, id, name, details.get("application_id").and_then(Value::as_str), details.to_string()])?;
+    db.execute("INSERT INTO audits (environment, actor, action, item_type, item_id, item_name, application_id, details) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![scope.1, scope.0, action, kind, id, name, details.get("application_id").and_then(Value::as_str), details.to_string()])?;
     Ok(())
 }
 
@@ -147,6 +237,8 @@ impl Store {
                     ));
                 }
                 for query in [
+                    "SELECT id, username, password_hash, is_admin, enabled FROM users",
+                    "SELECT user_id, environment, role FROM permissions",
                     "SELECT id, name, application_id, secret, secret_hash, masked_secret, created_at, revoked_at FROM sdk_keys",
                     "SELECT id, environment, name, revision FROM applications",
                     "SELECT environment, application_id, flag_key FROM application_flags",
@@ -166,11 +258,13 @@ impl Store {
                         "Existing database has invalid references",
                     ));
                 }
-                let count: u32 =
-                    connection
-                        .query_row("SELECT COUNT(*) FROM admin WHERE id = 1", [], |r| r.get(0))?;
+                let count: u32 = connection.query_row(
+                    "SELECT COUNT(*) FROM users WHERE id = 1 AND is_admin = 1 AND enabled = 1",
+                    [],
+                    |r| r.get(0),
+                )?;
                 let hash: String = connection.query_row(
-                    "SELECT password_hash FROM admin WHERE id = 1",
+                    "SELECT password_hash FROM users WHERE id = 1 AND is_admin = 1 AND enabled = 1",
                     [],
                     |r| r.get(0),
                 )?;
@@ -241,7 +335,7 @@ impl Store {
             let transaction = connection.transaction()?;
             transaction.execute_batch(include_str!("../migrations/001_initial.sql"))?;
             transaction.execute(
-                "INSERT INTO admin VALUES (1, ?1, ?2)",
+                "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, ?1, ?2, 1)",
                 params![username, hash],
             )?;
             transaction.commit()?;
@@ -262,44 +356,200 @@ impl Store {
         }
     }
 
-    pub fn credentials(&self) -> Result<(String, String), ApiError> {
-        Ok(self.db()?.query_row(
-            "SELECT username, password_hash FROM admin WHERE id = 1",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?)
+    pub fn credentials(&self, username: &str) -> Result<(i64, String, bool), ApiError> {
+        // Verify an unknown login against the initial administrator's hash as well.
+        let found = self
+            .db()?
+            .query_row(
+                "SELECT id, password_hash, enabled FROM users WHERE username = ?1",
+                [username],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        if let Some(credentials) = found {
+            return Ok(credentials);
+        }
+        let hash =
+            self.db()?
+                .query_row("SELECT password_hash FROM users WHERE id = 1", [], |r| {
+                    r.get(0)
+                })?;
+        Ok((0, hash, false))
     }
 
     pub fn reset_password(&self, hash: &str) -> Result<(), ApiError> {
         self.db()?
-            .execute("UPDATE admin SET password_hash = ?1 WHERE id = 1", [hash])?;
+            .execute("UPDATE users SET password_hash = ?1 WHERE id = 1", [hash])?;
         Ok(())
     }
 
-    pub fn new_session(&mut self) -> String {
-        self.sessions.retain(|_, expiry| *expiry > Instant::now());
-        // The POC has one admin; bound unused sessions without adding a session service.
+    pub fn new_session(&mut self, user_id: i64) -> String {
+        self.sessions
+            .retain(|_, (_, expiry)| *expiry > Instant::now());
         if self.sessions.len() >= 100 {
-            self.sessions.clear();
+            if let Some(oldest) = self
+                .sessions
+                .iter()
+                .min_by_key(|(_, (_, expiry))| *expiry)
+                .map(|(key, _)| key.clone())
+            {
+                self.sessions.remove(&oldest);
+            }
         }
         let token = secret();
-        self.sessions
-            .insert(token.clone(), Instant::now() + Duration::from_secs(43_200));
+        self.sessions.insert(
+            token.clone(),
+            (user_id, Instant::now() + Duration::from_secs(43_200)),
+        );
         token
     }
 
     pub fn authenticated(&self, token: &str) -> bool {
-        self.sessions
-            .get(token)
-            .is_some_and(|expiry| *expiry > Instant::now())
+        self.authorize(token).is_ok()
     }
 
-    pub fn authorize(&self, token: &str) -> Result<(), ApiError> {
-        if self.authenticated(token) {
-            Ok(())
-        } else {
-            Err(ApiError::unauthorized())
+    pub fn authorize(&self, token: &str) -> Result<User, ApiError> {
+        let (id, expiry) = self
+            .sessions
+            .get(token)
+            .ok_or_else(ApiError::unauthorized)?;
+        if *expiry <= Instant::now() {
+            return Err(ApiError::unauthorized());
         }
+        let user = Self::read_user(self.db()?, *id)?;
+        if !user.enabled {
+            return Err(ApiError::unauthorized());
+        }
+        Ok(user)
+    }
+
+    fn read_user(db: &Connection, id: i64) -> Result<User, ApiError> {
+        let mut user = db
+            .query_row(
+                "SELECT id, username, is_admin, enabled FROM users WHERE id = ?1",
+                [id],
+                |r| {
+                    Ok(User {
+                        id: r.get(0)?,
+                        username: r.get(1)?,
+                        is_admin: r.get(2)?,
+                        enabled: r.get(3)?,
+                        permissions: BTreeMap::new(),
+                    })
+                },
+            )
+            .optional()?
+            .ok_or_else(|| ApiError::not_found("User not found"))?;
+        let mut query =
+            db.prepare("SELECT environment, role FROM permissions WHERE user_id = ?1")?;
+        let rows = query
+            .query_map([id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (env, role) in rows {
+            let role = match role.as_str() {
+                "viewer" => Role::Viewer,
+                "editor" => Role::Editor,
+                "manager" => Role::Manager,
+                _ => return Err(ApiError::internal("Invalid stored permission")),
+            };
+            user.permissions.insert(env, role);
+        }
+        Ok(user)
+    }
+
+    pub fn users(&self) -> Result<Vec<User>, ApiError> {
+        let db = self.db()?;
+        let mut query = db.prepare("SELECT id FROM users ORDER BY username")?;
+        let ids = query
+            .query_map([], |r| r.get(0))?
+            .collect::<Result<Vec<i64>, _>>()?;
+        ids.into_iter().map(|id| Self::read_user(db, id)).collect()
+    }
+
+    pub fn save_user(
+        &mut self,
+        actor: &str,
+        id: Option<i64>,
+        input: &UserInput,
+        hash: Option<&str>,
+    ) -> Result<User, ApiError> {
+        input.validate()?;
+        if id == Some(1) && (!input.enabled || !input.is_admin) {
+            return Err(ApiError::conflict(
+                "The initial administrator must remain enabled with administrator access",
+            ));
+        }
+        if id.is_none() && hash.is_none() {
+            return Err(ApiError::bad("A new user requires a password"));
+        }
+        let tx = self
+            .connection
+            .as_mut()
+            .ok_or_else(|| ApiError::conflict("Complete setup first"))?
+            .transaction()?;
+        let before = id.map(|id| Self::read_user(&tx, id)).transpose()?;
+        if before
+            .as_ref()
+            .is_some_and(|user| user.username != input.username)
+        {
+            return Err(ApiError::bad("Usernames cannot be changed"));
+        }
+        let duplicate: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE username = ?1 AND (?2 IS NULL OR id != ?2))",
+            params![input.username, id],
+            |r| r.get(0),
+        )?;
+        if duplicate {
+            return Err(ApiError::conflict("Username already exists"));
+        }
+        let id = match id {
+            Some(id) => {
+                tx.execute("UPDATE users SET is_admin = ?1, enabled = ?2, password_hash = COALESCE(?3, password_hash) WHERE id = ?4", params![input.is_admin, input.enabled, hash, id])?;
+                tx.execute("DELETE FROM permissions WHERE user_id = ?1", [id])?;
+                id
+            }
+            None => {
+                tx.execute("INSERT INTO users (username, password_hash, is_admin, enabled) VALUES (?1, ?2, ?3, ?4)", params![input.username, hash, input.is_admin, input.enabled])?;
+                tx.last_insert_rowid()
+            }
+        };
+        for (env, role) in &input.permissions {
+            let role = match role {
+                Role::Viewer => "viewer",
+                Role::Editor => "editor",
+                Role::Manager => "manager",
+            };
+            tx.execute(
+                "INSERT INTO permissions VALUES (?1, ?2, ?3)",
+                params![id, env, role],
+            )?;
+        }
+        let saved = Self::read_user(&tx, id)?;
+        for env in ["development", "production"] {
+            let state = |user: &User| json!({"name": user.username, "is_admin": user.is_admin, "enabled": user.enabled, "role": user.permissions.get(env)});
+            audit(
+                &tx,
+                (actor, env),
+                if before.is_some() {
+                    "updated"
+                } else {
+                    "created"
+                },
+                "user",
+                &id.to_string(),
+                &saved.username,
+                json!({"before": before.as_ref().map(state), "after": state(&saved), "password_changed": hash.is_some()}),
+            )?;
+        }
+        tx.commit()?;
+        self.sessions.retain(|_, (owner, _)| *owner != id);
+        Ok(saved)
+    }
+
+    pub fn key_environment(&self, id: &str) -> Result<String, ApiError> {
+        self.db()?.query_row("SELECT a.environment FROM sdk_keys k JOIN applications a ON a.id = k.application_id WHERE k.id = ?1", [id], |r| r.get(0)).optional()?.ok_or_else(|| ApiError::not_found("Key not found"))
     }
 
     pub fn logout(&mut self, token: &str) {
@@ -355,6 +605,7 @@ impl Store {
 
     pub fn save_flag(
         &mut self,
+        actor: &str,
         env: &str,
         key: &str,
         flag: &Flag,
@@ -406,7 +657,7 @@ impl Store {
                 .map_err(|_| ApiError::internal("Invalid stored flag"))?;
             audit(
                 &transaction,
-                env,
+                (actor, env),
                 if create { "created" } else { "updated" },
                 "flag",
                 key,
@@ -418,7 +669,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn delete_flag(&mut self, env: &str, key: &str) -> Result<(), ApiError> {
+    pub fn delete_flag(&mut self, actor: &str, env: &str, key: &str) -> Result<(), ApiError> {
         self.environment(env)?;
         let transaction = self
             .connection
@@ -451,7 +702,7 @@ impl Store {
             .map_err(|_| ApiError::internal("Invalid stored flag"))?;
         audit(
             &transaction,
-            env,
+            (actor, env),
             "deleted",
             "flag",
             key,
@@ -519,6 +770,7 @@ impl Store {
 
     pub fn save_application(
         &mut self,
+        actor: &str,
         env: &str,
         id: Option<&str>,
         name: &str,
@@ -593,7 +845,7 @@ impl Store {
         if before.as_ref() != Some(&after) {
             audit(
                 &tx,
-                env,
+                (actor, env),
                 if created { "created" } else { "updated" },
                 "app",
                 &id,
@@ -602,7 +854,7 @@ impl Store {
             )?;
         }
         if created {
-            Self::insert_key(&tx, env, &id, "Default")?;
+            Self::insert_key(&tx, actor, env, &id, "Default")?;
         }
         let app = Self::read_application(&tx, env, &id)?;
         tx.commit()?;
@@ -626,7 +878,13 @@ impl Store {
         Ok(rows)
     }
 
-    fn insert_key(db: &Connection, env: &str, app: &str, name: &str) -> Result<SdkKey, ApiError> {
+    fn insert_key(
+        db: &Connection,
+        actor: &str,
+        env: &str,
+        app: &str,
+        name: &str,
+    ) -> Result<SdkKey, ApiError> {
         let name = key_name(name)?;
         let id = secret()[..16].to_owned();
         let key = format!("pk_{}", Alphanumeric.sample_string(&mut OsRng, 24));
@@ -636,7 +894,7 @@ impl Store {
         db.execute("INSERT INTO sdk_keys (id, application_id, secret, secret_hash, masked_secret, name) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![id, app, key, hash, masked, name])?;
         audit(
             db,
-            env,
+            (actor, env),
             "created",
             "api_key",
             &id,
@@ -649,7 +907,13 @@ impl Store {
             .ok_or_else(|| ApiError::internal("Cannot read new API Key"))
     }
 
-    pub fn create_key(&mut self, env: &str, app: &str, name: &str) -> Result<SdkKey, ApiError> {
+    pub fn create_key(
+        &mut self,
+        actor: &str,
+        env: &str,
+        app: &str,
+        name: &str,
+    ) -> Result<SdkKey, ApiError> {
         self.environment(env)?;
         let tx = self
             .connection
@@ -657,12 +921,17 @@ impl Store {
             .ok_or_else(|| ApiError::conflict("Complete setup first"))?
             .transaction()?;
         Self::read_application(&tx, env, app)?;
-        let key = Self::insert_key(&tx, env, app, name)?;
+        let key = Self::insert_key(&tx, actor, env, app, name)?;
         tx.commit()?;
         Ok(key)
     }
 
-    pub fn change_key(&mut self, id: &str, name: Option<&str>) -> Result<(), ApiError> {
+    pub fn change_key(
+        &mut self,
+        actor: &str,
+        id: &str,
+        name: Option<&str>,
+    ) -> Result<(), ApiError> {
         let name = name.map(key_name).transpose()?;
         let tx = self
             .connection
@@ -678,7 +947,7 @@ impl Store {
                 tx.execute("UPDATE sdk_keys SET name = ?1 WHERE id = ?2", [name, id])?;
                 audit(
                     &tx,
-                    &env,
+                    (actor, &env),
                     "renamed",
                     "api_key",
                     id,
@@ -690,7 +959,7 @@ impl Store {
             tx.execute("UPDATE sdk_keys SET secret = NULL, revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1", [id])?;
             audit(
                 &tx,
-                &env,
+                (actor, &env),
                 "revoked",
                 "api_key",
                 id,
@@ -745,5 +1014,40 @@ impl Store {
             Ok(json!({"id": r.get::<_, i64>(0)?, "actor": r.get::<_, String>(1)?, "action": r.get::<_, String>(2)?, "item_type": r.get::<_, String>(3)?, "item_id": r.get::<_, String>(4)?, "item_name": r.get::<_, String>(5)?, "details": details, "created_at": r.get::<_, String>(7)?}))
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn role_hierarchy_is_environment_scoped_and_disabled_users_have_no_access() {
+        for role in [Role::Viewer, Role::Editor, Role::Manager] {
+            let mut user = User {
+                id: 2,
+                username: "teammate".into(),
+                enabled: true,
+                is_admin: false,
+                permissions: BTreeMap::from([("development".into(), role)]),
+            };
+            assert!(user.allows("development", Role::Viewer));
+            assert_eq!(
+                user.allows("development", Role::Editor),
+                role != Role::Viewer
+            );
+            assert_eq!(
+                user.allows("development", Role::Manager),
+                role == Role::Manager
+            );
+            assert!(!user.allows("production", Role::Viewer));
+            assert!(user.require_admin().is_err());
+            user.is_admin = true;
+            assert!(user.allows("production", Role::Manager));
+            user.enabled = false;
+            assert!(!user.allows("development", Role::Viewer));
+            assert!(!user.allows("production", Role::Manager));
+            assert!(user.require_admin().is_err());
+        }
     }
 }

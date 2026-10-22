@@ -2,7 +2,9 @@
   "name": "partly-development",
   "private": true,
   "license": "Elastic-2.0",
-  "workspaces": ["sdk/node"],
+  "workspaces": [
+    "sdk/node"
+  ],
   "scripts": {
     "lint": "eslint --config config/eslint.config.mjs . --max-warnings 0 && biome lint --config-path config/biome.jsonc crates/partly-server/dashboard/style.css --error-on-warnings && html-validate --config config/htmlvalidate.mjs 'crates/partly-server/dashboard/*.html'",
     "typecheck": "tsc --project config/tsconfig.json"
@@ -10,6 +12,8 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@eslint/js": "10.0.1",
+    "@openfeature/server-sdk": "1.23.0",
+    "@types/node": "22.20.5",
     "eslint": "10.13.0",
     "globals": "17.13.0",
     "html-validate": "11.17.0",

@@ -24,7 +24,7 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use store::Store;
+use store::{Role, Store, UserInput};
 
 #[derive(Parser)]
 #[command(name = "partly", version, about = "Local feature flag control plane")]
@@ -112,6 +112,12 @@ impl ApiError {
         Self(
             StatusCode::UNAUTHORIZED,
             "Authentication required or credentials invalid".into(),
+        )
+    }
+    fn forbidden() -> Self {
+        Self(
+            StatusCode::FORBIDDEN,
+            "Your account does not have permission for this action".into(),
         )
     }
     fn throttled() -> Self {
@@ -360,7 +366,7 @@ async fn setup(State(app): State<App>, Json(c): Json<Credentials>) -> Result<Res
         .await?;
     app.run(move |s| {
         s.setup(&c.username, &hash)?;
-        Ok(login_response(&s.new_session()))
+        Ok(login_response(&s.new_session(1)))
     })
     .await
 }
@@ -374,18 +380,26 @@ async fn login(
     if c.password.len() > 1024 || c.username.len() > 64 {
         return Err(ApiError::unauthorized());
     }
-    let (username, hash) = app.run(|s| s.credentials()).await?;
+    let username = c.username;
+    let lookup = username.clone();
+    let (id, hash, enabled) = app.run(move |s| s.credentials(&lookup)).await?;
+    let checked_hash = hash.clone();
     let valid = app
         .auth
-        .run(move || {
-            let valid = auth::verify_password(&c.password, &hash)?;
-            Ok(valid && username == c.username)
-        })
+        .run(move || auth::verify_password(&c.password, &checked_hash))
         .await?;
-    if !valid {
+    if !valid || !enabled {
         return Err(ApiError::unauthorized());
     }
-    app.run(|s| Ok(login_response(&s.new_session()))).await
+    app.run(move |s| {
+        // A reset or disable during password verification must invalidate the login too.
+        let current = s.credentials(&username)?;
+        if current != (id, hash, true) {
+            return Err(ApiError::unauthorized());
+        }
+        Ok(login_response(&s.new_session(id)))
+    })
+    .await
 }
 
 async fn logout(State(app): State<App>, headers: HeaderMap) -> Result<Response, ApiError> {
@@ -406,12 +420,72 @@ async fn logout(State(app): State<App>, headers: HeaderMap) -> Result<Response, 
 
 async fn environments(State(app): State<App>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
+        let user = s.authorize(&session(&headers))?;
+        let environments: Vec<_> = ["development", "production"]
+            .into_iter()
+            .filter(|env| user.allows(env, Role::Viewer))
+            .collect();
         Ok(Json(
-            json!({"project": "default", "environments": ["development", "production"]}),
+            json!({"project": "default", "environments": environments, "user": user}),
         ))
     })
     .await
+}
+
+async fn users(State(app): State<App>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+    app.run(move |s| {
+        s.authorize(&session(&headers))?.require_admin()?;
+        Ok(Json(json!({"users": s.users()?})))
+    })
+    .await
+}
+
+async fn write_user(
+    app: App,
+    headers: HeaderMap,
+    id: Option<i64>,
+    mut input: UserInput,
+) -> Result<Json<Value>, ApiError> {
+    let token = session(&headers);
+    let check = token.clone();
+    app.run(move |s| s.authorize(&check)?.require_admin())
+        .await?;
+    input.validate()?;
+    let hash = match input.password.take() {
+        Some(password) => Some(app.auth.run(move || auth::hash_password(&password)).await?),
+        None => None,
+    };
+    app.run(move |s| {
+        let actor = s.authorize(&token)?;
+        actor.require_admin()?;
+        Ok(Json(json!(s.save_user(
+            &actor.username,
+            id,
+            &input,
+            hash.as_deref()
+        )?)))
+    })
+    .await
+}
+
+async fn create_user(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Json(input): Json<UserInput>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    Ok((
+        StatusCode::CREATED,
+        write_user(app, headers, None, input).await?,
+    ))
+}
+
+async fn update_user(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(input): Json<UserInput>,
+) -> Result<Json<Value>, ApiError> {
+    write_user(app, headers, Some(id), input).await
 }
 
 async fn flags(
@@ -420,7 +494,8 @@ async fn flags(
     Path(env): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
+        let user = s.authorize(&session(&headers))?;
+        user.require(&env, Role::Viewer)?;
         Ok(Json(json!(s.policy(&env)?.flags)))
     })
     .await
@@ -466,10 +541,11 @@ async fn create_flag(
     body: Bytes,
 ) -> Result<(StatusCode, Json<SavedFlag>), ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
+        let user = s.authorize(&session(&headers))?;
+        user.require(&env, Role::Editor)?;
         // Rule validation compiles regex; do it after auth on the blocking worker.
         let input: SavedFlag = parse_flag(&headers, &body)?;
-        s.save_flag(&env, &input.key, &input.flag, true)?;
+        s.save_flag(&user.username, &env, &input.key, &input.flag, true)?;
         Ok((StatusCode::CREATED, Json(input)))
     })
     .await
@@ -482,14 +558,15 @@ async fn save_flag(
     body: Bytes,
 ) -> Result<Json<SavedFlag>, ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
+        let user = s.authorize(&session(&headers))?;
+        user.require(&env, Role::Editor)?;
         let flag: Flag = parse_flag(&headers, &body)?;
         if !partly_core::valid_key(&key) {
             return Err(ApiError::bad("Invalid flag key"));
         }
         flag.validate().map_err(ApiError::bad)?;
         check_flag_confirmation(s, &headers, &env, &key)?;
-        s.save_flag(&env, &key, &flag, false)?;
+        s.save_flag(&user.username, &env, &key, &flag, false)?;
         Ok(Json(SavedFlag { key, flag }))
     })
     .await
@@ -501,9 +578,10 @@ async fn delete_flag(
     Path((env, key)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
+        let user = s.authorize(&session(&headers))?;
+        user.require(&env, Role::Editor)?;
         check_flag_confirmation(s, &headers, &env, &key)?;
-        s.delete_flag(&env, &key)?;
+        s.delete_flag(&user.username, &env, &key)?;
         Ok(StatusCode::NO_CONTENT)
     })
     .await
@@ -543,7 +621,8 @@ async fn flag_impact(
     Path((env, key)): Path<(String, String)>,
 ) -> Result<Json<Value>, ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
+        let user = s.authorize(&session(&headers))?;
+        user.require(&env, Role::Viewer)?;
         Ok(Json(flag_impact_value(s, &env, &key)?))
     })
     .await
@@ -555,8 +634,15 @@ async fn applications(
     Path(env): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
-        Ok(Json(json!({"applications": s.applications(&env)?})))
+        let user = s.authorize(&session(&headers))?;
+        user.require(&env, Role::Viewer)?;
+        let mut apps = s.applications(&env)?;
+        if !user.allows(&env, Role::Manager) {
+            for app in &mut apps {
+                app.hide_secrets();
+            }
+        }
+        Ok(Json(json!({"applications": apps})))
     })
     .await
 }
@@ -575,10 +661,12 @@ async fn create_application(
     Json(input): Json<ApplicationInput>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
+        let user = s.authorize(&session(&headers))?;
+        user.require(&env, Role::Manager)?;
         Ok((
             StatusCode::CREATED,
             Json(json!(s.save_application(
+                &user.username,
                 &env,
                 None,
                 &input.name,
@@ -596,8 +684,10 @@ async fn save_application(
     Json(input): Json<ApplicationInput>,
 ) -> Result<Json<Value>, ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
+        let user = s.authorize(&session(&headers))?;
+        user.require(&env, Role::Manager)?;
         Ok(Json(json!(s.save_application(
+            &user.username,
             &env,
             Some(&id),
             &input.name,
@@ -621,7 +711,14 @@ async fn audits(
     Path(env): Path<String>,
     Query(query): Query<AuditQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    app.run(move |s| { s.authorize(&session(&headers))?; Ok(Json(json!({"audits": s.audits(&env, query.before, query.action.as_deref(), query.application_id.as_deref())?}))) }).await
+    app.run(move |s| {
+        let user = s.authorize(&session(&headers))?;
+        user.require(&env, Role::Viewer)?;
+        Ok(Json(json!({"audits": s.audits(
+            &env, query.before, query.action.as_deref(), query.application_id.as_deref()
+        )?})))
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -637,8 +734,14 @@ async fn create_key(
     Json(input): Json<KeyName>,
 ) -> Result<Json<Value>, ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
-        Ok(Json(json!(s.create_key(&env, &id, &input.name)?)))
+        let user = s.authorize(&session(&headers))?;
+        user.require(&env, Role::Manager)?;
+        Ok(Json(json!(s.create_key(
+            &user.username,
+            &env,
+            &id,
+            &input.name
+        )?)))
     })
     .await
 }
@@ -650,8 +753,9 @@ async fn rename_key(
     Json(input): Json<KeyName>,
 ) -> Result<StatusCode, ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
-        s.change_key(&id, Some(&input.name))?;
+        let user = s.authorize(&session(&headers))?;
+        user.require(&s.key_environment(&id)?, Role::Manager)?;
+        s.change_key(&user.username, &id, Some(&input.name))?;
         Ok(StatusCode::NO_CONTENT)
     })
     .await
@@ -663,8 +767,9 @@ async fn revoke_key(
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     app.run(move |s| {
-        s.authorize(&session(&headers))?;
-        s.change_key(&id, None)?;
+        let user = s.authorize(&session(&headers))?;
+        user.require(&s.key_environment(&id)?, Role::Manager)?;
+        s.change_key(&user.username, &id, None)?;
         Ok(StatusCode::NO_CONTENT)
     })
     .await
@@ -720,7 +825,10 @@ async fn environment_dashboard(
     State(app): State<App>,
     Path((env, screen)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
-    if !matches!(screen.as_str(), "flags" | "apps" | "audits" | "docs") {
+    if !matches!(
+        screen.as_str(),
+        "flags" | "apps" | "audits" | "docs" | "users"
+    ) {
         return Err(ApiError::not_found("Unknown screen"));
     }
     app.run(move |s| s.environment(&env)).await?;
@@ -861,6 +969,8 @@ async fn serve(
         .route("/api/login", post(login))
         .route("/api/logout", post(logout))
         .route("/api/environments", get(environments))
+        .route("/api/users", get(users).post(create_user))
+        .route("/api/users/{id}", put(update_user))
         .route(
             "/api/environments/{env}/flags",
             get(flags).post(create_flag),

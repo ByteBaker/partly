@@ -1,6 +1,6 @@
 # Preparing a Partly release
 
-Current candidate: `0.1.0-alpha.1` (Python: `0.1.0a1`). The root Cargo workspace is the release version source. Keep Node metadata, the internal Rust dependency pin, and Go example/contract requirements aligned; refresh `Cargo.lock` and build every component from the same commit. `tests/test_release_versions.py` enforces this in the default CI suite.
+Current candidate: `0.1.0-alpha.1` (Python: `0.1.0a1`). The root Cargo workspace is the release version source. Keep Node metadata, the internal Rust dependency pin, and Go example, contract, and provider requirements aligned; refresh `Cargo.lock` and build every component from the same commit. `tests/test_release_versions.py` enforces this in the default CI suite.
 
 See [publishing each package and using alpha versions](publishing.md) for registry setup, commands, and the remaining npm/Go distribution work.
 
@@ -25,6 +25,10 @@ Recent dashboard checks passed in Chromium, including audits and modal confirmat
 
 Earlier candidates passed Rust, Python, Go race, Node.js, packaging, and HTTPS smoke tests on macOS. Minimum-version checks covered Rust 1.89, Go 1.22.12, and Node.js 22.0.0. Linux checks ran under QEMU with compiler workarounds; Chromium and Go vet could not complete there. Native Linux CI must verify the current source and artifacts.
 
+The current OpenFeature source checks passed in all four languages: real-server refresh, outages and revocation, plus provider lifecycle, context precedence, hooks, typed errors and isolation. These use the installed development Python extension and locally built Rust/Go/Node code, not final published artifacts. See the [compatibility record](openfeature.md#coverage-and-limits); Rust's upstream limits remain explicit.
+
+This candidate also adds individual accounts and environment permissions. The development schema remains v1, with no migration from older POC layouts. Use a fresh database path for an incompatible older database; the server rejects it without modifying it. See [storage and recovery](../crates/partly-server/README.md#setup-and-storage).
+
 ## Build and verify
 
 Follow the [server setup](../README.md#build-locally) and [Python SDK build](../sdk/python/README.md#build-locally), then run from the repository root with that virtual environment active. The full suite also needs Go and Node.js (locally tested with Go 1.27.3 and Node.js 26.10.0):
@@ -42,16 +46,17 @@ shellcheck sdk/go/build.sh
 go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 actionlint
 go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
-for module in sdk/go examples/go tests/sdk_contract/go; do
+for module in sdk/go sdk/go/openfeature examples/go tests/sdk_contract/go tests/sdk_contract/go_openfeature; do
   (cd "$module" && go vet ./... && staticcheck ./...)
 done
-PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo clippy --locked --workspace --all-targets -- -D warnings
-PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo test --locked --workspace
+PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo test --locked --workspace --all-features
 python -m mypy.stubtest partly._native
 cargo build --locked -p partly-server -p partly-sdk-contract
 sh sdk/go/build.sh
 node sdk/node/build.js
 (cd sdk/go && go vet ./... && go test -a -race ./...)
+(cd sdk/go/openfeature && go test -a -race ./...)
 node --test sdk/node/test/*.test.js
 python -m pytest -q
 ```
@@ -60,7 +65,7 @@ Tests use temporary servers and databases. `PARTLY_BINARY` selects an absolute e
 
 Python checks discover settings in the root `pyproject.toml`. Frontend settings live in `config/`; use the npm commands above so each tool loads the right file. CI uses those same commands and installs `config/requirements-dev.txt`.
 
-The [four-language contract](../tests/sdk_contract/README.md) and minimal examples run in the default suite. All must pass before committing. Go links a bundled Rust static library; use `-a` after replacing it because Go's cache does not track archive changes.
+The [four-language contract](../tests/sdk_contract/README.md), [OpenFeature tests](../tests/sdk_contract/README.md#openfeature-contract), RBAC tests, and minimal examples run in the default suite. All must pass before committing. Go links a bundled Rust static library; use `-a` after replacing it because Go's cache does not track archive changes.
 
 Build standalone SDK packages and run the same contracts outside the checkout (Python 3.14):
 
@@ -69,7 +74,7 @@ python scripts/package_sdks.py --output target/sdk-packages
 PARTLY_SDK_PACKAGES="$PWD/target/sdk-packages" python -m pytest -q tests/e2e/test_sdk_contract.py
 ```
 
-The output contains two Rust `.crate` files, a Go archive with its static library, and a Node npm tarball with its native extension. Go and Node archives target the build machine; build both macOS ARM64 and Linux x86_64. Consumers do not need Rust for those prebuilt archives. During development only, `--allow-dirty` tests uncommitted packaging changes. Publishing to registries remains a separate step.
+The output contains two Rust `.crate` files, a Go archive with its static library and optional provider module, and a Node npm tarball with its native extension and provider. Rust packaging verifies all features in a fresh temporary registry to avoid reusing an older unpublished alpha at the same version. Go and Node archives target the build machine; build both macOS ARM64 and Linux x86_64. Consumers do not need Rust for those prebuilt archives. During development only, `--allow-dirty` tests uncommitted packaging changes. Publishing to registries remains a separate step.
 
 Optional: `python tests/benchmark.py` measures a release build's size, startup, sampled memory, and Python evaluation including binding overhead. It is not a load test.
 
@@ -81,7 +86,7 @@ Each tier can run on its own from **Actions → select workflow → Run workflow
 | --- | --- | --- |
 | [Lint and types](../.github/workflows/lint.yml) | Called by Verify | Formatting, source lint, Python/TypeScript types, version consistency |
 | [Verify](../.github/workflows/verify.yml) | PRs and main pushes | Lint/types, Rust and Go compiler analysis, vulnerability scans |
-| [Build and test](../.github/workflows/build.yml) | Called by Release artifacts | Verify, component builds, unit tests, SDK contract, Chromium E2E |
+| [Build and test](../.github/workflows/build.yml) | Called by Release artifacts | Verify, component builds, unit tests, native/OpenFeature SDK contracts, RBAC and Chromium E2E |
 | [Release artifacts](../.github/workflows/release-checks.yml) | `v*` tags | Build-and-test, compatibility, licenses, Linux/macOS packages and smoke tests |
 
 ```mermaid
@@ -111,7 +116,7 @@ Clippy performs Rust compiler checks as well as linting, so verification does no
 | HTML/CSS | HTML-validate and Biome's recommended CSS checks |
 | Shell/workflows | ShellCheck and actionlint |
 
-The [vulnerability workflow](../.github/workflows/vulnerabilities.yml) uses RustSec, pip-audit, govulncheck, and npm audit. It runs on every PR/release workflow and daily, and fails on findings or scanner errors. Python and npm scans include development dependencies; Go scans include the standard library. The Node SDK has no JavaScript runtime dependencies today. Package audits do not audit Node/Python interpreters themselves; keep their supported patch versions current. Release Go builds use 1.27.3; Go 1.22 is checked only for compatibility.
+The [vulnerability workflow](../.github/workflows/vulnerabilities.yml) uses RustSec, pip-audit, govulncheck, and npm audit. It runs on every PR/release workflow and daily, and fails on findings or scanner errors. Python and npm scans include development dependencies; Go scans include the standard library. Native Node usage has no JavaScript runtime dependencies; its optional OpenFeature adapter requires the official server SDK. Package audits do not audit Node/Python interpreters themselves; keep their supported patch versions current. Release Go builds use 1.27.3; Go 1.22 is checked only for native-client compatibility. The separate OpenFeature Go module requires Go 1.26+.
 
 Release jobs build the Python wheel from its source archive and test installed packages outside the checkout, including HTTPS and shutdown. They produce archives and checksums, without publishing. Require a green run on the exact release commit.
 
@@ -148,7 +153,7 @@ cargo fetch --locked
 cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-server/Cargo.toml --target x86_64-unknown-linux-musl --target aarch64-apple-darwin licenses/third-party.hbs --output-file licenses/THIRD_PARTY_NOTICES.txt
 cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path sdk/python/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/python/THIRD_PARTY_NOTICES.txt
 for language in rust node; do
-  cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path "sdk/$language/Cargo.toml" --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file "sdk/$language/THIRD_PARTY_NOTICES.txt"
+  cargo about generate --all-features --locked --offline --fail --config licenses/about.toml --manifest-path "sdk/$language/Cargo.toml" --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file "sdk/$language/THIRD_PARTY_NOTICES.txt"
 done
 cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-ffi/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/go/THIRD_PARTY_NOTICES.txt
 ```

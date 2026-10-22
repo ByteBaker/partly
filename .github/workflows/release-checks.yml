@@ -47,9 +47,10 @@ jobs:
           rm -rf target/wheels
           tar -xzf target/test-inputs.tar.gz
           python -m pip install target/wheels/*.whl
+          npm ci --ignore-scripts --no-audit --no-fund
           cargo fetch --locked
           rustup toolchain install 1.89.0 --profile minimal
-          cargo +1.89.0 check --locked --workspace --all-targets
+          cargo +1.89.0 check --locked --workspace --all-targets --all-features
           (cd sdk/go && go test -a -race ./...)
           node --test sdk/node/test/*.test.js
           python -m pytest -q tests/e2e/test_sdk_contract.py
@@ -77,7 +78,7 @@ jobs:
           cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-server/Cargo.toml --target x86_64-unknown-linux-musl --target aarch64-apple-darwin licenses/third-party.hbs --output-file licenses/THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/server-licenses.log"
           cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path sdk/python/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/python/THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/sdk-licenses.log"
           for language in rust node; do
-            cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path "sdk/$language/Cargo.toml" --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file "sdk/$language/THIRD_PARTY_NOTICES.txt" 2>&1 | tee "$RUNNER_TEMP/$language-licenses.log"
+            cargo about generate --all-features --locked --offline --fail --config licenses/about.toml --manifest-path "sdk/$language/Cargo.toml" --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file "sdk/$language/THIRD_PARTY_NOTICES.txt" 2>&1 | tee "$RUNNER_TEMP/$language-licenses.log"
           done
           cargo about generate --locked --offline --fail --config licenses/about.toml --manifest-path crates/partly-ffi/Cargo.toml --target x86_64-unknown-linux-gnu --target aarch64-apple-darwin licenses/third-party.hbs --output-file sdk/go/THIRD_PARTY_NOTICES.txt 2>&1 | tee "$RUNNER_TEMP/go-licenses.log"
           if grep -q 'failed to validate all files specified in clarification' "$RUNNER_TEMP/"*-licenses.log; then

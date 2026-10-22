@@ -54,3 +54,9 @@ python -m pytest -q tests/e2e/test_sdk_contract.py -k rust
 Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.environment("development").application_id("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
 
 A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `Error::KeyRevoked`. Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh reaches the server.
+
+## OpenFeature
+
+Enable the `openfeature` Cargo feature to use `partly::openfeature::PartlyProvider` with the official `open-feature` crate. Initialize an `Arc<Client>` once before registering the provider. Registration makes no network requests; evaluations use the same local policy.
+
+The upstream Rust SDK returns `Result` instead of accepting caller defaults. It also lacks provider events and a dedicated fatal-error code, so full specification conformance is not claimed. Keep the native client for refresh and close it at shutdown. See the [integration guide](../../docs/openfeature.md#rust) and [tested compatibility](../../docs/openfeature.md#coverage-and-limits).

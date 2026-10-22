@@ -79,6 +79,11 @@ class Client {
   constructor(options) { this.#options = options; }
   static builder() { return new ClientBuilder(); }
   get lastRefreshError() { return this.#lastError; }
+  hasFlag(flag) {
+    if (this.#revoked) throw new KeyRevokedError("API Key revoked; build a new client with a valid key");
+    if (!this.#snapshot) throw new PolicyNotReadyError("Await init first");
+    return this.#snapshot.containsFlag(flag);
+  }
   #checkOpen() { if (this.#revoked) throw new KeyRevokedError("API Key revoked; build a new client with a valid key"); if (this.#closed) throw new ClientClosedError("Client is closed"); }
   #serial(operation) {
     const next = this.#queue.then(operation);

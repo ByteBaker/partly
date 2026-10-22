@@ -23,6 +23,9 @@ classifiers = [
     "Programming Language :: Rust",
 ]
 
+[project.optional-dependencies]
+openfeature = ["openfeature-sdk>=0.10,<0.11"]
+
 [project.urls]
 Homepage = "https://partly.sh"
 Documentation = "https://partly.sh/docs"

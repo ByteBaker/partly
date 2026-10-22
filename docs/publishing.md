@@ -18,7 +18,7 @@ Use `Cargo.toml` → `[workspace.package].version` as the source. For the next a
 
 - The exact `partly-core` dependency version in the same file.
 - `sdk/node/package.json` → `version`.
-- The `partly.sh/sdk/go` requirements in `examples/go/go.mod` and `tests/sdk_contract/go/go.mod`.
+- The Partly module requirements in `examples/go/go.mod`, `tests/sdk_contract/go/go.mod`, `sdk/go/openfeature/go.mod`, and `tests/sdk_contract/go_openfeature/go.mod`.
 - Versioned commands in the READMEs and release guides.
 
 All product Rust crates inherit the workspace version. Maturin derives the Python version from its Rust crate; do not add a second version to `pyproject.toml`. Go modules do not declare their own version in `go.mod`; their release tag supplies it. The private contract-test binary's `0.0.0` is not a product release.
@@ -32,6 +32,8 @@ Release every component from the same verified commit, including an SDK-only fix
 Complete the [release checks](releasing.md#before-public-upload), confirm package ownership, replace placeholder links, and download the artifacts from the green workflow for the chosen commit. Verify their checksums. Use a clean release staging directory so older builds cannot be uploaded by a wildcard.
 
 The commands below are instructions, not actions performed by CI. No release packages have been published. Account credentials belong outside the repository.
+
+OpenFeature ships as an optional Python extra, Rust Cargo feature, Node entry point with an optional peer dependency, and a separate Go module. Include these adapters in the same release; see the [tested versions and limits](openfeature.md#coverage-and-limits). The current OpenFeature server tests use the source checkout. Run the providers against the final installed artifacts before advertising package-level verification.
 
 ## Python: PyPI
 
@@ -104,6 +106,8 @@ GOPROXY=https://proxy.golang.org go list -m partly.sh/sdk/go@v0.1.0-alpha.1
 ```
 
 The distribution snapshot must come from the same verified Partly source commit. If we instead publish the module from this monorepo's `sdk/go` directory, its tag must be `sdk/go/v0.1.0-alpha.1`; a root `v0.1.0-alpha.1` tag alone does not version that nested module. That route must also include the libraries in the downloadable module.
+
+The optional provider is a separate module, `partly.sh/sdk/go/openfeature`, with the same release version. Include its directory in Go archives. In a distribution repository rooted at the native SDK, its tag is `openfeature/v0.1.0-alpha.1`; in this monorepo it is `sdk/go/openfeature/v0.1.0-alpha.1`. Configure its vanity import path too. Consumers need replacements for both modules until hosting is ready.
 
 Once configured, users run `go get partly.sh/sdk/go@v0.1.0-alpha.1`. Prefer the explicit alpha version; Go normally prefers stable releases when choosing a version. See [publishing Go modules](https://go.dev/doc/modules/publishing), [nested-module tags](https://go.dev/ref/mod#vcs-version), and [prerelease versions](https://go.dev/doc/modules/release-workflow).
 

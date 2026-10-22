@@ -26,6 +26,7 @@
       <button type="button" id="apps-tab" role="tab" aria-selected="false" aria-controls="apps-screen" tabindex="-1">Apps &amp; Keys</button>
       <button type="button" id="audits-tab" role="tab" aria-selected="false" aria-controls="audits-screen" tabindex="-1">Audits</button>
       <button type="button" id="docs-tab" role="tab" aria-selected="false" aria-controls="docs-screen" tabindex="-1">Docs</button>
+      <button type="button" id="users-tab" role="tab" aria-selected="false" aria-controls="users-screen" tabindex="-1" hidden>Users</button>
     </nav>
   </header>
   <main>
@@ -42,7 +43,7 @@
       <p id="setup-note" class="small muted" hidden>Your database is created when you finish setup.</p>
     </section>
     <section id="workspace" hidden>
-      <div class="workspace-heading"><h1 id="screen-title">Feature flags</h1><div class="header-actions"><button type="button" id="create-flag" class="primary">Create flag</button><button type="button" id="create-app" class="primary" hidden>Create app</button></div></div>
+      <div class="workspace-heading"><h1 id="screen-title">Feature flags</h1><div class="header-actions"><button type="button" id="create-flag" class="primary" hidden>Create flag</button><button type="button" id="create-app" class="primary" hidden>Create app</button><button type="button" id="create-user" class="primary" hidden>Create user</button></div></div>
       <section id="flags-screen" role="tabpanel" aria-labelledby="flags-tab">
         <div class="list-heading"><h2>Flags <span id="flag-count" class="count">0</span></h2></div>
         <div id="flags"></div>
@@ -58,6 +59,10 @@
       </section>
       <section id="docs-screen" role="tabpanel" aria-labelledby="docs-tab" hidden>
         <div class="code-panel"><div class="code-heading"><span id="docs-filename">quickstart.py</span><label class="docs-language" for="docs-language">Language<span class="select-control"><button id="docs-language" type="button" disabled>Python</button></span></label><button type="button" id="copy-example" class="icon-button" aria-label="Copy code" title="Copy code" disabled><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="8" y="8" width="12" height="13" rx="1"></rect><path d="M16 8V3H3v13h5"></path></svg></button></div><pre class="code-example" tabindex="0" aria-label="Complete Python example"><code id="docs-code">Loading example…</code></pre></div>
+      </section>
+      <section id="users-screen" role="tabpanel" aria-labelledby="users-tab" hidden>
+        <p class="hint">Accounts and permissions apply across this instance. Administrators can access every environment.</p>
+        <div id="users"></div>
       </section>
     </section>
     <p id="loading" class="muted loading">Connecting to Partly…</p>
@@ -85,6 +90,18 @@
   </dialog>
   <dialog id="revoke-key-dialog" class="confirm-dialog" aria-labelledby="revoke-key-title" aria-describedby="revoke-key-context revoke-key-description">
     <div class="dialog-content"><h2 id="revoke-key-title">Revoke API Key?</h2><p id="revoke-key-context"></p><p id="revoke-key-description" class="muted">Connected SDKs will clear their policy and stop evaluating when their next refresh receives the revocation. Disconnected SDKs keep their cached policy until they reconnect.</p></div><div class="dialog-actions"><button type="button" id="cancel-key-revocation" autofocus>Cancel</button><button type="button" id="confirm-key-revocation" class="primary danger">Revoke key</button></div>
+  </dialog>
+  <dialog id="user-dialog" aria-labelledby="user-dialog-title" aria-describedby="user-dialog-context">
+    <div class="dialog-heading"><div><h2 id="user-dialog-title">Create user</h2><p id="user-dialog-context" class="muted">Assign access separately for each environment.</p></div><button id="close-user" type="button" class="quiet" aria-label="Close user dialog">✕</button></div>
+    <form id="user-form"><div class="dialog-content user-fields">
+      <label for="user-name">Username<input type="text" id="user-name" maxlength="64" autocomplete="off" required></label>
+      <label for="user-password">Password<input type="password" id="user-password" minlength="12" maxlength="1024" autocomplete="new-password"></label>
+      <div class="user-switches"><label><input type="checkbox" id="user-enabled" checked> Account enabled</label><label><input type="checkbox" id="user-admin"> Instance administrator</label></div>
+      <p id="user-recovery-note" class="small muted" hidden>The initial administrator must stay enabled for account recovery.</p>
+      <div id="user-permissions" class="user-permissions"></div>
+      <p class="small muted">Viewer: read flags and history. Editor: also change flags. Manager: also manage apps and API Keys, including secrets.</p>
+      <p id="user-dialog-error" class="notice error item-error" role="alert" hidden></p>
+    </div><div class="dialog-actions"><button id="cancel-user" type="button">Cancel</button><button id="save-user" type="submit" class="primary">Create user</button></div></form>
   </dialog>
   <dialog id="discard-dialog" class="confirm-dialog" aria-labelledby="discard-title" aria-describedby="discard-description">
     <div class="dialog-content"><h2 id="discard-title">Discard your changes?</h2><p id="discard-description" class="muted">Your edits have not been saved. Keep editing or discard them to continue.</p></div><div class="dialog-actions"><button type="button" id="keep-editing" autofocus>Keep editing</button><button type="button" id="discard-changes" class="primary">Discard changes</button></div>

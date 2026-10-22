@@ -2,10 +2,13 @@
 -- SPDX-License-Identifier: Elastic-2.0
 
 PRAGMA user_version = 1;
-CREATE TABLE admin (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL
+    password_hash TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0 CHECK (is_admin IN (0, 1)),
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    CHECK (id != 1 OR (is_admin = 1 AND enabled = 1))
 );
 CREATE TABLE projects (name TEXT PRIMARY KEY);
 INSERT INTO projects VALUES ('default');
@@ -15,6 +18,12 @@ CREATE TABLE environments (
     revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0)
 );
 INSERT INTO environments(name, project) VALUES ('development', 'default'), ('production', 'default');
+CREATE TABLE permissions (
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    environment TEXT NOT NULL REFERENCES environments(name),
+    role TEXT NOT NULL CHECK (role IN ('viewer', 'editor', 'manager')),
+    PRIMARY KEY (user_id, environment)
+);
 CREATE TABLE flags (
     environment TEXT NOT NULL REFERENCES environments(name),
     key TEXT NOT NULL,

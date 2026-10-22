@@ -31,6 +31,7 @@ export class ClientBuilder {
   build(): Client;
 }
 export class Client {
+  hasFlag(flag: string): boolean;
   private constructor();
   static builder(): ClientBuilder;
   readonly lastRefreshError: PartlyError | null;

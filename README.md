@@ -35,6 +35,8 @@ Setup creates the database. Reuse its path on restart. For remote access, [confi
 
 Set the server URL, environment, application ID, and API Key. Initialize once at application startup, reuse the client for local evaluations, and close it at shutdown. The dashboard shows these same tested examples, including error handling.
 
+[OpenFeature providers](docs/openfeature.md) are available for all four languages. Register one after Partly initializes, then use the official OpenFeature SDK for local Boolean checks. Python, Go, and Node return your chosen fallback with error details; Rust returns `Result`. The [tested versions and limits](docs/openfeature.md#coverage-and-limits) describe what is verified, including Rust's upstream gaps. The quickstarts and dashboard examples currently use Partly's native API.
+
 ## How it compares
 
 Self-hosted capabilities, reviewed October 2026. Linked sources describe each tool; availability can vary by edition and SDK. **Self-hosted** means your organization runs the control service. **Local evaluation** means flag checks run inside each application; the control service can be on another machine.
@@ -71,9 +73,9 @@ flowchart LR
     CP -->|Policy download and refresh| C[Worker: local SDK]
 ```
 
-One instance has Development and Production environments and one admin. Apps select shared flags within their environment; each key can download only its app's selection. Multiple keys support rotation, and revoked keys remain identifiable in history.
+One instance has Development and Production environments, individual accounts, and environment permissions. Apps select shared flags within their environment; each key can download only its app's selection. Multiple keys support rotation, and revoked keys remain identifiable in history.
 
-Before changing a flag, review the affected apps and type `environment/flag_name` to confirm. The Audits tab records admin changes as readable state transitions. Team permissions and organization-wide capacity testing remain future work.
+Before changing a flag, review the affected apps and type `environment/flag_name` to confirm. The Audits tab records each account’s changes as readable state transitions. Administrators manage accounts in **Users**; [environment roles](crates/partly-server/README.md#users-and-permissions) separate readers, flag editors, and app/key managers. Organization-wide capacity testing remains future work.
 
 ### SDKs
 
@@ -110,26 +112,26 @@ The same [local benchmark](tests/benchmark.py) measured about **0.32 µs per Pyt
 
 ## Roadmap
 
-Proposed order, keeping the single executable and local evaluation:
+Agreed order, keeping the single executable and local evaluation. OpenFeature providers and RBAC are implemented; remaining work is noted below.
 
-1. **Release the existing SDKs.** Finish npm and Go distribution, verify installs from published artifacts, and make the server and four SDKs available through their normal channels. See [publishing work](docs/publishing.md).
-2. **Set a tested memory budget.** Measure peak RAM under concurrent logins, policy refreshes, and larger flag sets on Linux. Publish a practical recommendation and track regressions.
-3. **Add team access controls.** Application scopes and change history are implemented. Individual admin accounts and permissions are the next step for independent teams sharing one installation.
-4. **Support OpenFeature.** Wrap the existing SDKs with providers for the standard feature-flag API, making adoption easier without replacing the Rust evaluator. Keep errors available through the detailed evaluation API.
-5. **Add Java, then .NET.** Close the next backend SDK gaps using the shared evaluator and the same cross-language contract tests.
-6. **Expand flag values when users need them.** Add string, number, and JSON values before weighted variants, while preserving the existing boolean API. This follows the feature gap in the comparison without adding an experimentation platform.
+1. **OpenFeature.** Providers now have checks through the official SDKs and real server for context, lifecycle, errors, refresh, and revocation. Next, make OpenFeature the recommended quickstart and dashboard example. Keep Boolean flags and track per-language specification baselines and Rust upstream gaps in the [OpenFeature guide](docs/openfeature.md#coverage-and-limits).
+2. **Role-based access control (RBAC).** Implemented: individual accounts, environment permissions, restricted API Key secrets, and audit attribution, with API and dashboard tests. SSO and invitations remain outside the alpha.
+3. **Git integration and approvals.** Support reviewed changes, environment promotion, and authenticated automation with an explicit source of truth. Build approval permissions on RBAC.
+4. **Flag lifecycle.** Add owners, purpose, review dates, reminders, and archival. Expiry initially means review is due; it does not automatically disable a flag.
+5. **Further improvements.** Prioritize distribution, persisted SDK snapshots, measured operating limits, richer targeting and values, and additional platforms from demonstrated demand. See [publishing work](docs/publishing.md).
 
-Browser/mobile SDKs, Ruby/PHP, reusable segments, and scheduled rollouts will be prioritized from user demand. SSO, HA, and experimentation analytics remain outside the near-term scope. The first release stays boolean-only with one admin account.
+Preserve initialization, refresh, offline evaluation, and revocation guarantees throughout. Git integration, lifecycle automation, HA, SSO, and experimentation are outside the current implementation.
 
 ## Alpha limits
 
-- One server and one admin. API Keys are stored as plaintext in SQLite and backups; keep these files private.
+- One server; no SSO or high availability. API Keys are stored as plaintext in SQLite and backups; keep these files private.
 - Policies stay in SDK memory. Running clients keep working during outages; new processes need the server to initialize. Revocation takes effect when the client receives it.
 - Release targets: macOS ARM64 and Linux x86_64. See [verified coverage](docs/releasing.md).
 
 ## Guides
 
 - [Server: HTTPS, backups, and password recovery](crates/partly-server/README.md)
+- [OpenFeature: integration, verified behavior, and limits](docs/openfeature.md)
 - [Evaluation rules and percentage consistency](crates/partly-core/README.md)
 - [Development checks and release preparation](docs/releasing.md)
 

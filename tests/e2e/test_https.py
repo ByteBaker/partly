@@ -228,8 +228,8 @@ def test_https_dashboard_setup_login_flags_and_keys(tls_server):
             page.goto(server.url)
             expect(page.get_by_role("button", name="Create admin account")).to_be_visible()
             assert not server.db.exists()
-            page.get_by_label("Username", exact=True).fill("admin")
-            page.get_by_label("Password", exact=True).fill(PASSWORD)
+            page.locator("#auth").get_by_label("Username", exact=True).fill("admin")
+            page.locator("#auth").get_by_label("Password", exact=True).fill(PASSWORD)
             page.get_by_role("button", name="Create admin account").click()
             expect(page).to_have_url(f"{server.url}/environments/development/flags")
             assert page.evaluate("performance.getEntriesByType('navigation')[0].nextHopProtocol") == "h2"

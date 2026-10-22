@@ -25,12 +25,14 @@ def build(output: Path, *, allow_dirty: bool = False) -> None:
     if (go_os, go_arch) not in {("darwin", "arm64"), ("linux", "amd64")}:
         raise ValueError("Release packages support macOS ARM64 and Linux x86_64")
     platform = f"{go_os}-{go_arch}"
-    subprocess.run(["cargo", "package", "--locked", "--target-dir", "target",
-                    "-p", "partly-core", "-p", "partly-rust",
-                    *(["--allow-dirty"] if allow_dirty else [])],
-                   cwd=ROOT, check=True)
-    for name in ("partly-core", "partly-rust"):
-        shutil.copy2(ROOT / "target/package" / f"{name}-{version}.crate", output)
+    # Cargo caches its temporary registry by path/version; unpublished alpha contents can change.
+    with tempfile.TemporaryDirectory(prefix="partly-crates-") as temporary:
+        subprocess.run(["cargo", "package", "--locked", "--all-features", "--target-dir", temporary,
+                        "-p", "partly-core", "-p", "partly-rust",
+                        *(["--allow-dirty"] if allow_dirty else [])],
+                       cwd=ROOT, check=True)
+        for name in ("partly-core", "partly-rust"):
+            shutil.copy2(Path(temporary) / "package" / f"{name}-{version}.crate", output)
 
     subprocess.run(["sh", str(ROOT / "sdk/go/build.sh")], cwd=ROOT, check=True)
     go_root = ROOT / "sdk/go"
@@ -39,6 +41,7 @@ def build(output: Path, *, allow_dirty: bool = False) -> None:
         for name in ("go.mod", "client.go", "native.go", "client_test.go", "README.md", "LICENSE",
                      "NOTICE", "THIRD_PARTY_NOTICES.txt", "RUST_STDLIB_NOTICES.html"):
             archive.add(go_root / name, arcname=f"{go_name}/{name}")
+        archive.add(go_root / "openfeature", arcname=f"{go_name}/openfeature")
         native = Path("native") / f"{go_os}_{go_arch}" / "libpartly_ffi.a"
         archive.add(go_root / native, arcname=f"{go_name}/{native}")
 

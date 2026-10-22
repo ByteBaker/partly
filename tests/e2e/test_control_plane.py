@@ -50,7 +50,7 @@ def test_delayed_setup_and_restart(server):
         assert response.headers["cache-control"] == "no-store"
         assert client.get(f"/api/keys/{key_id}/reveal").status_code == 404
         with sqlite3.connect(server.db) as db:
-            stored = db.execute("SELECT password_hash FROM admin").fetchone()[0]
+            stored = db.execute("SELECT password_hash FROM users").fetchone()[0]
             assert stored.startswith("$argon2id$") and PASSWORD not in stored
         if os.name == "posix":
             assert server.db.stat().st_mode & 0o777 == 0o600
@@ -75,7 +75,7 @@ def test_concurrent_setup_creates_only_one_admin(server):
         results = sorted(pool.map(submit, ["first", "second"]))
     assert results == [200, 409]
     with sqlite3.connect(server.db) as db:
-        assert db.execute("SELECT COUNT(*) FROM admin").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1
 
 
 @pytest.mark.parametrize("content", [b"not sqlite\x00", b""])
@@ -196,6 +196,8 @@ def test_key_names_validation_and_environment_isolation(admin):
 
 @pytest.mark.parametrize("legacy_change", [
     "ALTER TABLE sdk_keys DROP COLUMN name",
+    "ALTER TABLE users RENAME TO admin",
+    "DROP TABLE permissions",
     "DROP TABLE flags; CREATE TABLE flags (environment TEXT, key TEXT, enabled INTEGER, percentage INTEGER)",
 ])
 def test_earlier_development_schema_is_rejected_without_changes(server, admin, legacy_change):

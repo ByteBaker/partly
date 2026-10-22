@@ -17,6 +17,9 @@ use std::{
 use tokio::{sync::watch, task::JoinHandle};
 pub use url::ParseError as UrlParseError;
 
+#[cfg(feature = "openfeature")]
+pub mod openfeature;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Invalid control-plane URL: {0}")]
@@ -268,6 +271,16 @@ impl Client {
 
     pub fn last_refresh_error(&self) -> Option<Arc<Error>> {
         self.inner.last_error.read().unwrap().clone()
+    }
+
+    /// Query the accepted policy without evaluating context. Unavailable policies return an error.
+    pub fn has_flag(&self, key: &str) -> Result<bool, Error> {
+        if self.inner.revoked.load(Ordering::Acquire) {
+            return Err(Error::KeyRevoked);
+        }
+        let accepted = self.inner.accepted.read().unwrap();
+        let policy = &accepted.as_ref().ok_or(Error::PolicyNotReady)?.policy;
+        Ok(policy.flags.contains_key(key))
     }
 
     pub async fn close(&self) -> Result<(), Error> {

@@ -315,6 +315,20 @@ func (c *Client) LastRefreshError() error {
 	defer c.mu.RUnlock()
 	return c.lastError
 }
+
+// HasFlag checks the loaded policy without evaluating context. Unavailable policies return an error.
+func (c *Client) HasFlag(flag string) (bool, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.revoked {
+		return false, ErrKeyRevoked
+	}
+	if c.policy == nil {
+		return false, ErrPolicyNotReady
+	}
+	return c.policy.hasFlag(flag), nil
+}
+
 func (c *Client) Close(ctx context.Context) error {
 	c.mu.Lock()
 	c.closed = true

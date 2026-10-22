@@ -5,11 +5,14 @@
 const $ = id => document.getElementById(id);
 const notice = $('notice');
 let noticeReset;
-const route = location.pathname.match(/^\/environments\/(development|production)\/(flags|apps|audits|docs)\/?$/);
+const route = location.pathname.match(/^\/environments\/(development|production)\/(flags|apps|audits|docs|users)\/?$/);
 const environment = route?.[1] || 'development';
 const currentScreen = route?.[2] || 'flags';
 const trackers = new Map();
 let setupRequired = false;
+let currentUser;
+let canEdit = false;
+let canManage = false;
 let unloading = false;
 let modalEditor;
 let nextId = 0;
@@ -85,6 +88,7 @@ async function action(trigger, operation, errorArea) {
   if (form === $('new-flag')) controls.push([$('close-flag'), $('close-flag').disabled]);
   if (form === $('new-app')) controls.push([$('close-app'), $('close-app').disabled]);
   if (form === $('new-key')) controls.push([$('close-key'), $('close-key').disabled]);
+  if (form === $('user-form')) controls.push([$('close-user'), $('close-user').disabled]);
   if (state) state.pending = true;
   if (scope) scope.setAttribute('aria-busy', 'true');
   controls.forEach(([element]) => { element.disabled = true; });
@@ -330,7 +334,10 @@ function flagRow(key, flag) {
   actions.append(save, remove); heading.append(identity, actions); form.append(heading);
   const editor = createEditor(flag, key); form.append(editor.area);
   const error = node('p', '', 'notice error item-error'); error.hidden = true; error.setAttribute('role', 'alert'); form.append(error);
-  track(form, editor.read, save, indicator);
+  if (!canEdit) {
+    actions.hidden = true; indicator.hidden = true;
+    editor.area.querySelectorAll('input, button').forEach(control => { control.disabled = true; });
+  } else track(form, editor.read, save, indicator);
   form.addEventListener('submit', event => {
     event.preventDefault();
     action(save, async () => {
@@ -395,9 +402,9 @@ function addKey(key, application) {
   const { id, masked_secret: masked, revoked_at: revoked, created_at: created } = key;
   let { name, secret } = key;
   const row = node('div', '', 'key-row');
-  if (revoked) {
+  if (revoked || !canManage) {
     row.classList.add('revoked-key');
-    row.append(node('strong', name), node('code', masked), node('span', `Created ${new Date(created).toLocaleString()} · Revoked ${new Date(revoked).toLocaleString()}`, 'small muted'));
+    row.append(node('strong', name), node('code', masked), node('span', `Created ${new Date(created).toLocaleString()}${revoked ? ` · Revoked ${new Date(revoked).toLocaleString()}` : ""}`, 'small muted'));
     return row;
   }
   const rename = node('form', '', 'key-name-form');
@@ -451,7 +458,8 @@ function appRow(app) {
   const selection = flagSelection(app.flags, app.name); const save = node('button', 'Save app', 'primary'); save.type = 'submit'; save.setAttribute('aria-label', 'Save app');
   const error = node('p', '', 'notice error item-error'); error.hidden = true; error.setAttribute('role', 'alert');
   form.append(label('Application name', name), selection.area, save, error); settings.append(form); row.append(settings);
-  track(form, () => ({ name: name.value, flags: selection.read() }), save);
+  if (canManage) track(form, () => ({ name: name.value, flags: selection.read() }), save);
+  else { name.readOnly = true; selection.area.disabled = true; save.hidden = true; }
   form.addEventListener('submit', event => {
     event.preventDefault(); action(save, async () => {
       const saved = await api(`/environments/${environment}/apps/${app.id}`, 'PUT', { name: name.value, flags: selection.read() });
@@ -464,7 +472,7 @@ function appRow(app) {
   const active = node('div', '', 'active-keys'); const revoked = node('details', '', 'revoked-keys'); const summary = node('summary'); revoked.append(summary);
   const application = { ...app, row, heading: keyHeading, active, revoked, updateRevoked: () => { const count = revoked.querySelectorAll('.key-row').length; summary.textContent = `Revoked keys (${count})`; revoked.hidden = count === 0; } };
   const createKey = button('Create key', '', () => openKey(application)); createKey.setAttribute('aria-label', 'Create key');
-  keyHeading.append(createKey); row.append(keyHeading, active, revoked);
+  createKey.hidden = !canManage; keyHeading.append(createKey); row.append(keyHeading, active, revoked);
   for (const key of app.keys) (key.revoked_at ? revoked : active).append(addKey(key, application));
   application.updateRevoked();
   return row;
@@ -496,6 +504,67 @@ $('new-app').addEventListener('submit', event => {
   });
 });
 
+let editingUser;
+function userDraft() {
+  const permissions = {};
+  if (!$('user-admin').checked) {
+    $('user-permissions').querySelectorAll('[role=combobox]').forEach(control => { if (control.value) permissions[control.name] = control.value; });
+  }
+  return { username: $('user-name').value, enabled: $('user-enabled').checked, is_admin: $('user-admin').checked, permissions, ...($('user-password').value ? { password: $('user-password').value } : {}) };
+}
+function userRow(user) {
+  const row = node('article', '', 'user-row'); row.dataset.userId = user.id;
+  const identity = node('div'); identity.append(node('h2', user.username));
+  identity.append(node('p', user.is_admin ? 'Instance administrator' : Object.entries(user.permissions).map(([env, role]) => `${env}: ${role}`).join(' · ') || 'No environment access', 'small muted'));
+  const controls = node('div', '', 'row-actions');
+  if (!user.enabled) controls.append(node('span', 'Disabled', 'type-pill'));
+  const edit = button('Edit', '', () => openUser(user)); edit.setAttribute('aria-label', `Edit ${user.username}`);
+  controls.append(edit); row.append(identity, controls); return row;
+}
+function openUser(user) {
+  editingUser = user;
+  $('user-form').reset(); $('user-dialog-error').hidden = true;
+  $('user-dialog-title').textContent = user ? `Edit ${user.username}` : 'Create user';
+  $('user-dialog-context').textContent = user ? 'Saving changes signs this user out of all sessions.' : 'Assign access separately for each environment.';
+  $('user-name').value = user?.username || ''; $('user-name').readOnly = !!user;
+  $('user-password').required = !user; $('user-password').placeholder = user ? 'Leave blank to keep the password' : 'At least 12 characters';
+  $('user-enabled').checked = user?.enabled ?? true; $('user-admin').checked = user?.is_admin || false;
+  $('user-enabled').disabled = user?.id === 1; $('user-admin').disabled = user?.id === 1;
+  $('user-recovery-note').hidden = user?.id !== 1;
+  $('user-permissions').replaceChildren(...['development', 'production'].map(env => {
+    const control = createDropdown([['', 'No access'], ['viewer', 'Viewer'], ['editor', 'Editor'], ['manager', 'Manager']], user?.permissions[env] || '', env);
+    control.setAttribute('aria-label', `${env} access`); control.disabled = $('user-admin').checked;
+    return label(env[0].toUpperCase() + env.slice(1), control);
+  }));
+  $('save-user').textContent = user ? 'Save changes' : 'Create user';
+  $('save-user').disabled = false;
+  track($('user-form'), userDraft, user ? $('save-user') : undefined);
+  $('user-dialog').showModal(); (user ? $('user-password') : $('user-name')).focus();
+}
+$('user-admin').addEventListener('change', () => {
+  $('user-permissions').querySelectorAll('[role=combobox]').forEach(control => { control.disabled = $('user-admin').checked; });
+});
+async function closeUser() {
+  if (trackers.get($('user-form'))?.pending) return;
+  if (isDirty($('user-form')) && !await confirmDiscard()) return;
+  untrack($('user-form')); $('user-password').value = ''; $('user-dialog').close();
+}
+$('create-user').addEventListener('click', () => openUser(null));
+$('close-user').addEventListener('click', closeUser); $('cancel-user').addEventListener('click', closeUser);
+$('user-dialog').addEventListener('cancel', event => { event.preventDefault(); closeUser(); });
+$('user-form').addEventListener('submit', event => {
+  event.preventDefault(); action(event.submitter, async () => {
+    const saved = await api(editingUser ? `/users/${editingUser.id}` : '/users', editingUser ? 'PUT' : 'POST', userDraft());
+    const row = userRow(saved);
+    if (editingUser) $('users').querySelector(`[data-user-id="${saved.id}"]`).replaceWith(row);
+    else $('users').append(row);
+    untrack($('user-form')); $('user-password').value = ''; $('user-dialog').close();
+    row.querySelector('button').focus();
+    showNotice(editingUser ? 'Saved' : 'Created', row.querySelector('button'));
+    if (saved.id === currentUser.id) location.reload();
+  }, $('user-dialog-error'));
+});
+
 function auditState(type, value, title) {
   const state = node('div', '', 'audit-state');
   state.append(node('h3', title, 'audit-label'));
@@ -520,6 +589,10 @@ function auditState(type, value, title) {
     }
   } else {
     state.append(node('p', value.name || value.status, 'audit-value'));
+    if (type === 'user') {
+      state.append(node('p', value.enabled ? 'Account enabled' : 'Account disabled'));
+      state.append(node('p', value.is_admin ? 'Instance administrator' : `${value.role || 'No access'} in ${environment}`));
+    }
     if (type === 'app') {
       state.append(node('p', 'Selected flags', 'audit-label'));
       if (value.flags.length) {
@@ -575,10 +648,11 @@ async function setupAudits() {
       for (const entry of audits) {
         const row = node('details', '', 'audit-row'); const summary = node('summary', '', 'audit-summary');
         const time = node('time', new Date(entry.created_at).toLocaleString()); time.dateTime = entry.created_at;
-        const item = node('span', '', 'audit-item'); item.append(node('span', { flag: 'Flag', app: 'App', api_key: 'API Key' }[entry.item_type], 'type-pill'), node('span', entry.item_name));
+        const item = node('span', '', 'audit-item'); item.append(node('span', { flag: 'Flag', app: 'App', api_key: 'API Key', user: 'User' }[entry.item_type], 'type-pill'), node('span', entry.item_name));
         summary.append(item, node('span', entry.action[0].toUpperCase() + entry.action.slice(1)), node('span', entry.actor), time);
         const detail = node('div', '', 'audit-detail');
         detail.append(auditChange(entry));
+        if (entry.item_type === 'user' && entry.action === 'updated' && entry.details.password_changed) detail.append(node('p', 'Password reset', 'audit-context'));
         if (entry.item_type === 'api_key') detail.append(node('p', `Application: ${applications.find(app => app.id === entry.details.application_id)?.name || entry.details.application_id}`, 'audit-context'));
         if (entry.details.applications) detail.append(node('p', entry.details.applications.length ? `Affected applications: ${entry.details.applications.map(app => app.name).join(', ')}` : 'No applications used this flag.', 'audit-context'));
         row.append(summary, detail); $('audits').append(row);
@@ -633,7 +707,6 @@ $('close-key').addEventListener('click', closeKey);
 $('cancel-key').addEventListener('click', closeKey);
 $('key-dialog').addEventListener('cancel', event => { event.preventDefault(); closeKey(); });
 for (const [id, options, value, label] of [
-  ['environment', [['development', 'Development'], ['production', 'Production']], environment, 'Environment'],
   ['docs-language', Object.entries(docsExamples).map(([value, example]) => [value, example.name]), 'python', 'Language'],
 ]) {
   const control = createDropdown(options, value, id);
@@ -641,24 +714,22 @@ for (const [id, options, value, label] of [
   $(id).replaceWith(control);
 }
 document.querySelector('.brand').href = `/environments/${environment}/flags`;
-$('environment').addEventListener('change', async () => {
-  const target = $('environment').value; $('environment').setValue(environment);
-  if (target !== environment) await navigate(`/environments/${target}/${currentScreen}`);
-});
 const tabs = [...$('screens').querySelectorAll('[role=tab]')];
-for (const [index, tab] of tabs.entries()) {
+for (const tab of tabs) {
   const active = tab.id === `${currentScreen}-tab`; tab.setAttribute('aria-selected', String(active)); tab.tabIndex = active ? 0 : -1; $(tab.getAttribute('aria-controls')).hidden = !active;
   const go = focus => { if (!active) return navigate(`/environments/${environment}/${tab.id.split('-')[0]}`, focus); };
   tab.addEventListener('click', () => go(false));
   tab.addEventListener('keydown', event => {
+    const visibleTabs = tabs.filter(tab => !tab.hidden);
+    const index = visibleTabs.indexOf(tab);
     let next;
-    if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
-    else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+    if (event.key === 'ArrowRight') next = (index + 1) % visibleTabs.length;
+    else if (event.key === 'ArrowLeft') next = (index + visibleTabs.length - 1) % visibleTabs.length;
     else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = tabs.length - 1;
+    else if (event.key === 'End') next = visibleTabs.length - 1;
     else return;
     event.preventDefault();
-    if (next === index) tab.focus(); else navigate(`/environments/${environment}/${tabs[next].id.split('-')[0]}`, true);
+    if (next === index) tab.focus(); else navigate(`/environments/${environment}/${visibleTabs[next].id.split('-')[0]}`, true);
   });
 }
 $('copy-example').addEventListener('click', () => action($('copy-example'), async () => {
@@ -717,23 +788,45 @@ $('logout').addEventListener('click', async () => {
 $('auth-form').addEventListener('submit', event => {
   event.preventDefault(); action($('auth-submit'), async () => {
     await api(setupRequired ? '/setup' : '/login', 'POST', { username: $('username').value, password: $('password').value });
-    $('password').value = ''; location.replace(`/environments/${environment}/${currentScreen}`);
+    $('password').value = ''; location.replace(route ? `/environments/${environment}/${currentScreen}` : '/');
   });
 });
 async function boot() {
   if (location.pathname !== '/' && !route) throw new Error('Unknown environment or screen. Open /environments/development/flags or /environments/production/flags.');
   const status = await api('/status'); setupRequired = status.setup_required; $('loading').hidden = true;
-  if (status.authenticated && !route) { location.replace('/environments/development/flags'); return; }
   $('auth').hidden = status.authenticated; $('workspace').hidden = !status.authenticated; $('session').hidden = !status.authenticated; $('screens').hidden = !status.authenticated;
   if (!status.authenticated) {
     $('auth-title').textContent = setupRequired ? 'Create admin account' : 'Sign in';
-    $('auth-description').textContent = setupRequired ? 'Set up your account to manage feature flags.' : 'Enter your admin credentials.';
+    $('auth-description').textContent = setupRequired ? 'Set up your account to manage feature flags.' : 'Enter your account credentials.';
     $('auth-submit').textContent = setupRequired ? 'Create admin account' : 'Sign in';
     $('password').minLength = setupRequired ? 12 : 1; $('password').autocomplete = setupRequired ? 'new-password' : 'current-password'; $('setup-note').hidden = !setupRequired;
     $('username').focus(); return;
   }
-  $('create-flag').hidden = currentScreen !== 'flags';
-  $('create-app').hidden = currentScreen !== 'apps';
+  const access = await api('/environments');
+  currentUser = access.user;
+  $('users-tab').hidden = !currentUser.is_admin;
+  const allowed = access.environments;
+  if (!allowed.length || (route && !allowed.includes(environment))) {
+    $('workspace').hidden = true; $('screens').hidden = true; $('environment').closest('label').hidden = true; document.querySelector('.brand').href = '/';
+    throw new Error(allowed.length ? 'You do not have access to this environment. Open the home page to choose an available environment.' : 'You do not have access to any environment. Ask an administrator to assign access.');
+  }
+  if (!route) { location.replace(`/environments/${allowed[0]}/flags`); return; }
+  const selector = createDropdown(allowed.map(env => [env, env[0].toUpperCase() + env.slice(1)]), environment, 'environment');
+  selector.id = 'environment'; selector.setAttribute('aria-label', 'Environment'); $('environment').replaceWith(selector);
+  selector.addEventListener('change', async () => {
+    const target = selector.value; selector.setValue(environment);
+    if (target !== environment) await navigate(`/environments/${target}/${currentScreen}`);
+  });
+  const role = currentUser.permissions[environment];
+  canEdit = currentUser.is_admin || ['editor', 'manager'].includes(role);
+  canManage = currentUser.is_admin || role === 'manager';
+  $('create-flag').hidden = currentScreen !== 'flags' || !canEdit;
+  $('create-app').hidden = currentScreen !== 'apps' || !canManage;
+  $('create-user').hidden = currentScreen !== 'users' || !currentUser.is_admin;
+  if (currentScreen === 'users' && !currentUser.is_admin) {
+    $('workspace').hidden = true;
+    throw new Error('Only instance administrators can manage users.');
+  }
   $('screen-title').textContent = $(`${currentScreen}-tab`).textContent; document.title = `Partly · ${$('screen-title').textContent} · ${environment}`;
   if (currentScreen === 'flags') {
     const flags = await api(`/environments/${environment}/flags`);
@@ -742,11 +835,15 @@ async function boot() {
     const [flags, result] = await Promise.all([api(`/environments/${environment}/flags`), api(`/environments/${environment}/apps`)]);
     availableFlags = Object.keys(flags); result.applications.forEach(app => $('apps').append(appRow(app)));
     if (!result.applications.length) $('apps').append(node('p', 'No applications in this environment.', 'empty'));
+  } else if (currentScreen === 'users') {
+    const { users } = await api('/users');
+    users.forEach(user => $('users').append(userRow(user)));
   } else if (currentScreen === 'audits') {
     await setupAudits();
   } else {
     await loadExample();
   }
+  $(`${currentScreen}-tab`).scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (sessionStorage.getItem('partly-focus-tab')) { sessionStorage.removeItem('partly-focus-tab'); $(`${currentScreen}-tab`).focus(); }
 }
 action(null, boot).finally(() => { $('loading').hidden = true; });
