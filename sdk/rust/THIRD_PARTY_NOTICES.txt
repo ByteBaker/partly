@@ -406,8 +406,8 @@ Used by:
 Apache License 2.0 (Apache-2.0)
 
 Used by:
-  partly-core 0.1.0-alpha.1
-  partly-rust 0.1.0-alpha.1
+  partly-core 0.1.0-alpha.1 — https://github.com/ByteBaker/partly
+  partly-rust 0.1.0-alpha.1 — https://github.com/ByteBaker/partly
   fragile 2.1.0 — https://github.com/mitsuhiko/fragile
 
 

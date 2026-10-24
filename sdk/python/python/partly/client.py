@@ -192,7 +192,7 @@ class Client:
         if not isinstance(flag_key, str):
             raise TypeError("flag_key must be a string")
         self._record_usage(flag_key, snapshot)
-        return Decision.ENABLED if snapshot.evaluate(flag_key, context) else Decision.DISABLED
+        return Decision.ENABLED if snapshot.evaluate(flag_key, {} if context is None else context) else Decision.DISABLED
 
     def has_flag(self, flag_key: str) -> bool:
         """Check the loaded policy without evaluating context; unavailable policies still raise."""
@@ -277,7 +277,10 @@ class Client:
                 self.last_refresh_error = None
                 return False
             body, etag = downloaded
-            snapshot = await asyncio.to_thread(Snapshot, body)
+            try:
+                snapshot = await asyncio.to_thread(Snapshot, body)
+            except InvalidPolicyError:
+                raise InvalidPolicyError("Policy validation failed") from None
             self._check_open()
             if (snapshot.environment, snapshot.application_id) != (self._environment, self._application_id):
                 raise InvalidPolicyError("Policy does not match the configured environment and application")

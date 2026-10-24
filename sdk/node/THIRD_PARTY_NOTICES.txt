@@ -11,7 +11,7 @@ Rust 1.98.1 standard-library notices are provided in RUST_STDLIB_NOTICES.html.
 Apache License 2.0 (Apache-2.0)
 
 Used by:
-  partly-core 0.1.0-alpha.1
+  partly-core 0.1.0-alpha.1 — https://github.com/ByteBaker/partly
 
 
                                  Apache License

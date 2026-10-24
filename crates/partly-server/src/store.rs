@@ -525,6 +525,15 @@ impl Store {
         {
             return Err(ApiError::bad("Usernames cannot be changed"));
         }
+        if let Some(user) = &before {
+            if hash.is_none()
+                && user.is_admin == input.is_admin
+                && user.enabled == input.enabled
+                && user.permissions == input.permissions
+            {
+                return Ok(user.clone());
+            }
+        }
         let duplicate: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM users WHERE username = ?1 AND (?2 IS NULL OR id != ?2))",
             params![input.username, id],
@@ -594,10 +603,10 @@ impl Store {
 
     pub fn policy(&self, env: &str) -> Result<Policy, ApiError> {
         self.environment(env)?;
-        Self::read_policy(self.db()?, env)
+        Self::read_policy(self.db()?, env, None)
     }
 
-    fn read_policy(db: &Connection, env: &str) -> Result<Policy, ApiError> {
+    fn read_policy(db: &Connection, env: &str, app: Option<&str>) -> Result<Policy, ApiError> {
         let (project, revision): (String, i64) = db.query_row(
             "SELECT project, revision FROM environments WHERE name = ?1",
             [env],
@@ -605,10 +614,10 @@ impl Store {
         )?;
         let revision =
             u64::try_from(revision).map_err(|_| ApiError::internal("Invalid policy revision"))?;
-        let mut statement =
-            db.prepare("SELECT key, config FROM flags WHERE environment = ?1 ORDER BY key")?;
+        // Filter before decoding so other applications' rules are never compiled for this read.
+        let mut statement = db.prepare("SELECT key, config FROM flags WHERE environment = ?1 AND (?2 IS NULL OR key IN (SELECT flag_key FROM application_flags WHERE application_id = ?2)) ORDER BY key")?;
         let rows = statement
-            .query_map([env], |r| {
+            .query_map(params![env, app], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -679,7 +688,7 @@ impl Store {
                 [env],
             )?;
             transaction.execute("UPDATE applications SET revision = revision + 1 WHERE id IN (SELECT application_id FROM application_flags WHERE environment = ?1 AND flag_key = ?2)", [env, key])?;
-            check_policy_size(&Self::read_policy(&transaction, env)?)?;
+            check_policy_size(&Self::read_policy(&transaction, env, None)?)?;
             let before: Option<Value> = before
                 .map(|v| serde_json::from_str(&v))
                 .transpose()
@@ -1003,17 +1012,9 @@ impl Store {
 
     pub fn app_policy(&self, key: &str, env: &str, app: &str) -> Result<Policy, ApiError> {
         let (_, revision) = Self::authorize_key(self.db()?, key, env, app)?;
-        let mut query = self.db()?.prepare(
-            "SELECT flag_key FROM application_flags WHERE application_id = ?1 ORDER BY flag_key",
-        )?;
-        let flags = query
-            .query_map([app], |r| r.get(0))?
-            .collect::<Result<Vec<String>, _>>()?;
-        let mut policy = self.policy(env)?;
+        self.environment(env)?;
+        let mut policy = Self::read_policy(self.db()?, env, Some(app))?;
         policy.application_id = app.into();
-        policy
-            .flags
-            .retain(|key, _| flags.binary_search(key).is_ok());
         policy.revision = u64::try_from(revision)
             .map_err(|_| ApiError::internal("Invalid application revision"))?;
         Ok(policy)
@@ -1111,6 +1112,30 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn application_policy_reads_only_selected_flag_configurations() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(include_str!("../migrations/001_initial.sql"))
+            .unwrap();
+        db.execute_batch("INSERT INTO applications (id, environment, name) VALUES ('app_test', 'development', 'Test'); INSERT INTO flags VALUES ('development', 'selected', '{\"mode\":\"enabled\"}'); INSERT INTO application_flags VALUES ('development', 'app_test', 'selected');")
+            .unwrap();
+        // An invalid unrelated regex proves its configuration was not decoded at all.
+        db.execute("INSERT INTO flags VALUES ('development', 'unrelated', ?1)", [r#"{"mode":"custom","action":"enable","groups":[[{"k":"tag","op":"regex","v":"["}]]}"#])
+            .unwrap();
+        let policy = Store::read_policy(&db, "development", Some("app_test")).unwrap();
+        assert_eq!(
+            policy.flags.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["selected"]
+        );
+        assert!(Store::read_policy(&db, "development", None).is_err());
+        db.execute(
+            "INSERT INTO application_flags VALUES ('development', 'app_test', 'unrelated')",
+            [],
+        )
+        .unwrap();
+        assert!(Store::read_policy(&db, "development", Some("app_test")).is_err());
+    }
 
     #[test]
     fn role_hierarchy_is_environment_scoped_and_disabled_users_have_no_access() {

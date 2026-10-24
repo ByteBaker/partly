@@ -16,13 +16,13 @@ maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out tar
 python -m pip install target/wheels/partly_sdk-0.1.0a1-cp314-cp314-*.whl
 ```
 
-Supports regular CPython 3.14 only. Source builds also require Rust and a C compiler; a matching prebuilt wheel needs no Rust compiler. Free-threaded Python is not supported. Public downloads are not available yet; see [release targets and status](../../docs/releasing.md#distribution-targets).
+Supports regular CPython 3.14 only. Source builds also require Rust and a C compiler; a matching prebuilt wheel needs no Rust compiler. Free-threaded Python is not supported. Public downloads are not available yet; see [release targets and status](https://github.com/ByteBaker/partly/blob/main/docs/releasing.md#distribution-targets).
 
 ## Use OpenFeature
 
-Start with the [complete quickstart](../../examples/python/quickstart.py), also shown in the dashboard. Install `openfeature-sdk>=0.10,<0.11` alongside the local wheel, or use `partly-sdk[openfeature]` after publication.
+Start with the [complete quickstart](https://github.com/ByteBaker/partly/blob/main/examples/python/quickstart.py), also shown in the dashboard. Install `openfeature-sdk>=0.10,<0.11` alongside the local wheel, or use `partly-sdk[openfeature]` after publication.
 
-Await native `init()` once at startup, then register `PartlyProvider`. Keep the native and OpenFeature clients in application state. Handlers use OpenFeature's detailed Boolean getter and check its error before using the value. Polling and manual refresh update the same policy; close both clients at shutdown. See [context mapping, errors, and tested limits](../../docs/openfeature.md).
+Await native `init()` once at startup, then register `PartlyProvider`. Keep the native and OpenFeature clients in application state. Handlers use OpenFeature's detailed Boolean getter and check its error before using the value. Polling and manual refresh update the same policy; close both clients at shutdown. See [context mapping, errors, and tested limits](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md).
 
 ## Native client reference
 
@@ -97,11 +97,11 @@ decision = client.evaluate("new_checkout", context=context)
 ```
 
 - Percentage mode requires a stable, nonblank `id` of 1–256 UTF-8 bytes. Adding users does not change existing users' decisions.
-- Enabled and disabled modes accept `{}`. Custom rules require every field referenced by that flag, even if one group already matches. Supply new context fields before publishing rules that use them.
+- Enabled and disabled modes allow omitted context, `None`, or `{}`. Custom rules require every field referenced by that flag, even if one group already matches. Supply new context fields before publishing rules that use them.
 - Strings are case-sensitive. Types are never converted: `"18"` is not a number, and `True` is not `1`. Numeric `18` equals `18.0`.
 - Integers must fit between −2^63 and 2^64−1; floats must be finite. Nulls, lists, nested dictionaries, and other objects are rejected. Use integers when exact values matter.
 
-Dashboard rules match all conditions within a group and any group within a flag. A match applies the configured enable/disable action; a non-match gets the opposite decision. See [operators and matching rules](../../crates/partly-core/README.md#custom-rules).
+Dashboard rules match all conditions within a group and any group within a flag. A match applies the configured enable/disable action; a non-match gets the opposite decision. See [operators and matching rules](https://github.com/ByteBaker/partly/blob/main/crates/partly-core/README.md#custom-rules).
 
 `ContextTypeError` provides `flag_key`, `k`, `op`, `expected_type`, and `actual_type`, without context values. Type names include `number`, `string`, and `boolean`. `op` is `None` for percentage IDs or unsupported extra fields. Catching `InvalidContextError` also catches this subclass.
 
@@ -115,9 +115,9 @@ cargo test --locked -p partly-e2e --test e2e python
 cargo test --locked -p partly-e2e --test e2e api::https::
 ```
 
-Tests exercise both the native boundary and the real control plane. See [development checks](../../docs/releasing.md#build-and-verify) for browser and full-workspace checks.
+Tests exercise both the native boundary and the real control plane. See [development checks](https://github.com/ByteBaker/partly/blob/main/docs/releasing.md#build-and-verify) for browser and full-workspace checks.
 
-The [shared SDK contract](../../tests/sdk_contract/README.md) runs the same end-to-end scenarios for each language.
+The [shared SDK contract](https://github.com/ByteBaker/partly/blob/main/tests/sdk_contract/README.md) runs the same end-to-end scenarios for each language.
 
 ## License
 

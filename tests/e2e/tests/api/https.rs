@@ -3,6 +3,7 @@
 
 use crate::support::{driver::*, *};
 use reqwest::Method;
+use rustls::pki_types::{pem::PemObject, CertificateDer};
 use serde_json::json;
 use std::{fs, sync::Arc, time::Duration};
 use tokio::{
@@ -149,7 +150,7 @@ async fn verified_tls_12_and_13() -> Result {
     let _ = rustls::crypto::ring::default_provider().install_default();
     for version in [&rustls::version::TLS12, &rustls::version::TLS13] {
         let mut roots = rustls::RootCertStore::empty();
-        for cert in rustls_pemfile::certs(&mut &fs::read(&tls.ca)?[..]) {
+        for cert in CertificateDer::pem_slice_iter(&fs::read(&tls.ca)?) {
             roots.add(cert?)?;
         }
         let config = rustls::ClientConfig::builder_with_protocol_versions(&[version])

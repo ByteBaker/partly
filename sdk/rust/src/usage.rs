@@ -77,8 +77,8 @@ impl Inner {
         for key in &batch {
             usage.names.remove(key);
         }
+        usage.due = !usage.pending.is_empty() && (usage.due || usage.last.elapsed() >= INTERVAL);
         usage.last = Instant::now();
-        usage.due = !usage.pending.is_empty();
         let inner = Arc::clone(self);
         usage.task = Some(runtime.spawn(async move {
             inner.report_usage(batch).await;
@@ -122,7 +122,9 @@ impl Inner {
             // Failures cool down from completion, even with a full queue.
             usage.last = Instant::now();
             if let Some(accepted) = accepted.as_ref() {
-                for key in batch {
+                let pending = std::mem::take(&mut usage.pending);
+                usage.names.clear();
+                for key in batch.into_iter().chain(pending) {
                     if accepted.policy.flags.contains_key(&key) {
                         usage.add(&key);
                     }

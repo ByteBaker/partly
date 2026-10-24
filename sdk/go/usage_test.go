@@ -175,9 +175,37 @@ func TestUsageBoundedSingleFlightAndFairQueue(t *testing.T) {
 	}
 	finishUsage(t, client, call, 204)
 	_, _ = client.Evaluate("flag_000", nil)
+	client.mu.RLock()
+	if client.usage.done != nil {
+		t.Error("fresh partial tail reported before the interval")
+	}
+	client.mu.RUnlock()
+	usageDue(client)
+	_, _ = client.Evaluate("flag_000", nil)
 	call = nextUsage(t, calls)
 	if len(call.flags) != 45 || call.flags[0] != "flag_256" || call.flags[44] != "flag_000" {
 		t.Fatal("overdue partial tail was not drained fairly", call.flags)
+	}
+	finishUsage(t, client, call, 204)
+}
+
+func TestOverdueUsageTailDoesNotWaitAnotherInterval(t *testing.T) {
+	client, calls, _ := usageClient(t, 300)
+	for i := 0; i < 300; i++ {
+		_, _ = client.Evaluate(fmt.Sprintf("flag_%03d", i), nil)
+	}
+	finishUsage(t, client, nextUsage(t, calls), 204)
+	usageDue(client)
+	_, _ = client.Evaluate("flag_000", nil)
+	call := nextUsage(t, calls)
+	if len(call.flags) != 128 {
+		t.Fatal(call.flags)
+	}
+	finishUsage(t, client, call, 204)
+	_, _ = client.Evaluate("flag_000", nil)
+	call = nextUsage(t, calls)
+	if len(call.flags) != 45 || call.flags[0] != "flag_256" {
+		t.Fatal("overdue tail waited for another interval", call.flags)
 	}
 	finishUsage(t, client, call, 204)
 }
@@ -188,6 +216,7 @@ func TestUsageFailureBackoffAndSnapshotPruning(t *testing.T) {
 		_, _ = client.Evaluate(fmt.Sprintf("flag_%03d", i), nil)
 	}
 	call := nextUsage(t, calls)
+	failed := call.flags
 	finishUsage(t, client, call, 500)
 	_, _ = client.Evaluate("flag_000", nil)
 	if len(calls) != 0 || client.LastRefreshError() != nil {
@@ -196,8 +225,8 @@ func TestUsageFailureBackoffAndSnapshotPruning(t *testing.T) {
 	usageDue(client)
 	_, _ = client.Evaluate("flag_000", nil)
 	call = nextUsage(t, calls)
-	if call.flags[0] != "flag_128" {
-		t.Fatal("retry overtook older queued flags", call.flags)
+	if !reflect.DeepEqual(call.flags, failed) {
+		t.Fatal("retry lost the original observation order", call.flags)
 	}
 	policy.Store(usagePolicy(1))
 	if _, err := client.Refresh(context.Background()); err != nil {

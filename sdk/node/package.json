@@ -3,6 +3,13 @@
   "version": "0.1.0-alpha.1",
   "private": true,
   "description": "Local feature flag evaluation with a shared Rust core",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ByteBaker/partly.git",
+    "directory": "sdk/node"
+  },
+  "homepage": "https://github.com/ByteBaker/partly/blob/main/sdk/node/README.md",
+  "bugs": "https://github.com/ByteBaker/partly/issues",
   "license": "Apache-2.0",
   "main": "index.js",
   "types": "index.d.ts",

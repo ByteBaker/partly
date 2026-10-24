@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 
 use reqwest::{header::HeaderMap, Client, Method, Response};
+use rustls::pki_types::{pem::PemObject, CertificateDer};
 use serde_json::{json, Value};
 use std::{
     fs::{self, File},
@@ -522,7 +523,7 @@ pub async fn connection(server: &Server) -> Result<Box<dyn Stream>> {
     if let Some(ca) = &server.ca {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let mut roots = rustls::RootCertStore::empty();
-        for cert in rustls_pemfile::certs(&mut &fs::read(ca)?[..]) {
+        for cert in CertificateDer::pem_slice_iter(&fs::read(ca)?) {
             roots.add(cert?)?;
         }
         let config = rustls::ClientConfig::builder()

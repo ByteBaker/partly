@@ -18,7 +18,7 @@ partly-core = { path = "third_party/partly-core-0.1.0-alpha.1" }
 
 The archives build without this checkout. For development inside the repository, use `sdk/rust` as the dependency path.
 
-Use the [complete OpenFeature quickstart](../../examples/rust/quickstart.rs) for connection settings, provider registration, two requests sharing one initialized client, error handling, and shutdown. Handlers only evaluate locally. See [context mapping and upstream Rust limitations](../../docs/openfeature.md#rust).
+Use the [complete OpenFeature quickstart](https://github.com/ByteBaker/partly/blob/main/examples/rust/quickstart.rs) for connection settings, provider registration, two requests sharing one initialized client, error handling, and shutdown. Handlers only evaluate locally. See [context mapping and upstream Rust limitations](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#rust).
 
 ## Native client reference
 
@@ -33,7 +33,7 @@ Builder `poll_interval(Duration)` defaults to 30 seconds and `timeout(Duration)`
 
 HTTPS verifies certificates and hostnames using bundled public roots. `ca_bundle(path)` replaces them with private PEM roots, loaded during initialization. Redirects and environment proxies are disabled. Errors omit request credentials and response bodies.
 
-Context is a flat map of strings, numbers, and booleans. See [shared evaluation rules](../../crates/partly-core/README.md) for types, operators, and stable percentage selection.
+Context is a flat map of strings, numbers, and booleans. See [shared evaluation rules](https://github.com/ByteBaker/partly/blob/main/crates/partly-core/README.md) for types, operators, and stable percentage selection.
 
 ```sh
 cargo test -p partly-rust
@@ -52,7 +52,7 @@ A confirmed revoked-key response clears policy and ETag, stops polling, and make
 
 Enable the `openfeature` Cargo feature to use `partly::openfeature::PartlyProvider` with the official `open-feature` crate. Initialize an `Arc<Client>` once before registering the provider. Registration makes no network requests; evaluations use the same local policy.
 
-The upstream Rust SDK returns `Result` instead of accepting caller defaults. It also lacks provider events and a dedicated fatal-error code, so full specification conformance is not claimed. Keep the native client for refresh and close it at shutdown. See the [integration guide](../../docs/openfeature.md#rust) and [tested compatibility](../../docs/openfeature.md#coverage-and-limits).
+The upstream Rust SDK returns `Result` instead of accepting caller defaults. It also lacks provider events and a dedicated fatal-error code, so full specification conformance is not claimed. Keep the native client for refresh and close it at shutdown. See the [integration guide](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#rust) and [tested compatibility](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#coverage-and-limits).
 
 ## Flag usage reporting
 

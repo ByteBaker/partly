@@ -1,8 +1,8 @@
 # Publishing Partly
 
-Partly uses one release version for the server and every SDK. The current release is **0.1.0-alpha.1**. An alpha is a public, installable prerelease that can still change; it is not a private preview or a separate package name.
+Partly uses one release version for the server and every SDK. The current candidate is **0.1.0-alpha.1**. Public downloads and registry packages are not available yet.
 
-| Component | Published version | Destination |
+| Component | Release version | Destination |
 | --- | --- | --- |
 | Server | `0.1.0-alpha.1`, Git tag `v0.1.0-alpha.1` | Repository release downloads |
 | Python `partly-sdk` | `0.1.0a1` | PyPI |
@@ -23,7 +23,7 @@ Use `Cargo.toml` → `[workspace.package].version` as the source. For the next a
 
 All product Rust crates inherit the workspace version. Maturin derives the Python version from its Rust crate; do not add a second version to `pyproject.toml`. Go modules do not declare their own version in `go.mod`; their release tag supplies it. The private contract-test binary's `0.0.0` is not a product release.
 
-Run `cargo check --workspace` to refresh the workspace entries in `Cargo.lock`, review the diff, then `python -m pytest -q tests/test_release_versions.py`. The default CI suite also runs these checks. Packaging refuses mismatched Node metadata.
+Run `cargo check --workspace` to refresh the workspace entries in `Cargo.lock`, review the diff, then `python -m pytest -q tests/test_release_versions.py`. CI also checks version consistency. Packaging refuses mismatched Node metadata.
 
 Release every component from the same verified commit, including an SDK-only fix. Advance the alpha counter for published fixes; do not overwrite published artifacts or move release tags. A typical sequence is `alpha.1` → `alpha.2` → `beta.1` → `rc.1` → `0.1.0`. Python uses `a1`, `a2`, `b1`, and `rc1` for those stages.
 

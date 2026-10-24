@@ -28,7 +28,9 @@ openfeature = ["openfeature-sdk>=0.10,<0.11"]
 
 [project.urls]
 Homepage = "https://partly.sh"
-Documentation = "https://partly.sh/docs"
+Documentation = "https://github.com/ByteBaker/partly/blob/main/sdk/python/README.md"
+Source = "https://github.com/ByteBaker/partly"
+Issues = "https://github.com/ByteBaker/partly/issues"
 Download = "https://partly.sh/install"
 
 [tool.maturin]

@@ -1,6 +1,6 @@
 # Partly Go SDK
 
-Go handles HTTP and polling; a statically linked Rust library evaluates policies. Call `Init` once during application startup, then keep the client in application state and reuse it across handlers and goroutines. Request handlers use the official OpenFeature client for local checks; call `Close` at application shutdown. See the [complete quickstart](../../examples/go/main.go).
+Go handles HTTP and polling; a statically linked Rust library evaluates policies. Call `Init` once during application startup, then keep the client in application state and reuse it across handlers and goroutines. Request handlers use the official OpenFeature client for local checks; call `Close` at application shutdown. See the [complete quickstart](https://github.com/ByteBaker/partly/blob/main/examples/go/main.go).
 
 ## Use a release archive
 
@@ -29,7 +29,7 @@ cd examples/go
 go run -a .
 ```
 
-First replace the URL and API Key in [the example](../../examples/go/main.go). Its `go.mod` replaces both the native SDK and provider modules locally. `partly.sh/sdk/go` is a local module identifier; public module hosting is not configured.
+First replace the URL, environment, application ID, and API Key in [the example](https://github.com/ByteBaker/partly/blob/main/examples/go/main.go). Its `go.mod` replaces both the native SDK and provider modules locally. `partly.sh/sdk/go` is a local module identifier; public module hosting is not configured.
 
 The build copies the Rust library into `sdk/go/native/<os>_<arch>/`. Build it for the same machine as the Go application. After replacing the native library, use `go build -a`, `go run -a`, or `go test -a`: Go's cache does not track changes to this archive.
 
@@ -51,7 +51,7 @@ Defaults: polling every 30 seconds, 5-second whole-download timeout, 1 MiB polic
 
 Use `errors.Is(err, partly.ErrFlagNotFound)` or the other exported `Err*` values. `ErrContextType` also matches `ErrInvalidContext`. Use `errors.As` with `*partly.Error` for `FlagKey`, `K`, `Op`, `ExpectedType`, and `ActualType`. Errors never choose a fallback decision.
 
-Context accepts strings, booleans, standard integer and float types, and `json.Number`. Use integers or `json.Number` to preserve exact large values. Floats must be finite; pointers, structs, custom marshalers, and nested values are rejected. See [shared rules](../../crates/partly-core/README.md).
+Context accepts strings, booleans, standard integer and float types, and `json.Number`. Use integers or `json.Number` to preserve exact large values. Floats must be finite; pointers, structs, custom marshalers, and nested values are rejected. See [shared rules](https://github.com/ByteBaker/partly/blob/main/crates/partly-core/README.md).
 
 Ordinary failed refreshes preserve the accepted policy and ETag. Closed clients can still evaluate that policy, but cannot reconnect. Native snapshots are released when no Go references remain.
 
@@ -72,7 +72,7 @@ A confirmed revoked-key response clears policy and ETag, stops polling, and make
 
 The optional `partly.sh/sdk/go/openfeature` module requires Go 1.26+; the native SDK still supports Go 1.22+. Initialize the native client once, then register `openfeature.New(client)` with the official OpenFeature SDK. Registration makes no network requests; evaluations use the same local policy.
 
-OpenFeature returns your fallback together with an error when evaluation fails. Keep the native client for refresh and close it at shutdown. See the [integration guide](../../docs/openfeature.md#go) and [tested compatibility](../../docs/openfeature.md#coverage-and-limits).
+OpenFeature returns your fallback together with an error when evaluation fails. Keep the native client for refresh and close it at shutdown. See the [integration guide](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#go) and [tested compatibility](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#coverage-and-limits).
 
 ## Flag usage reporting
 

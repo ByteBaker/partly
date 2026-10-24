@@ -139,7 +139,7 @@ Run `python -m twine check --strict` on the wheel and source archive. Verify dow
 
 1. Verify packaged licenses, dependency terms, and contributor rights against [licensing boundaries](licensing.md).
 2. Use [ByteBaker/partly](https://github.com/ByteBaker/partly) as the source repository and confirm ownership of `partly-sdk` on PyPI.
-3. Deploy `https://partly.sh/install` and `https://partly.sh/docs`, or replace these placeholder metadata links.
+3. Deploy `https://partly.sh` and `https://partly.sh/install`, or replace these remaining placeholder metadata links.
 4. Pass **Release artifacts** on the final commit, resolve advisories, and test the downloaded artifacts.
 5. Configure PyPI Trusted Publishing or a scoped credential outside source control.
 6. Publish approved archives, wheels, source, checksums, and release notes. Link the [backup and upgrade procedure](../crates/partly-server/README.md#backup-restore-and-upgrades).

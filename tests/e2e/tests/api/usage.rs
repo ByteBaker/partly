@@ -315,6 +315,54 @@ async fn usage_validates_reports_and_dashboard_permissions() -> Result {
 }
 
 #[tokio::test]
+async fn malformed_and_oversized_usage_bodies_do_not_write() -> Result {
+    let (server, admin) = fixture().await?;
+    admin
+        .flag("development", "known", json!({"mode":"enabled"}))
+        .await?;
+    let app = admin.app("development", "Checkout", &["known"]).await?;
+    let key = app_key(&app, "development");
+    let sdk = server.api(false)?;
+    let audits = admin.get("/api/environments/development/audits").await?;
+    for (body, content_type, expected) in [
+        ("{".to_string(), Some("application/json"), 400),
+        ("[]".to_string(), Some("application/json"), 400),
+        (r#"{"flags":{}}"#.to_string(), Some("application/json"), 400),
+        (
+            r#"{"flags":["known"]}"#.to_string(),
+            Some("text/plain"),
+            400,
+        ),
+        (r#"{"flags":["known"]}"#.to_string(), None, 400),
+        (
+            json!({"flags":["x".repeat(16 * 1024)]}).to_string(),
+            Some("application/json"),
+            413,
+        ),
+    ] {
+        let mut request = sdk
+            .request(Method::POST, "/api/usage")
+            .headers(policy_headers(&key))
+            .body(body);
+        if let Some(content_type) = content_type {
+            request = request.header("Content-Type", content_type);
+        }
+        let response = request.send().await?;
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert!(status(response, expected).await?["error"].is_string());
+    }
+    assert_eq!(
+        admin.get("/api/environments/development/usage").await?["usage"],
+        json!([])
+    );
+    assert_eq!(
+        admin.get("/api/environments/development/audits").await?,
+        audits
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn usage_writes_are_atomic_and_foreign_keys_enforce_scope() -> Result {
     let (server, admin) = fixture().await?;
     for env in ["development", "production"] {

@@ -59,7 +59,8 @@ func (u *usageState) take() []string {
 	copy(u.queue, u.queue[n:])
 	clear(u.queue[len(u.queue)-n:])
 	u.queue = u.queue[:len(u.queue)-n]
-	u.last, u.due = time.Now(), len(u.queue) > 0
+	u.due = len(u.queue) > 0 && (u.due || time.Since(u.last) >= usageInterval)
+	u.last = time.Now()
 	return batch
 }
 
@@ -115,7 +116,9 @@ func (c *Client) reportUsage(ctx context.Context, batch []string) bool {
 		// Cool down from completion, even when a full batch is waiting.
 		c.usage.last = time.Now()
 		if !c.closed && c.policy != nil {
-			for _, flag := range batch {
+			pending := c.usage.queue
+			c.usage.queue, c.usage.set = nil, nil
+			for _, flag := range append(batch, pending...) {
 				if c.policy.hasFlag(flag) {
 					c.usage.add(flag)
 				}

@@ -196,7 +196,7 @@ Used by:
 Apache License 2.0 (Apache-2.0)
 
 Used by:
-  partly-core 0.1.0-alpha.1
+  partly-core 0.1.0-alpha.1 — https://github.com/ByteBaker/partly
 
 
                                  Apache License
@@ -3319,7 +3319,7 @@ THE SOFTWARE.
 MIT License (MIT)
 
 Used by:
-  ctutils 0.4.3 — https://github.com/RustCrypto/utils
+  ctutils 0.4.4 — https://github.com/RustCrypto/utils
 
 Copyright (c) 2025-2026 The RustCrypto Project Developers
 

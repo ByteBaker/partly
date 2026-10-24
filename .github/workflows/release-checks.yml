@@ -80,6 +80,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
       - name: Check dependency notices
+        shell: bash
         run: |
           cargo install cargo-about --version 0.9.2 --locked
           cargo fetch --locked

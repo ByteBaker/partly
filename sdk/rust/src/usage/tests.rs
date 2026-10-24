@@ -226,7 +226,7 @@ async fn lazy_known_failures_deduplicate_and_off_thread_evaluation_reports() {
 }
 
 #[tokio::test]
-async fn bounded_single_flight_fifo_and_overdue_tail() {
+async fn bounded_single_flight_fifo_and_fresh_tail() {
     let mut server = client(300).await;
     for i in 0..300 {
         server
@@ -250,10 +250,47 @@ async fn bounded_single_flight_fifo_and_overdue_tail() {
     assert_eq!(report.flags[0], "flag_128");
     server.finish(report, 204).await;
     server.client.evaluate("flag_000", &Context::new()).unwrap();
+    assert!(server
+        .client
+        .inner
+        .usage
+        .lock()
+        .unwrap()
+        .task
+        .as_ref()
+        .unwrap()
+        .is_finished());
+    assert!(server.reports.try_recv().is_err());
+    server.due();
+    server.client.evaluate("flag_000", &Context::new()).unwrap();
     let report = server.next().await;
     assert_eq!(report.flags.len(), 45);
     assert_eq!(report.flags[0], "flag_256");
     assert_eq!(report.flags[44], "flag_000");
+    server.finish(report, 204).await;
+    server.client.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn overdue_partial_tail_does_not_wait_another_interval() {
+    let mut server = client(300).await;
+    for i in 0..300 {
+        server
+            .client
+            .evaluate(&format!("flag_{i:03}"), &Context::new())
+            .unwrap();
+    }
+    let report = server.next().await;
+    server.finish(report, 204).await;
+    server.due();
+    server.client.evaluate("flag_000", &Context::new()).unwrap();
+    let report = server.next().await;
+    assert_eq!(report.flags.len(), 128);
+    server.finish(report, 204).await;
+    server.client.evaluate("flag_000", &Context::new()).unwrap();
+    let report = server.next().await;
+    assert_eq!(report.flags.len(), 45);
+    assert_eq!(report.flags[0], "flag_256");
     server.finish(report, 204).await;
     server.client.close().await.unwrap();
 }
@@ -268,6 +305,7 @@ async fn failure_backs_off_and_prunes_names_after_refresh() {
             .unwrap();
     }
     let report = server.next().await;
+    let failed = report.flags.clone();
     server.finish(report, 500).await;
     server.client.evaluate("flag_000", &Context::new()).unwrap();
     assert!(server.reports.try_recv().is_err());
@@ -275,7 +313,7 @@ async fn failure_backs_off_and_prunes_names_after_refresh() {
     server.due();
     server.client.evaluate("flag_000", &Context::new()).unwrap();
     let report = server.next().await;
-    assert_eq!(report.flags[0], "flag_128");
+    assert_eq!(report.flags, failed);
     *server.policy.write().unwrap() = policy(1);
     server.client.refresh().await.unwrap();
     server.finish(report, 500).await;

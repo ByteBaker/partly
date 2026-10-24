@@ -10,7 +10,7 @@ The Linux archive requires glibc 2.34 or newer. It does not run on Alpine.
 
 ## Build from source
 
-Requires Rust and a C compiler:
+Requires Rust and a C compiler. From the repository root:
 
 ```sh
 npm ci --ignore-scripts
@@ -18,7 +18,7 @@ node sdk/node/build.js
 node examples/node/quickstart.js
 ```
 
-Replace the constants in [the example](../../examples/node/quickstart.js) first. It imports `partly-sdk`; `npm ci` links the local workspace package. The package remains private until registry publication.
+Replace the constants in [the example](https://github.com/ByteBaker/partly/blob/main/examples/node/quickstart.js) first. It imports `partly-sdk`; `npm ci` links the local workspace package. The package remains private until registry publication.
 
 The build creates `sdk/node/native/<platform>-<arch>/partly.node`. Native SDK use has no npm runtime dependencies; the optional OpenFeature adapter uses the official server SDK.
 
@@ -39,7 +39,7 @@ Defaults: 30-second polling, 5-second whole-download timeout, 1 MiB policies. Bu
 
 HTTPS verifies certificates and hostnames using Node's bundled public roots. `caBundle(path)` replaces those roots with a private PEM bundle. Redirects and environment proxies are disabled. Policy parsing runs on a native worker, outside the event loop.
 
-Context must be a flat object of strings, finite numbers, and booleans. Integer context values must be safe JavaScript integers (±9,007,199,254,740,991). BigInt, null, nested objects, and arrays are rejected. Policy numbers retain their original precision in Rust. See [shared rules](../../crates/partly-core/README.md).
+Context must be a flat object of strings, finite numbers, and booleans. Integer context values must be safe JavaScript integers (±9,007,199,254,740,991). BigInt, null, nested objects, and arrays are rejected. Policy numbers retain their original precision in Rust. See [shared rules](https://github.com/ByteBaker/partly/blob/main/crates/partly-core/README.md).
 
 Ordinary failed refreshes keep the policy and ETag. Local evaluation still works after close, but network calls then fail. Initialization can be retried after a failure.
 
@@ -68,4 +68,4 @@ A confirmed revoked-key response clears policy and ETag, stops polling, and make
 
 Install the optional peer `@openfeature/server-sdk` and import `PartlyProvider` from `partly-sdk/openfeature`. Initialize the native client once before registering the provider. Registration makes no network requests; evaluations use the same local policy.
 
-OpenFeature returns your fallback on errors. Use detailed getters to inspect `errorCode` before accepting that value. Keep the native client for refresh and close it at shutdown. See the [integration guide](../../docs/openfeature.md#nodejs--typescript) and [tested compatibility](../../docs/openfeature.md#coverage-and-limits).
+OpenFeature returns your fallback on errors. Use detailed getters to inspect `errorCode` before accepting that value. Keep the native client for refresh and close it at shutdown. See the [integration guide](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#nodejs--typescript) and [tested compatibility](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#coverage-and-limits).

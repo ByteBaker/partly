@@ -50,15 +50,15 @@ Self-hosted capabilities, reviewed October 2026. Linked sources describe each to
 | Standalone server binary | ✅ | ✅ | ✅ | ❌ | ❌ |
 | Self-hosted central service | ✅ | ✅ | ✅ (relay) | ✅ | ✅ |
 | One service for multiple apps | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Separate app/project flag collections | ✅ | ✅ [Namespaces](https://docs.flipt.io/v2/concepts#namespaces) | ✅ [Flag sets](https://gofeatureflag.org/docs/concepts/flagset) | ✅ [Projects (Enterprise)](https://docs.getunleash.io/concepts/projects) | ✅ [Projects](https://docs.flagsmith.com/flagsmith-concepts/data-model) |
+| Flag grouping | App selections from shared environment flags | [Namespaces](https://docs.flipt.io/v2/concepts#namespaces) | [Independent flag sets](https://gofeatureflag.org/docs/concepts/flagset) | [Projects: one in OSS; multiple in Enterprise](https://docs.getunleash.io/concepts/projects) | [Projects](https://docs.flagsmith.com/flagsmith-concepts/data-model) |
 | Boolean flags | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Percentage rollouts | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Context-based targeting | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Audit logs for flag changes | ✅ | ✅ [Git history](https://docs.flipt.io/v2/introduction#git-native) | ❌ (external history) | ✅ [Basic; advanced in Enterprise](https://docs.getunleash.io/support/oss-comparison#governance-and-security) | ✅ [Audit logs](https://www.flagsmith.com/role-based-access-change-control-security) |
+| Flag change history | ✅ Audit log | ✅ [Git history](https://docs.flipt.io/v2/introduction#git-native) | Configuration store history / [notifiers](https://gofeatureflag.org/docs/concepts/notifier) | ✅ [Basic; advanced in Enterprise](https://docs.getunleash.io/support/oss-comparison#governance-and-security) | ✅ [Audit logs](https://www.flagsmith.com/role-based-access-change-control-security) |
 | Non-boolean flag values | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Local backend evaluation | ✅ | ✅ | ✅ (by provider) | ✅ | ✅ (opt-in) |
 
-GO Feature Flag relies on the configuration store's history or [change notifications](https://gofeatureflag.org/docs/concepts/notifier) sent to an external system for a retained audit trail.
+GO Feature Flag can send change notifications to logs or other systems; retaining that history depends on the configured destination or configuration store.
 
 Deployment details: [Flipt](https://docs.flipt.io/v2/introduction), [GO Feature Flag](https://gofeatureflag.org/docs/concepts/architecture), [Unleash](https://docs.getunleash.io/deploy/configuring-unleash), [Flagsmith](https://docs.flagsmith.com/deployment-self-hosting/hosting-guides/manual-installation).
 
@@ -95,31 +95,31 @@ SDK availability is separate from the server's implementation language:
 | SDK | **Partly** | [Flipt](https://github.com/flipt-io/flipt-client-sdks#language-support) | [GO Feature Flag](https://gofeatureflag.org/docs/sdk) | [Unleash](https://docs.getunleash.io/sdks) | [Flagsmith](https://docs.flagsmith.com/integrating-with-flagsmith/sdks/server-side) |
 | --- | --- | --- | --- | --- | --- |
 | Python | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Rust | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Rust | ✅ | ✅ Remote | ✅ [OFREP, remote](https://gofeatureflag.org/docs/sdk/server_providers/openfeature_rust) | ✅ | ✅ |
 | Go | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Node.js / TypeScript | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Java | ❌ | ✅ | ✅ | ✅ | ✅ |
 | .NET | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Ruby | ❌ | ✅ | ✅ | ✅ | ✅ |
-| PHP | ❌ | ✅ | ✅ | ✅ | ✅ |
+| PHP | ❌ | ✅ Remote | ✅ | ✅ | ✅ |
 | Browser JavaScript | ❌ | ✅ | ✅ | ✅ | ✅ |
 | iOS / Swift | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Android / Kotlin | ❌ | ✅ | ✅ | ✅ | ✅ |
 
-GO Feature Flag uses OpenFeature providers or its Go library. Flipt's [Rust and PHP SDKs](https://github.com/flipt-io/flipt-server-sdks#language-support) evaluate remotely. Flagsmith also lists its [browser and mobile SDKs](https://docs.flagsmith.com/integrating-with-flagsmith/sdks#client-side-sdks). SDK availability does not imply local evaluation in every language or runtime.
+GO Feature Flag uses OpenFeature providers or its Go library; Rust uses OpenFeature's remote evaluation protocol (OFREP). Flipt's [Rust and PHP SDKs](https://github.com/flipt-io/flipt-server-sdks#language-support) also evaluate remotely. Flagsmith lists its [browser and mobile SDKs](https://docs.flagsmith.com/integrating-with-flagsmith/sdks#client-side-sdks). Check each SDK's evaluation mode before choosing it.
 
 ### Memory
 
 | Memory | **Partly** | [Flipt](https://github.com/flipt-io/helm-charts/blob/main/charts/flipt-v2/values.yaml) | [GO Feature Flag](https://github.com/thomaspoignant/go-feature-flag/blob/main/cmd/relayproxy/helm-charts/relay-proxy/values.yaml) | [Unleash](https://docs.getunleash.io/deploy/configuring-unleash#resource-recommendations) | [Flagsmith](https://docs.flagsmith.com/deployment-self-hosting/scaling-and-performance/sizing-and-scaling#small) |
 | --- | --- | --- | --- | --- | --- |
-| Server RAM | ~25.5 MiB measured | Not specified | 128 MiB requested by Helm chart | 512 MiB–1 GiB recommended | 2 × 2 GB API workers recommended |
-| Additional services | SQLite included | None required | None required | ≥1 GiB for PostgreSQL | 8 GB database + 2 GB task worker; frontend and load balancer also needed |
+| Server RAM | ~26.2 MiB measured | Not specified | 128 MiB requested by Helm chart | 512 MiB–1 GiB recommended | 2 × 2 GB API workers recommended |
+| Other RAM in the cited setup | SQLite included | None required | None required | ≥1 GiB for PostgreSQL recommended | 8 GB database + 2 GB task worker recommended |
 
-Flipt leaves resource settings unset; its commented 128 MiB example is not a recommendation. GO Feature Flag's figure is a Kubernetes reservation, not a usage limit. Unleash gives a starting recommendation; Flagsmith's figures describe its Small production tier.
+Flipt leaves resource settings unset; its commented 128 MiB example is not a recommendation. GO Feature Flag's figure is a Kubernetes reservation, not measured use. Unleash gives a starting recommendation; Flagsmith describes its Small production tier, including a load balancer. Flagsmith can [bundle the dashboard and API](https://github.com/Flagsmith/flagsmith/blob/main/Dockerfile), and its separate [task worker is optional](https://docs.flagsmith.com/deployment-self-hosting/scaling-and-performance/asynchronous-task-processor).
 
-Partly's figure is an earlier baseline of sampled server memory in a one-flag local test, excluding the application SDK and browser. A production RAM recommendation still needs load testing. These figures use different workloads and deployment sizes, so they do not establish a memory ranking.
+Partly's figure is sampled server memory after setup in the [local benchmark](tests/benchmark.py), run on October 24, 2026 with one flag and no application load. It excludes the application SDK and browser. A production RAM recommendation still needs load testing. These figures use different workloads and deployment sizes, so they do not establish a memory ranking.
 
-A current run of the [local benchmark](tests/benchmark.py) measured about **0.50 µs per native Python SDK evaluation**, including the Rust binding and usage tracking: five batches of 100,000 calls with one percentage flag and a fixed user. This excludes OpenFeature and report dispatch. It is a batch average, not tail latency or a cross-product speed comparison.
+The same run measured about **0.57 µs per native Python SDK evaluation**, including the Rust binding and usage tracking: the median of five batches of 100,000 calls with one 50% flag and a fixed user ID. This excludes OpenFeature and report dispatch. It measures batch averages, not tail latency or a cross-product speed comparison.
 
 ## Roadmap
 

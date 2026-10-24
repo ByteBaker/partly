@@ -142,6 +142,65 @@ async fn environment_permissions_are_enforced_on_every_api() -> Result {
 }
 
 #[tokio::test]
+async fn unchanged_user_saves_preserve_sessions_and_audits() -> Result {
+    let (server, admin) = fixture().await?;
+    let initial = admin.get("/api/users").await?["users"][0].clone();
+    let user = admin
+        .user("teammate", json!({"development":"viewer"}), false)
+        .await?;
+    let first = server.login("teammate", PASSWORD).await?;
+    let second = server.login("teammate", PASSWORD).await?;
+    let mut audits = vec![];
+    for env in ["development", "production"] {
+        audits.push(
+            admin
+                .get(&format!("/api/environments/{env}/audits"))
+                .await?,
+        );
+    }
+    for account in [&user, &initial] {
+        assert_eq!(admin.update_user(account, json!({}), 200).await?, *account);
+    }
+    for client in [&first, &second, &admin] {
+        client.get("/api/environments").await?;
+    }
+    for (env, before) in ["development", "production"].iter().zip(&audits) {
+        assert_eq!(
+            admin
+                .get(&format!("/api/environments/{env}/audits"))
+                .await?,
+            *before
+        );
+    }
+
+    // Supplying even the same password is an intentional reset, not an unchanged save.
+    admin
+        .update_user(&user, json!({"password":PASSWORD}), 200)
+        .await?;
+    for client in [&first, &second] {
+        status(
+            client
+                .request(Method::GET, "/api/environments")
+                .send()
+                .await?,
+            401,
+        )
+        .await?;
+    }
+    for (env, before) in ["development", "production"].iter().zip(&audits) {
+        let entries = admin
+            .get(&format!("/api/environments/{env}/audits"))
+            .await?;
+        assert_eq!(
+            entries["audits"].as_array().unwrap().len(),
+            before["audits"].as_array().unwrap().len() + 1
+        );
+        assert_eq!(entries["audits"][0]["details"]["password_changed"], true);
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn permission_password_and_account_changes_end_sessions() -> Result {
     let (mut server, admin) = fixture().await?;
     let user = admin

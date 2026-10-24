@@ -4,6 +4,7 @@
 import asyncio
 import copy
 import json
+import logging
 import shutil
 import ssl
 import threading
@@ -53,6 +54,42 @@ async def test_invalid_refresh_keeps_policy_and_etag():
         assert tags == [None, '"good"', '"good"']
         assert client._etag == '"good"'
         assert isinstance(client.last_refresh_error, InvalidPolicyError)
+    finally:
+        await client.aclose()
+
+
+async def test_invalid_policy_values_are_redacted_from_errors_and_polling_logs(caplog, monkeypatch):
+    rejected = copy.deepcopy(POLICY)
+    rejected["flags"]["checkout"] = {"mode": "private-response-value"}
+    bad = False
+    tags = []
+    logged = asyncio.Event()
+    warning = logging.getLogger("partly").warning
+
+    def capture_warning(*args):
+        warning(*args)
+        logged.set()
+
+    monkeypatch.setattr("partly.client.logger.warning", capture_warning)
+
+    def handler(request):
+        tags.append(request.headers.get("if-none-match"))
+        return httpx.Response(200, headers={"etag": '"bad"' if bad else '"good"'}, json=rejected if bad else POLICY)
+
+    client = mocked(handler, interval=0.01)
+    try:
+        await client.init()
+        snapshot = client._snapshot
+        bad = True
+        with pytest.raises(InvalidPolicyError) as caught:
+            await client.refresh()
+        assert "private-response-value" not in str(caught.value)
+        await asyncio.wait_for(logged.wait(), 1)
+        assert "private-response-value" not in caplog.text
+        assert isinstance(client.last_refresh_error, InvalidPolicyError)
+        assert client._snapshot is snapshot and client._etag == '"good"'
+        assert tags[0] is None and all(tag == '"good"' for tag in tags[1:])
+        assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
     finally:
         await client.aclose()
 
@@ -355,6 +392,25 @@ async def test_streaming_body_timeout_closes_response_and_keeps_policy():
         assert client._snapshot is snapshot and client._etag == '"good"'
         assert client.last_refresh_error is caught.value
         assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
+    finally:
+        await client.aclose()
+
+
+async def test_optional_context_is_empty_without_accepting_other_non_dictionaries():
+    policy = {**POLICY, "flags": {**POLICY["flags"], "on": {"mode": "enabled"}, "off": {"mode": "disabled"}}}
+    client = mocked(lambda r: httpx.Response(200, headers={"etag": '"one"'}, json=policy))
+    try:
+        await client.init()
+        for flag, decision in [("on", Decision.ENABLED), ("off", Decision.DISABLED)]:
+            assert client.evaluate(flag) is decision
+            assert client.evaluate(flag, context=None) is decision
+        with pytest.raises(InvalidContextError):
+            client.evaluate("checkout")
+        for context in ([], "", False, 0):
+            with pytest.raises(InvalidContextError):
+                client.evaluate("on", context=context)
+        with pytest.raises(FlagNotFoundError):
+            client.evaluate("absent")
     finally:
         await client.aclose()
 
