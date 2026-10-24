@@ -21,7 +21,7 @@ Python support and CI target regular CPython 3.14 only, using version-specific `
 
 The prebuilt Linux Node.js addon requires glibc 2.34+. Go consumers need cgo and a C compiler. Neither prebuilt package requires a Rust toolchain.
 
-The Rust E2E suite covers the API, SDKs, recovery, and dashboard. All 27 dashboard tests passed locally in Chromium, Firefox, and WebKit, including audits, modal confirmations, and served examples. Safari releases and physical mobile devices remain untested.
+The Rust E2E suite covers the API, SDKs, recovery, and dashboard. All 29 dashboard tests passed locally in Chromium, Firefox, and WebKit, including usage reporting, audits, modal confirmations, and served examples. Safari releases and physical mobile devices remain untested.
 
 Earlier candidates passed Rust, Python, Go race, Node.js, packaging, and HTTPS smoke tests on macOS. Minimum-version checks covered Rust 1.89, Go 1.22.12, and Node.js 22.0.0. Linux checks ran under QEMU with compiler workarounds; Chromium and Go vet could not complete there. Native Linux CI must verify the current source and artifacts.
 
@@ -74,6 +74,7 @@ Build standalone SDK packages and run the same contracts outside the checkout (P
 python scripts/package_sdks.py --output target/sdk-packages
 PARTLY_SDK_PACKAGES="$PWD/target/sdk-packages" cargo test --locked -p partly-e2e --test e2e sdk::contract:: -- --test-threads=4
 PARTLY_SDK_PACKAGES="$PWD/target/sdk-packages" cargo test --locked -p partly-e2e --test e2e sdk::examples:: -- --test-threads=4
+PARTLY_SDK_PACKAGES="$PWD/target/sdk-packages" cargo test --locked -p partly-e2e --test e2e sdk::usage:: -- --test-threads=4
 ```
 
 The output contains two Rust `.crate` files, a Go archive with its static library and optional provider module, and a Node npm tarball with its native extension and provider. Rust packaging verifies all features in a fresh temporary registry to avoid reusing an older unpublished alpha at the same version. Go and Node archives target the build machine; build both macOS ARM64 and Linux x86_64. Consumers do not need Rust for those prebuilt archives. During development only, `--allow-dirty` tests uncommitted packaging changes. Publishing to registries remains a separate step.

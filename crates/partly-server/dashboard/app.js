@@ -24,6 +24,7 @@ const docsExamples = {
   node: { name: 'Node.js', file: 'quickstart.js', url: '/docs/node.js' },
 };
 let availableFlags = [];
+const flagUsage = new Map();
 let keyApplication;
 let appSelection;
 const ops = {
@@ -320,22 +321,49 @@ function updateFlagCount() {
     const empty = node('div', '', 'empty'); empty.append(node('h3', 'No flags in this environment'), node('p', 'Create your first flag to start controlling a rollout.')); $('flags').append(empty);
   }
 }
+function dateTime(value) {
+  const time = node('time', new Date(value).toLocaleString()); time.dateTime = value; return time;
+}
+function usageDetails(key) {
+  const entries = flagUsage.get(key) || [];
+  if (!entries.length) return node('p', 'No usage reported', 'flag-usage usage-empty');
+  const latest = entries.reduce((value, entry) => entry.last_used_at > value ? entry.last_used_at : value, '');
+  const details = node('details', '', 'flag-usage');
+  const summary = node('summary'); summary.append(node('span', 'Last reported use', 'usage-label'), dateTime(latest)); details.append(summary);
+  const table = node('table'); table.setAttribute('aria-label', `Usage for ${key}`); table.setAttribute('role', 'table');
+  const head = node('thead'); const headings = node('tr');
+  head.setAttribute('role', 'rowgroup'); headings.setAttribute('role', 'row');
+  for (const text of ['Application', 'API Key', 'Last reported use']) { const cell = node('th', text); cell.scope = 'col'; headings.append(cell); }
+  head.append(headings); const body = node('tbody'); body.setAttribute('role', 'rowgroup');
+  for (const entry of entries) {
+    const row = node('tr'); row.setAttribute('role', 'row');
+    for (const [title, value] of [['Application', entry.application_name], ['API Key', entry.key_name], ['Last reported use', new Date(entry.last_used_at).toLocaleString()]]) {
+      const cell = node('td'); cell.setAttribute('role', 'cell');
+      const label = node('span', title, 'usage-field-label'); label.setAttribute('aria-hidden', 'true');
+      cell.append(label, node('span', value)); row.append(cell);
+    }
+    body.append(row);
+  }
+  table.append(head, body); details.append(table);
+  return details;
+}
 function flagRow(key, flag) {
   const form = node('form', '', 'flag-row'); form.dataset.key = key;
   const heading = node('div', '', 'flag-heading'); const identity = node('div', '', 'flag-identity');
   const indicator = node('span', 'Unsaved', 'draft-indicator');
-  identity.append(node('code', key, 'flag-name'), indicator);
+  const title = node('h2', '', 'flag-title'); title.id = `flag-title-${++nextId}`; title.append(node('code', key, 'flag-name'));
+  form.setAttribute('aria-labelledby', title.id); identity.append(title, indicator);
   const actions = node('div', '', 'row-actions');
   const save = node('button', 'Save'); save.type = 'submit'; save.setAttribute('aria-label', `Save ${key}`);
   const remove = button('Delete', 'quiet danger', () => {
     action(remove, async () => {
       const confirmation = await confirmFlag(key, true);
       if (!confirmation) return;
-      await api(`/environments/${environment}/flags/${key}`, 'DELETE', undefined, confirmation); untrack(form); form.remove(); updateFlagCount(); showNotice('Deleted', $('flags'));
+      await api(`/environments/${environment}/flags/${key}`, 'DELETE', undefined, confirmation); flagUsage.delete(key); untrack(form); form.remove(); updateFlagCount(); showNotice('Deleted', $('flags'));
     });
   }); remove.setAttribute('aria-label', `Delete ${key}`);
   actions.append(save, remove); heading.append(identity, actions); form.append(heading);
-  const editor = createEditor(flag, key); form.append(editor.area);
+  const editor = createEditor(flag, key); form.append(editor.area, usageDetails(key));
   const error = node('p', '', 'notice error item-error'); error.hidden = true; error.setAttribute('role', 'alert'); form.append(error);
   if (!canEdit) {
     actions.hidden = true; indicator.hidden = true;
@@ -408,9 +436,15 @@ function addKey(key, application) {
   const { id, masked_secret: masked, revoked_at: revoked, created_at: created } = key;
   let { name, secret } = key;
   const row = node('div', '', 'key-row');
+  const metadata = node('dl', '', 'key-metadata');
+  for (const [label, value] of [['Created', created], ...(revoked ? [['Revoked', revoked]] : []), ['Last reported use', key.last_used_at]]) {
+    const property = node('div'); const detail = node('dd');
+    detail.append(value ? dateTime(value) : node('span', 'No usage reported', 'muted'));
+    property.append(node('dt', label), detail); metadata.append(property);
+  }
   if (revoked || !canManage) {
     row.classList.add('revoked-key');
-    row.append(node('strong', name), node('code', masked), node('span', `Created ${new Date(created).toLocaleString()}${revoked ? ` · Revoked ${new Date(revoked).toLocaleString()}` : ""}`, 'small muted'));
+    row.append(node('strong', name), node('code', masked), metadata);
     return row;
   }
   const rename = node('form', '', 'key-name-form');
@@ -448,7 +482,7 @@ function addKey(key, application) {
     });
   });
   const error = node('p', '', 'notice error item-error'); error.hidden = true; error.setAttribute('role', 'alert');
-  controls.append(secretLabel, copy, reveal, revoke); row.append(rename, controls, node('span', `Created ${new Date(created).toLocaleString()}`, 'small muted'), error);
+  controls.append(secretLabel, copy, reveal, revoke); row.append(rename, controls, metadata, error);
   return row;
 }
 
@@ -459,7 +493,8 @@ function appRow(app) {
   const copyId = button('Copy ID', 'quiet', () => action(copyId, async () => { await navigator.clipboard.writeText(app.id); showNotice('Copied', copyId); }));
   copyId.setAttribute('aria-label', 'Copy ID');
   identity.append(copyId); heading.append(title, identity); row.append(heading);
-  const settings = node('details', '', 'app-settings'); settings.append(node('summary', `App settings · ${app.flags.length} selected flags`));
+  const settingsLabel = () => `App settings · ${app.flags.length} selected ${app.flags.length === 1 ? 'flag' : 'flags'}`;
+  const settings = node('details', '', 'app-settings'); settings.append(node('summary', settingsLabel()));
   const form = node('form'); const name = input('name', app.name); name.maxLength = 64; name.setAttribute('aria-label', `Application name for ${app.name}`);
   const selection = flagSelection(app.flags, app.name); const save = node('button', 'Save app', 'primary'); save.type = 'submit'; save.setAttribute('aria-label', 'Save app');
   const error = node('p', '', 'notice error item-error'); error.hidden = true; error.setAttribute('role', 'alert');
@@ -470,7 +505,8 @@ function appRow(app) {
     event.preventDefault(); action(save, async () => {
       const saved = await api(`/environments/${environment}/apps/${app.id}`, 'PUT', { name: name.value, flags: selection.read() });
       app.name = saved.name; application.name = saved.name; app.flags = saved.flags; name.value = saved.name; title.textContent = saved.name; name.setAttribute('aria-label', `Application name for ${saved.name}`);
-      settings.querySelector('summary').textContent = `App settings · ${saved.flags.length} selected flags`;
+      settings.querySelector('summary').textContent = settingsLabel();
+      keys.setAttribute('aria-label', `API Keys for ${saved.name}`);
       markSaved(form); showNotice('Saved', save);
     });
   });
@@ -478,7 +514,8 @@ function appRow(app) {
   const active = node('div', '', 'active-keys'); const revoked = node('details', '', 'revoked-keys'); const summary = node('summary'); revoked.append(summary);
   const application = { ...app, row, heading: keyHeading, active, revoked, updateRevoked: () => { const count = revoked.querySelectorAll('.key-row').length; summary.textContent = `Revoked keys (${count})`; revoked.hidden = count === 0; } };
   const createKey = button('Create key', '', () => openKey(application)); createKey.setAttribute('aria-label', 'Create key');
-  createKey.hidden = !canManage; keyHeading.append(createKey); row.append(keyHeading, active, revoked);
+  createKey.hidden = !canManage; keyHeading.append(createKey);
+  const keys = node('section', '', 'app-keys'); keys.setAttribute('aria-label', `API Keys for ${app.name}`); keys.append(keyHeading, active, revoked); row.append(keys);
   for (const key of app.keys) (key.revoked_at ? revoked : active).append(addKey(key, application));
   application.updateRevoked();
   return row;
@@ -573,6 +610,7 @@ $('user-form').addEventListener('submit', event => {
 
 function auditState(type, value, title) {
   const state = node('div', '', 'audit-state');
+  state.dataset.phase = title.toLowerCase();
   state.append(node('h3', title, 'audit-label'));
   if (type === 'flag') {
     const modes = { enabled: 'Enabled for everyone', disabled: 'Disabled for everyone', percentage: `${value.percentage}% of users`, custom: 'Custom rules' };
@@ -655,7 +693,9 @@ async function setupAudits() {
         const row = node('details', '', 'audit-row'); const summary = node('summary', '', 'audit-summary');
         const time = node('time', new Date(entry.created_at).toLocaleString()); time.dateTime = entry.created_at;
         const item = node('span', '', 'audit-item'); item.append(node('span', { flag: 'Flag', app: 'App', api_key: 'API Key', user: 'User' }[entry.item_type], 'type-pill'), node('span', entry.item_name));
-        summary.append(item, node('span', entry.action[0].toUpperCase() + entry.action.slice(1)), node('span', entry.actor), time);
+        const actor = node('span', '', 'audit-actor'); actor.append(node('span', 'by ', 'audit-by'), node('span', entry.actor));
+        const action = node('span', entry.action[0].toUpperCase() + entry.action.slice(1), 'audit-action'); action.dataset.action = entry.action;
+        summary.append(item, action, actor, time);
         const detail = node('div', '', 'audit-detail');
         detail.append(auditChange(entry));
         if (entry.item_type === 'user' && entry.action === 'updated' && entry.details.password_changed) detail.append(node('p', 'Password reset', 'audit-context'));
@@ -836,7 +876,11 @@ async function boot() {
   }
   $('screen-title').textContent = $(`${currentScreen}-tab`).textContent; document.title = `Partly · ${$('screen-title').textContent} · ${environment}`;
   if (currentScreen === 'flags') {
-    const flags = await api(`/environments/${environment}/flags`);
+    const [flags, result] = await Promise.all([api(`/environments/${environment}/flags`), api(`/environments/${environment}/usage`)]);
+    for (const entry of result.usage) {
+      if (!flagUsage.has(entry.flag_key)) flagUsage.set(entry.flag_key, []);
+      flagUsage.get(entry.flag_key).push(entry);
+    }
     for (const [key, flag] of Object.entries(flags)) $('flags').append(flagRow(key, flag)); updateFlagCount();
   } else if (currentScreen === 'apps') {
     const [flags, result] = await Promise.all([api(`/environments/${environment}/flags`), api(`/environments/${environment}/apps`)]);

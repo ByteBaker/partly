@@ -55,8 +55,21 @@ CREATE TABLE sdk_keys (
     name TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     revoked_at TEXT,
+    UNIQUE (id, application_id),
     CHECK ((revoked_at IS NULL AND secret IS NOT NULL) OR (revoked_at IS NOT NULL AND secret IS NULL))
 );
+CREATE TABLE flag_usage (
+    api_key_id TEXT NOT NULL,
+    application_id TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    flag_key TEXT NOT NULL,
+    last_used_at TEXT NOT NULL,
+    PRIMARY KEY (api_key_id, flag_key),
+    FOREIGN KEY (api_key_id, application_id) REFERENCES sdk_keys(id, application_id) ON DELETE CASCADE,
+    FOREIGN KEY (environment, application_id) REFERENCES applications(environment, id),
+    FOREIGN KEY (environment, flag_key) REFERENCES flags(environment, key) ON DELETE CASCADE
+) WITHOUT ROWID;
+CREATE INDEX flag_usage_environment_flag ON flag_usage(environment, flag_key);
 CREATE TABLE audits (
     id INTEGER PRIMARY KEY,
     environment TEXT NOT NULL REFERENCES environments(name),

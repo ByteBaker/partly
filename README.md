@@ -4,9 +4,11 @@ Partly is a self-hosted feature flag tool: one Rust executable with a dashboard 
 
 Turn features on or off, roll them out by percentage, or match custom rules. The Python, Rust, Go, and Node.js SDKs evaluate flags locally; user context stays in your application.
 
+Manage app-scoped API Keys and environment permissions, review audit changes, and see each flag's last reported use in the dashboard.
+
 **Alpha:** `0.1.0-alpha.1` (Python: `0.1.0a1`). Public downloads are not available yet.
 
-![Partly dashboard showing percentage rollout and custom rules in Development](docs/images/dashboard.png)
+![Partly dashboard with rollout controls, custom rules, and usage reports grouped by flag](docs/images/dashboard.png)
 
 ## Build locally
 
@@ -77,6 +79,15 @@ One instance has Development and Production environments, individual accounts, a
 
 Before changing a flag, review the affected apps and type `environment/flag_name` to confirm. The Audits tab records each account’s changes as readable state transitions. Administrators manage accounts in **Users**; [environment roles](crates/partly-server/README.md#users-and-permissions) separate readers, flag editors, and app/key managers. Organization-wide capacity testing remains future work.
 
+Flags and API Keys show **Last reported use**. SDKs batch checked flag names in the background; contexts and decisions stay local. Reports help find cleanup candidates, but missing activity does not prove a flag is unused. See [usage reporting](crates/partly-server/README.md#usage-reporting).
+
+<details>
+<summary>Preview the audit log</summary>
+
+![Partly audit log showing who changed a flag, before and after states, and affected applications](docs/images/audits.png)
+
+</details>
+
 ### SDKs
 
 SDK availability is separate from the server's implementation language:
@@ -108,19 +119,16 @@ Flipt leaves resource settings unset; its commented 128 MiB example is not a rec
 
 Partly's figure is an earlier baseline of sampled server memory in a one-flag local test, excluding the application SDK and browser. A production RAM recommendation still needs load testing. These figures use different workloads and deployment sizes, so they do not establish a memory ranking.
 
-The same [local benchmark](tests/benchmark.py) measured about **0.32 µs per native Python SDK evaluation**, including the Rust binding and excluding OpenFeature: five batches of 100,000 calls with one percentage flag and a fixed user. This is a batch average, not tail latency or a cross-product speed comparison.
+A current run of the [local benchmark](tests/benchmark.py) measured about **0.50 µs per native Python SDK evaluation**, including the Rust binding and usage tracking: five batches of 100,000 calls with one percentage flag and a fixed user. This excludes OpenFeature and report dispatch. It is a batch average, not tail latency or a cross-product speed comparison.
 
 ## Roadmap
 
-Agreed order, keeping the single executable and local evaluation. OpenFeature providers and RBAC are implemented; remaining work is noted below.
+Keep the current release controls, OpenFeature integrations, permissions, audits, and lightweight usage reporting. Next:
 
-1. **OpenFeature.** Providers now have checks through the official SDKs and real server for context, lifecycle, errors, refresh, and revocation. All quickstarts and dashboard examples now use OpenFeature; release checks exercise installed SDK packages. Keep Boolean flags and track per-language specification baselines and Rust upstream gaps in the [OpenFeature guide](docs/openfeature.md#coverage-and-limits).
-2. **Role-based access control (RBAC).** Implemented: individual accounts, environment permissions, restricted API Key secrets, and audit attribution, with API and dashboard tests. SSO and invitations remain outside the alpha.
-3. **Git integration and approvals.** Support reviewed changes, environment promotion, and authenticated automation with an explicit source of truth. Build approval permissions on RBAC.
-4. **Flag lifecycle.** Add owners, purpose, review dates, reminders, and archival. Expiry initially means review is due; it does not automatically disable a flag.
-5. **Further improvements.** Prioritize distribution, persisted SDK snapshots, measured operating limits, richer targeting and values, and additional platforms from demonstrated demand. See [publishing work](docs/publishing.md).
+1. Finish [public downloads and SDK distribution](docs/publishing.md).
+2. Verify real first-use deployments and fix observed friction.
 
-Preserve initialization, refresh, offline evaluation, and revocation guarantees throughout. Git integration, lifecycle automation, HA, SSO, and experimentation are outside the current implementation.
+Git integration, approval workflows, lifecycle automation, HA, SSO, richer flag values, and more SDKs are outside the committed scope. New features need evidence from adopters.
 
 ## Alpha limits
 

@@ -38,7 +38,7 @@ def build(output: Path, *, allow_dirty: bool = False) -> None:
     go_root = ROOT / "sdk/go"
     go_name = f"partly-go-{version}-{platform}"
     with tarfile.open(output / f"{go_name}.tar.gz", "w:gz") as archive:
-        for name in ("go.mod", "client.go", "native.go", "client_test.go", "README.md", "LICENSE",
+        for name in ("go.mod", "client.go", "native.go", "usage.go", "client_test.go", "usage_test.go", "README.md", "LICENSE",
                      "NOTICE", "THIRD_PARTY_NOTICES.txt", "RUST_STDLIB_NOTICES.html"):
             archive.add(go_root / name, arcname=f"{go_name}/{name}")
         archive.add(go_root / "openfeature", arcname=f"{go_name}/openfeature")

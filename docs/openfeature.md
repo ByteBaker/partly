@@ -13,6 +13,7 @@ Build the native client with its URL, environment, application ID, and API Key a
 - Missing or incorrectly typed rule inputs return `INVALID_CONTEXT`. Error messages do not contain context values or credentials.
 - Python, Go, and Node return the caller's fallback on errors, with error details. A valid `false` decision is not an error. Rust's upstream SDK returns `Result` instead; handle its error explicitly.
 - Ordinary refresh failures keep the accepted policy. Confirmed key revocation makes evaluations fail with `PROVIDER_FATAL` (a general error with that label in Rust).
+- Boolean checks through these providers use the native client's lazy usage reporter. It sends only distinct checked flag names; reporting failures do not alter evaluation results. A usage response confirming revocation has the same terminal effect as a policy response. See [usage reporting](../crates/partly-server/README.md#usage-reporting).
 - Provider registration uses the already downloaded policy. Registering too early reports an initialization error in Python, Go, and Node; Rust exposes an error status and rejects evaluation. Shutting down OpenFeature does not close the borrowed native client; close it separately at application shutdown.
 
 OpenFeature reduces application API changes when switching tools. Flag definitions, targeting rules, and rollout assignments still require migration; percentage cohorts are not portable across vendors.

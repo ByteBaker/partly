@@ -117,6 +117,23 @@ pub struct SdkKey {
     masked_secret: String,
     created_at: String,
     revoked_at: Option<String>,
+    last_used_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UsageInput {
+    pub flags: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct FlagUsage {
+    api_key_id: String,
+    key_name: String,
+    application_id: String,
+    application_name: String,
+    flag_key: String,
+    last_used_at: String,
 }
 
 #[derive(Serialize)]
@@ -244,6 +261,7 @@ impl Store {
                     "SELECT environment, application_id, flag_key FROM application_flags",
                     "SELECT id, environment, actor, action, item_type, item_id, item_name, application_id, details, created_at FROM audits",
                     "SELECT environment, key, config FROM flags",
+                    "SELECT api_key_id, application_id, environment, flag_key, last_used_at FROM flag_usage",
                 ] {
                     connection.prepare(query).map_err(|_| {
                         ApiError::internal("Existing database has an incompatible development schema. Use a fresh --db path; the existing file has not been changed.")
@@ -873,7 +891,7 @@ impl Store {
     }
 
     fn read_keys(db: &Connection, application: &str) -> Result<Vec<SdkKey>, ApiError> {
-        let mut query = db.prepare("SELECT id, name, secret, masked_secret, created_at, revoked_at FROM sdk_keys WHERE application_id = ?1 ORDER BY rowid")?;
+        let mut query = db.prepare("SELECT id, name, secret, masked_secret, created_at, revoked_at, (SELECT MAX(last_used_at) FROM flag_usage u WHERE u.api_key_id = sdk_keys.id) FROM sdk_keys WHERE application_id = ?1 ORDER BY rowid")?;
         let rows = query
             .query_map([application], |r| {
                 Ok(SdkKey {
@@ -883,6 +901,7 @@ impl Store {
                     masked_secret: r.get(3)?,
                     created_at: r.get(4)?,
                     revoked_at: r.get(5)?,
+                    last_used_at: r.get(6)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -983,17 +1002,7 @@ impl Store {
     }
 
     pub fn app_policy(&self, key: &str, env: &str, app: &str) -> Result<Policy, ApiError> {
-        let hash = format!("{:x}", Sha256::digest(key.as_bytes()));
-        let (scope_env, scope_app, revoked, revision): (String, String, Option<String>, i64) = self.db()?.query_row("SELECT a.environment, a.id, k.revoked_at, a.revision FROM sdk_keys k JOIN applications a ON a.id = k.application_id WHERE k.secret_hash = ?1", [hash], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).optional()?.ok_or_else(ApiError::unauthorized)?;
-        if revoked.is_some() {
-            return Err(ApiError(
-                axum::http::StatusCode::UNAUTHORIZED,
-                "key_revoked".into(),
-            ));
-        }
-        if env != scope_env || app != scope_app {
-            return Err(ApiError::unauthorized());
-        }
+        let (_, revision) = Self::authorize_key(self.db()?, key, env, app)?;
         let mut query = self.db()?.prepare(
             "SELECT flag_key FROM application_flags WHERE application_id = ?1 ORDER BY flag_key",
         )?;
@@ -1008,6 +1017,77 @@ impl Store {
         policy.revision = u64::try_from(revision)
             .map_err(|_| ApiError::internal("Invalid application revision"))?;
         Ok(policy)
+    }
+
+    fn authorize_key(
+        db: &Connection,
+        key: &str,
+        env: &str,
+        app: &str,
+    ) -> Result<(String, i64), ApiError> {
+        let hash = format!("{:x}", Sha256::digest(key.as_bytes()));
+        let (scope_env, scope_app, revoked, revision, id): (String, String, Option<String>, i64, String) = db.query_row("SELECT a.environment, a.id, k.revoked_at, a.revision, k.id FROM sdk_keys k JOIN applications a ON a.id = k.application_id WHERE k.secret_hash = ?1", [hash], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))).optional()?.ok_or_else(ApiError::unauthorized)?;
+        if revoked.is_some() {
+            return Err(ApiError(
+                axum::http::StatusCode::UNAUTHORIZED,
+                "key_revoked".into(),
+            ));
+        }
+        if env != scope_env || app != scope_app {
+            return Err(ApiError::unauthorized());
+        }
+        Ok((id, revision))
+    }
+
+    pub fn record_usage(
+        &mut self,
+        key: &str,
+        env: &str,
+        app: &str,
+        mut input: UsageInput,
+    ) -> Result<(), ApiError> {
+        let tx = self
+            .connection
+            .as_mut()
+            .ok_or_else(|| ApiError::conflict("Complete setup first"))?
+            .transaction()?;
+        let (id, _) = Self::authorize_key(&tx, key, env, app)?;
+        if input.flags.len() > 128 || input.flags.iter().any(|key| !partly_core::valid_key(key)) {
+            return Err(ApiError::bad("Supply at most 128 valid flag names"));
+        }
+        input.flags.sort_unstable();
+        input.flags.dedup();
+        let timestamp: String =
+            tx.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')", [], |r| {
+                r.get(0)
+            })?;
+        {
+            // Stale clients may report a removed selection; acknowledge it without recording it.
+            let mut insert = tx.prepare_cached("INSERT INTO flag_usage (api_key_id, application_id, environment, flag_key, last_used_at) SELECT ?1, application_id, environment, flag_key, ?2 FROM application_flags WHERE application_id = ?3 AND environment = ?4 AND flag_key = ?5 ON CONFLICT (api_key_id, flag_key) DO UPDATE SET last_used_at = MAX(flag_usage.last_used_at, excluded.last_used_at)")?;
+            for flag in &input.flags {
+                insert.execute(params![id, timestamp, app, env, flag])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn flag_usage(&self, env: &str) -> Result<Vec<FlagUsage>, ApiError> {
+        self.environment(env)?;
+        let mut query = self.db()?.prepare("SELECT u.api_key_id, k.name, u.application_id, a.name, u.flag_key, u.last_used_at FROM flag_usage u JOIN sdk_keys k ON k.id = u.api_key_id JOIN applications a ON a.id = u.application_id WHERE u.environment = ?1 ORDER BY u.flag_key, a.name, k.name, u.api_key_id")?;
+        let rows = query
+            .query_map([env], |r| {
+                Ok(FlagUsage {
+                    api_key_id: r.get(0)?,
+                    key_name: r.get(1)?,
+                    application_id: r.get(2)?,
+                    application_name: r.get(3)?,
+                    flag_key: r.get(4)?,
+                    last_used_at: r.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub fn audits(

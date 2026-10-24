@@ -43,6 +43,14 @@ Context must be a flat object of strings, finite numbers, and booleans. Integer 
 
 Ordinary failed refreshes keep the policy and ETag. Local evaluation still works after close, but network calls then fail. Initialization can be retried after a failure.
 
+## Flag usage reporting
+
+Native evaluation records distinct known flag names, including disabled decisions and context errors. An evaluation starts a background report when 128 names are pending or 60 seconds have passed since initialization or the previous report. Reports contain only flag names; context values and decisions stay local. `hasFlag()`, unknown flags, and OpenFeature checks that fail before native evaluation do not count.
+
+One report runs at a time, with up to 128 names. Failed reports retry only after another evaluation and a 60-second cooldown; they do not change decisions or `lastRefreshError`. Accepted policies remove pending names that are no longer assigned. Confirmed key revocation stops reporting and clears the policy. Closing cancels reporting and discards pending names; cached evaluation remains available without recording more usage. Usage is best effort, so short-lived or idle clients may leave names unreported.
+
+## Tests
+
 ```sh
 node --test sdk/node/test/*.test.js
 cargo test --locked -p partly-e2e --test e2e sdk::contract::node::
@@ -54,7 +62,7 @@ cargo test --locked -p partly-e2e --test e2e sdk::contract::node::
 
 Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.environment("development").applicationId("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
 
-A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `KeyRevokedError` (an `AuthenticationError` subclass). Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh reaches the server.
+A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `KeyRevokedError` (an `AuthenticationError` subclass). Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh or usage report reaches the server.
 
 ## OpenFeature
 

@@ -8,6 +8,9 @@ import os
 import re
 import ssl
 from enum import Enum
+from itertools import islice
+from threading import Lock
+from time import monotonic
 from typing import Never, Self
 from urllib.parse import urlsplit
 
@@ -138,6 +141,13 @@ class Client:
         self._poll_task: asyncio.Task[None] | None = None
         self._closed = False
         self._revoked = False
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._usage_lock = Lock()
+        self._usage_pending: dict[str, None] = {}
+        self._usage_scheduled = False
+        self._usage_task: asyncio.Task[None] | None = None
+        self._usage_due = 0.0
+        self._usage_retry_at = 0.0
         self.last_refresh_error: PartlyError | None = None
 
     @classmethod
@@ -162,6 +172,8 @@ class Client:
                 self._http = httpx.AsyncClient(timeout=self._timeout, verify=verify, follow_redirects=False, trust_env=False)
             await self._download()
             self._check_open()
+            self._loop = asyncio.get_running_loop()
+            self._usage_due = monotonic() + 60
             self._poll_task = asyncio.create_task(self._poll(), name="partly-refresh")
 
     async def refresh(self) -> bool:
@@ -179,6 +191,7 @@ class Client:
             raise PolicyNotReadyError("No policy loaded; await client.init()")
         if not isinstance(flag_key, str):
             raise TypeError("flag_key must be a string")
+        self._record_usage(flag_key, snapshot)
         return Decision.ENABLED if snapshot.evaluate(flag_key, context) else Decision.DISABLED
 
     def has_flag(self, flag_key: str) -> bool:
@@ -195,6 +208,67 @@ class Client:
         if self._closed:
             raise ClientClosedError("This client is closed; build a new client")
 
+    def _revoke(self, error: KeyRevokedError) -> None:
+        with self._usage_lock:
+            self._revoked = True
+            self._snapshot, self._etag = None, None
+            self._usage_pending.clear()
+        self.last_refresh_error = error
+        for task in (self._poll_task, self._usage_task):
+            if task is not None and task is not asyncio.current_task():
+                task.cancel()
+
+    def _record_usage(self, flag_key: str, snapshot: Snapshot) -> None:
+        with self._usage_lock:
+            if self._closed or self._revoked or self._loop is None or self._snapshot is None or not snapshot.contains_flag(flag_key):
+                return
+            if self._snapshot is not snapshot and not self._snapshot.contains_flag(flag_key):
+                return
+            self._usage_pending[flag_key] = None
+            now = monotonic()
+            if self._usage_scheduled or now < self._usage_retry_at or (len(self._usage_pending) < 128 and now < self._usage_due):
+                return
+            self._usage_scheduled = True
+            try:
+                self._loop.call_soon_threadsafe(self._start_usage)
+            except RuntimeError:
+                # The application's initialized event loop may already be closed.
+                self._usage_scheduled = False
+
+    def _start_usage(self) -> None:
+        with self._usage_lock:
+            if self._closed or self._revoked:
+                self._usage_scheduled = False
+                return
+            batch = list(islice(self._usage_pending, 128))
+            for flag in batch:
+                del self._usage_pending[flag]
+            if not batch:
+                self._usage_scheduled = False
+                return
+            now = monotonic()
+            if not self._usage_pending or now < self._usage_due:
+                self._usage_due = now + 60
+            self._usage_task = asyncio.create_task(self._send_usage(batch), name="partly-usage")
+
+    async def _send_usage(self, batch: list[str]) -> None:
+        try:
+            assert self._http is not None, "init must configure HTTP before reporting"
+            async with asyncio.timeout(self._timeout):
+                async with self._http.stream("POST", f"{self._url}/api/usage", headers=self._headers(), json={"flags": batch}) as response:
+                    if response.status_code == 401 and response.headers.get("x-partly-error") == "key_revoked":
+                        self._revoke(KeyRevokedError("API Key revoked; build a new client with a valid key"))
+                    elif response.status_code != 204:
+                        raise RefreshError("Usage request was not accepted")
+        except (PartlyError, httpx.HTTPError, asyncio.TimeoutError):
+            with self._usage_lock:
+                if not self._closed and not self._revoked and self._snapshot is not None:
+                    self._usage_pending = {**dict.fromkeys(flag for flag in batch if self._snapshot.contains_flag(flag)), **self._usage_pending}
+                    self._usage_retry_at = monotonic() + 60
+        finally:
+            with self._usage_lock:
+                self._usage_scheduled = False
+
     async def _download(self) -> bool:
         try:
             downloaded = await asyncio.wait_for(self._request(), timeout=self._timeout)
@@ -210,29 +284,34 @@ class Client:
             if self._snapshot is not None and snapshot.project != self._snapshot.project:
                 raise InvalidPolicyError("Policy project or environment changed unexpectedly")
         except KeyRevokedError as error:
-            self._revoked = True
-            self._snapshot, self._etag = None, None
-            self.last_refresh_error = error
-            if self._poll_task is not None and self._poll_task is not asyncio.current_task():
-                self._poll_task.cancel()
+            self._revoke(error)
             raise
         except PartlyError as error:
+            if self._revoked:
+                self._check_open()
             self.last_refresh_error = error
             raise
         except (httpx.HTTPError, asyncio.TimeoutError) as error:
+            if self._revoked:
+                self._check_open()
             # Do not include response bodies, URLs, or credentials in diagnostics.
             failure = RefreshError(f"Policy request failed ({type(error).__name__})")
             self.last_refresh_error = failure
             raise failure from None
         # Commit only after download, response cleanup, and validation all succeed.
         # No await here: readers see one complete snapshot and matching tag.
-        self._snapshot, self._etag = snapshot, etag
+        with self._usage_lock:
+            self._snapshot, self._etag = snapshot, etag
+            self._usage_pending = {flag: None for flag in self._usage_pending if snapshot.contains_flag(flag)}
         self.last_refresh_error = None
         return True
 
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._secret_key}", "X-Partly-Environment": self._environment, "X-Partly-Application": self._application_id}
+
     async def _request(self) -> tuple[bytes, str] | None:
         assert self._http is not None, "init must configure HTTP before downloading"
-        headers = {"Authorization": f"Bearer {self._secret_key}", "X-Partly-Environment": self._environment, "X-Partly-Application": self._application_id}
+        headers = self._headers()
         if self._etag is not None:
             headers["If-None-Match"] = self._etag
         async with self._http.stream("GET", f"{self._url}/api/policy", headers=headers) as response:
@@ -269,7 +348,15 @@ class Client:
                 logger.warning("Background refresh failed: %s", error)
 
     async def aclose(self) -> None:
-        self._closed = True
+        with self._usage_lock:
+            self._closed = True
+            self._usage_pending.clear()
+        if self._usage_task is not None:
+            self._usage_task.cancel()
+            try:
+                await self._usage_task
+            except asyncio.CancelledError:
+                pass
         if self._poll_task is not None:
             self._poll_task.cancel()
             try:

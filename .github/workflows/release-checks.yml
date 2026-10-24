@@ -183,6 +183,7 @@ jobs:
           export PARTLY_SDK_PACKAGES="$PWD/dist"
           cargo test --locked -p partly-e2e --test e2e sdk::contract:: -- --test-threads=4
           cargo test --locked -p partly-e2e --test e2e sdk::examples:: -- --test-threads=4
+          cargo test --locked -p partly-e2e --test e2e sdk::usage:: -- --test-threads=4
       - name: Package the server and checksums
         env:
           BINARY_TARGET: ${{ matrix.binary-target }}

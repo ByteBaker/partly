@@ -66,10 +66,18 @@ go test -a -race ./...
 
 Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.Environment("development").ApplicationID("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
 
-A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `ErrKeyRevoked`. Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh reaches the server.
+A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `ErrKeyRevoked`. Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh or usage report reaches the server.
 
 ## OpenFeature
 
 The optional `partly.sh/sdk/go/openfeature` module requires Go 1.26+; the native SDK still supports Go 1.22+. Initialize the native client once, then register `openfeature.New(client)` with the official OpenFeature SDK. Registration makes no network requests; evaluations use the same local policy.
 
 OpenFeature returns your fallback together with an error when evaluation fails. Keep the native client for refresh and close it at shutdown. See the [integration guide](../../docs/openfeature.md#go) and [tested compatibility](../../docs/openfeature.md#coverage-and-limits).
+
+## Flag usage reporting
+
+Evaluations collect the distinct known flag names used by this application, including disabled decisions and invalid-context errors. Unknown flags and existence checks are not counted. Reports contain flag names only, never context values, decisions, or evaluation counts.
+
+A later evaluation sends up to 128 names in the background when 128 distinct names are waiting or 60 seconds have passed since initialization or the last report. There is no reporting timer. Only one report runs at a time; failures retain current flag names and wait at least 60 seconds before another evaluation can retry. Policy refresh removes names that are no longer assigned to the application.
+
+Reporting never waits for a network response during evaluation. Ordinary reporting failures do not change decisions, policy, or refresh diagnostics. Confirmed key revocation uses the same terminal behavior as policy refresh. Closing cancels reporting and discards pending names without sending a final report; cached evaluation after close does not collect usage. These reports are best effort: idle clients, shutdown, or crashes can leave recent usage unreported.

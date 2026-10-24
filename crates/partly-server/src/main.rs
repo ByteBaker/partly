@@ -271,9 +271,10 @@ fn check_request(request: &Request<Body>, transport: &Transport) -> Result<(), A
         if !matches!(
             *request.method(),
             Method::GET | Method::HEAD | Method::OPTIONS
-        ) && headers
-            .get("x-partly-request")
-            .is_none_or(|v| v != "dashboard")
+        ) && !(request.method() == Method::POST && request.uri().path() == "/api/usage")
+            && headers
+                .get("x-partly-request")
+                .is_none_or(|v| v != "dashboard")
         {
             return Err(ApiError(
                 StatusCode::FORBIDDEN,
@@ -775,13 +776,61 @@ async fn revoke_key(
     .await
 }
 
-async fn policy(State(app): State<App>, headers: HeaderMap) -> Result<Response, ApiError> {
-    let key = headers
+fn bearer_key(headers: &HeaderMap) -> Result<String, ApiError> {
+    headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or_else(ApiError::unauthorized)?
-        .to_owned();
+        .map(str::to_owned)
+        .ok_or_else(ApiError::unauthorized)
+}
+
+async fn report_usage(
+    State(app): State<App>,
+    headers: HeaderMap,
+    input: Result<Json<store::UsageInput>, axum::extract::rejection::JsonRejection>,
+) -> Result<StatusCode, ApiError> {
+    let key = bearer_key(&headers)?;
+    let Json(input) = input.map_err(|error| {
+        ApiError(
+            if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                StatusCode::PAYLOAD_TOO_LARGE
+            } else {
+                StatusCode::BAD_REQUEST
+            },
+            "Supply a JSON object containing only a flags array".into(),
+        )
+    })?;
+    app.run(move |s| {
+        let env = headers
+            .get("x-partly-environment")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let application = headers
+            .get("x-partly-application")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        s.record_usage(&key, env, application, input)?;
+        Ok(StatusCode::NO_CONTENT)
+    })
+    .await
+}
+
+async fn flag_usage(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Path(env): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    app.run(move |s| {
+        s.authorize(&session(&headers))?
+            .require(&env, Role::Viewer)?;
+        Ok(Json(json!({"usage": s.flag_usage(&env)?})))
+    })
+    .await
+}
+
+async fn policy(State(app): State<App>, headers: HeaderMap) -> Result<Response, ApiError> {
+    let key = bearer_key(&headers)?;
     app.run(move |s| {
         let env = headers
             .get("x-partly-environment")
@@ -922,6 +971,15 @@ async fn serve(
         .route("/", get(dashboard))
         .route("/environments/{env}/{screen}", get(environment_dashboard))
         .route(
+            "/logo.svg",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "image/svg+xml")],
+                    include_str!("../../../docs/images/logo.svg"),
+                )
+            }),
+        )
+        .route(
             "/app.js",
             get(|| async {
                 (
@@ -990,8 +1048,10 @@ async fn serve(
         .route("/api/environments/{env}/apps/{id}", put(save_application))
         .route("/api/environments/{env}/apps/{id}/keys", post(create_key))
         .route("/api/environments/{env}/audits", get(audits))
+        .route("/api/environments/{env}/usage", get(flag_usage))
         .route("/api/keys/{id}", put(rename_key).delete(revoke_key))
         .route("/api/policy", get(policy))
+        .route("/api/usage", post(report_usage))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(middleware::from_fn_with_state(transport, security))
         .with_state(App::new(store));

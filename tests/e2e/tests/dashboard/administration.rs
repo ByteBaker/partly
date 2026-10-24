@@ -75,7 +75,12 @@ async fn dashboard_setup_flags_keys_and_restart() -> Result {
         copy.click(None).await?;
         expect(page.get_by_role(Alert,None)).to_contain_text("Could not copy").await?;
         expect(field).to_have_attribute("type","text").await?;
-        choose(page,page.get_by_label("Environment",true),"production").await?;
+        // Let the clipboard error's layout and any queued scroll settle before the next action.
+        js(page,"async () => { await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); }").await?;
+        // Locator.click scrolls an already-visible sticky control in some browser drivers.
+        let env = page.get_by_label("Environment",true).bounding_box().await?.unwrap();
+        page.mouse().click(env.x + env.width / 2.0, env.y + env.height / 2.0, None).await?;
+        page.locator("#dropdown-options [data-value=production]").click(None).await?;
         expect_page(page).to_have_url(&format!("{}/environments/production/apps",server.url)).await?;
         expect(page.get_by_text("No applications in this environment.",true)).to_be_visible().await?;
         page.get_by_role(Tab,named("Feature flags")).click(None).await?;
@@ -214,7 +219,12 @@ async fn key_revocation_modal_cancel_focus_failure_and_retry() -> Result {
                 .await?;
             expect(modal.locator("legacy")).to_have_count(0).await?;
             expect(modal.clone())
-                .to_contain_text("Disconnected SDKs keep their cached policy until they reconnect.")
+                .to_contain_text("policy refresh or usage report confirms revocation")
+                .await?;
+            expect(modal.clone())
+                .to_contain_text(
+                    "Offline SDKs keep their cached policy until they receive that response.",
+                )
                 .await?;
             page.keyboard().press(key, None).await?;
             expect(modal.clone()).to_be_hidden().await?;

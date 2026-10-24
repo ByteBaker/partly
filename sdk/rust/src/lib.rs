@@ -19,6 +19,7 @@ pub use url::ParseError as UrlParseError;
 
 #[cfg(feature = "openfeature")]
 pub mod openfeature;
+mod usage;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -143,6 +144,7 @@ impl ClientBuilder {
                 closed,
                 revoked: AtomicBool::new(false),
                 last_error: RwLock::new(None),
+                usage: Mutex::new(usage::Usage::default()),
             }),
         })
     }
@@ -163,11 +165,15 @@ struct Inner {
     closed: watch::Sender<bool>,
     revoked: AtomicBool,
     last_error: RwLock<Option<Arc<Error>>>,
+    usage: Mutex<usage::Usage>,
 }
 
 impl Drop for Inner {
     fn drop(&mut self) {
         if let Some(task) = self.poller.get_mut().unwrap().take() {
+            task.abort();
+        }
+        if let Some(task) = self.usage.get_mut().unwrap().task.take() {
             task.abort();
         }
     }
@@ -222,6 +228,11 @@ impl Client {
         }
         inner.download().await?;
         inner.check_open()?;
+        {
+            let mut usage = inner.usage.lock().unwrap();
+            usage.runtime = Some(tokio::runtime::Handle::current());
+            usage.last = std::time::Instant::now();
+        }
         let weak = Arc::downgrade(inner);
         let interval = inner.config.interval;
         let task = tokio::spawn(async move {
@@ -234,7 +245,12 @@ impl Client {
                 }
                 if let Err(error) = inner.download().await {
                     let revoked = matches!(error, Error::KeyRevoked);
-                    *inner.last_error.write().unwrap() = Some(Arc::new(error));
+                    {
+                        let _accepted = inner.accepted.read().unwrap();
+                        if !inner.revoked.load(Ordering::Acquire) {
+                            *inner.last_error.write().unwrap() = Some(Arc::new(error));
+                        }
+                    }
                     if revoked {
                         break;
                     }
@@ -255,17 +271,15 @@ impl Client {
     }
 
     pub fn evaluate(&self, key: &str, context: &Context) -> Result<Decision, Error> {
+        let accepted = self.inner.accepted.read().unwrap();
         if self.inner.revoked.load(Ordering::Acquire) {
             return Err(Error::KeyRevoked);
         }
-        let policy = self
-            .inner
-            .accepted
-            .read()
-            .unwrap()
-            .as_ref()
-            .map(|a| Arc::clone(&a.policy))
-            .ok_or(Error::PolicyNotReady)?;
+        let policy = Arc::clone(&accepted.as_ref().ok_or(Error::PolicyNotReady)?.policy);
+        if policy.flags.contains_key(key) {
+            self.inner.record_usage(key);
+        }
+        drop(accepted);
         Ok(policy.evaluate(key, context)?)
     }
 
@@ -275,10 +289,10 @@ impl Client {
 
     /// Query the accepted policy without evaluating context. Unavailable policies return an error.
     pub fn has_flag(&self, key: &str) -> Result<bool, Error> {
+        let accepted = self.inner.accepted.read().unwrap();
         if self.inner.revoked.load(Ordering::Acquire) {
             return Err(Error::KeyRevoked);
         }
-        let accepted = self.inner.accepted.read().unwrap();
         let policy = &accepted.as_ref().ok_or(Error::PolicyNotReady)?.policy;
         Ok(policy.flags.contains_key(key))
     }
@@ -289,6 +303,15 @@ impl Client {
         let _guard = self.inner.serial.lock().await;
         let task = self.inner.poller.lock().unwrap().take();
         if let Some(task) = task {
+            task.abort();
+            let _ = task.await;
+        }
+        let usage_task = {
+            let mut usage = self.inner.usage.lock().unwrap();
+            usage.clear();
+            usage.task.take()
+        };
+        if let Some(task) = usage_task {
             task.abort();
             let _ = task.await;
         }
@@ -312,10 +335,16 @@ impl Inner {
     async fn download(&self) -> Result<bool, Error> {
         let mut closed = self.closed.subscribe();
         self.check_open()?;
-        tokio::select! {
+        let result = tokio::select! {
             biased;
             _ = closed.changed() => Err(Error::ClientClosed),
             result = self.request() => result,
+        };
+        let _accepted = self.accepted.read().unwrap();
+        if self.revoked.load(Ordering::Acquire) {
+            Err(Error::KeyRevoked)
+        } else {
+            result
         }
     }
 
@@ -346,12 +375,7 @@ impl Inner {
                 .get("x-partly-error")
                 .is_some_and(|v| v == "key_revoked")
         {
-            self.revoked.store(true, Ordering::Release);
-            *self.accepted.write().unwrap() = None;
-            *self.last_error.write().unwrap() = Some(Arc::new(Error::KeyRevoked));
-            if let Some(task) = self.poller.lock().unwrap().as_ref() {
-                task.abort();
-            }
+            self.revoke();
             return Err(Error::KeyRevoked);
         }
         if matches!(status, 401 | 403) {
@@ -369,6 +393,8 @@ impl Inner {
                     "unchanged response has no matching policy".into(),
                 ));
             }
+            let _accepted = self.accepted.read().unwrap();
+            self.check_open()?;
             *self.last_error.write().unwrap() = None;
             return Ok(false);
         }
@@ -402,11 +428,13 @@ impl Inner {
             ));
         }
         let mut accepted = self.accepted.write().unwrap();
+        self.check_open()?;
         if accepted.as_ref().is_some_and(|a| {
             a.policy.project != policy.project || a.policy.environment != policy.environment
         }) {
             return Err(Error::InvalidPolicy("policy scope changed".into()));
         }
+        self.usage.lock().unwrap().prune(&policy);
         *accepted = Some(Accepted {
             policy: Arc::new(policy),
             etag: tag,

@@ -6,3 +6,4 @@ mod control_plane;
 mod https;
 mod operations;
 mod rbac;
+mod usage;

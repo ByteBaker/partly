@@ -492,6 +492,7 @@ async fn headers_select_clearance_and_sticky_navigation() -> Result {
             }
             assert_eq!(js(page,"document.documentElement.scrollWidth <= innerWidth").await?,true);
             expect(page.locator(".brand-mark")).to_be_visible().await?;
+            assert!(page.locator(".brand-mark").evaluate::<bool,()>("e => e.complete && e.naturalWidth > 0",None).await?);
             let before = geometry(page,".site-header, [role=tablist]").await?;
             page.evaluate_expression("window.scrollTo(0, document.body.scrollHeight)").await?;
             page.wait_for_function("scrollY > 0",None).await?;
@@ -557,7 +558,16 @@ async fn fits(page: &Page, popup: &Locator) -> Result {
 
 #[tokio::test]
 async fn dropdown_popup_fits_viewport_and_cancels_on_move() -> Result {
-    let (server, _) = fixture().await?;
+    let (server, admin) = fixture().await?;
+    for index in 0..4 {
+        admin
+            .flag(
+                "development",
+                &format!("layout_{index}"),
+                json!({"mode":"enabled"}),
+            )
+            .await?;
+    }
     run("dropdown-viewport",async |ui| {
         let page = &ui.page;
         login(page,&server,"flags","development").await?;
@@ -565,9 +575,17 @@ async fn dropdown_popup_fits_viewport_and_cancels_on_move() -> Result {
             page.set_viewport_size(Viewport{width,height:640}).await?;
             let env = page.get_by_role(Combobox,named("Environment"));
             let popup = page.locator("#dropdown-options");
+            let scroll = js(page,"async () => { window.scrollTo(0, 100); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); return scrollY; }").await?;
+            assert!(scroll.as_f64().unwrap() > 0.0);
             let before = geometry(page,".site-header, #environment").await?;
-            env.click(None).await?;
+            // Click the visible sticky control without Playwright's automatic scrolling.
+            let rect = env.bounding_box().await?.unwrap();
+            page.mouse().click(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0, None).await?;
             expect(popup.clone()).to_be_visible().await?; fits(page,&popup).await?;
+            page.keyboard().press("ArrowDown", None).await?;
+            active_option(page,&env,"production").await?;
+            assert_eq!(js(page,"scrollY").await?,scroll);
+            expect(popup.clone()).to_be_visible().await?;
             assert_eq!(geometry(page,".site-header, #environment").await?,before);
             page.keyboard().press("Escape", None).await?;
             page.get_by_role(Button,named("Create flag")).click(None).await?;

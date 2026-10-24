@@ -99,7 +99,7 @@ func (b *ClientBuilder) Build() (*Client, error) {
 		return nil, errors.New("interval and timeout must be positive")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Client{config: *b, serial: make(chan struct{}, 1), stopped: ctx, cancel: cancel}, nil
+	return &Client{config: *b, serial: make(chan struct{}, 1), stopped: ctx, cancel: cancel, usage: usageState{last: time.Now()}}, nil
 }
 
 // Client is safe for concurrent use. Do not copy it after construction.
@@ -116,6 +116,7 @@ type Client struct {
 	stopped   context.Context
 	cancel    context.CancelFunc
 	poller    sync.WaitGroup
+	usage     usageState
 }
 
 func (c *Client) acquire(ctx context.Context) error {
@@ -213,7 +214,15 @@ func (c *Client) Refresh(ctx context.Context) (bool, error) {
 }
 
 func (c *Client) download(ctx context.Context) (updated bool, failure error) {
-	defer func() { c.mu.Lock(); c.lastError = failure; c.mu.Unlock() }()
+	defer func() {
+		c.mu.Lock()
+		if c.revoked {
+			failure = ErrKeyRevoked
+			updated = false
+		}
+		c.lastError = failure
+		c.mu.Unlock()
+	}()
 	ctx, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(c.stopped, cancel)
 	defer func() { stop(); cancel() }()
@@ -242,8 +251,7 @@ func (c *Client) download(ctx context.Context) (updated bool, failure error) {
 	case 401, 403:
 		if response.StatusCode == 401 && response.Header.Get("X-Partly-Error") == "key_revoked" {
 			c.mu.Lock()
-			c.revoked, c.policy, c.etag = true, nil, ""
-			c.cancel()
+			c.revokeLocked()
 			c.mu.Unlock()
 			return false, ErrKeyRevoked
 		}
@@ -275,6 +283,9 @@ func (c *Client) download(ctx context.Context) (updated bool, failure error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.revoked {
+		return false, ErrKeyRevoked
+	}
 	if c.closed {
 		return false, ErrClientClosed
 	}
@@ -288,7 +299,11 @@ func (c *Client) download(ctx context.Context) (updated bool, failure error) {
 	if c.policy != nil && c.policy.scope != policy.scope {
 		return false, ErrInvalidPolicy
 	}
+	if c.policy == nil {
+		c.usage.last = time.Now()
+	}
 	c.policy, c.etag = policy, tag
+	c.usage.prune(policy)
 	return true, nil
 }
 
@@ -308,7 +323,15 @@ func (c *Client) Evaluate(flag string, context map[string]any) (Decision, error)
 	if policy == nil {
 		return "", ErrPolicyNotReady
 	}
-	return policy.evaluate(flag, context)
+	decision, err := policy.evaluate(flag, context)
+	if !errors.Is(err, ErrFlagNotFound) {
+		c.mu.Lock()
+		if !c.closed && !c.revoked && (c.policy == policy || (c.policy != nil && c.policy.hasFlag(flag))) {
+			c.recordUsageLocked(flag)
+		}
+		c.mu.Unlock()
+	}
+	return decision, err
 }
 func (c *Client) LastRefreshError() error {
 	c.mu.RLock()
@@ -333,6 +356,11 @@ func (c *Client) Close(ctx context.Context) error {
 	c.mu.Lock()
 	c.closed = true
 	c.cancel()
+	done := c.usage.done
+	if c.usage.cancel != nil {
+		c.usage.cancel()
+	}
+	c.usage.queue, c.usage.set = nil, nil
 	c.mu.Unlock()
 	if err := c.acquire(ctx); err != nil {
 		return err
@@ -342,5 +370,12 @@ func (c *Client) Close(ctx context.Context) error {
 	}
 	c.release()
 	c.poller.Wait()
+	if done != nil {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	return nil
 }

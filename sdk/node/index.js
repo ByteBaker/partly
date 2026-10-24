@@ -76,6 +76,10 @@ class Client {
   #timer;
   #abort = new AbortController();
   #lastError = null;
+  #usagePending = new Set();
+  #usageTask;
+  #usageDue = 0;
+  #usageRetryAt = 0;
   constructor(options) { this.#options = options; }
   static builder() { return new ClientBuilder(); }
   get lastRefreshError() { return this.#lastError; }
@@ -108,6 +112,7 @@ class Client {
       }
       await this.#download();
       this.#checkOpen();
+      this.#usageDue = performance.now() + 60000;
       this.#schedule();
     });
   }
@@ -126,21 +131,23 @@ class Client {
     }, this.#options.interval * 1000);
     this.#timer.unref();
   }
-  async #request() {
+  async #request(flags) {
     const headers = { Authorization: `Bearer ${this.#options.key}`, "X-Partly-Environment": this.#options.environment, "X-Partly-Application": this.#options.applicationId };
-    if (this.#etag) headers["If-None-Match"] = this.#etag;
+    if (flags) headers["Content-Type"] = "application/json";
+    else if (this.#etag) headers["If-None-Match"] = this.#etag;
     const transport = this.#options.url.protocol === "https:" ? https : http;
-    const request = transport.get(this.#options.url, {
-      headers, agent: this.#agent, signal: this.#abort.signal, rejectUnauthorized: true,
+    const request = transport.request(flags ? new URL("/api/usage", this.#options.url) : this.#options.url, {
+      method: flags ? "POST" : "GET", headers, agent: this.#agent, signal: this.#abort.signal, rejectUnauthorized: true,
     });
     // Keep an error listener after response headers arrive; stream errors are handled below.
     request.on("error", () => {});
-    const timer = setTimeout(() => request.destroy(new RefreshError("Policy request timed out")), this.#options.timeout * 1000);
+    const timer = setTimeout(() => request.destroy(new RefreshError("Request timed out")), this.#options.timeout * 1000);
     try {
+      request.end(flags ? JSON.stringify({ flags }) : undefined);
       const [response] = await once(request, "response");
       const status = response.statusCode;
       const tag = response.headers.etag;
-      if (status !== 200) {
+      if (flags || status !== 200) {
         response.destroy();
         return { status, tag, revoked: response.headers["x-partly-error"] === "key_revoked" };
       }
@@ -157,16 +164,51 @@ class Client {
       request.destroy();
     }
   }
+  #revoke() {
+    this.#revoked = true;
+    this.#snapshot = undefined;
+    this.#etag = undefined;
+    this.#usagePending.clear();
+    clearTimeout(this.#timer);
+    this.#abort.abort();
+    this.#lastError = new KeyRevokedError("API Key revoked; build a new client with a valid key");
+  }
+  #recordUsage(flag) {
+    if (this.#closed) return;
+    this.#usagePending.add(flag);
+    const now = performance.now();
+    if (this.#usageTask || now < this.#usageRetryAt || (this.#usagePending.size < 128 && now < this.#usageDue)) return;
+    const batch = [];
+    for (const name of this.#usagePending) {
+      batch.push(name);
+      this.#usagePending.delete(name);
+      if (batch.length === 128) break;
+    }
+    if (!this.#usagePending.size || now < this.#usageDue) this.#usageDue = now + 60000;
+    this.#usageTask = Promise.resolve().then(() => this.#sendUsage(batch));
+  }
+  async #sendUsage(batch) {
+    try {
+      if (this.#closed || this.#revoked) return;
+      const { status, revoked } = await this.#request(batch);
+      if (status === 401 && revoked) this.#revoke();
+      else if (status !== 204) throw new RefreshError("Usage request was not accepted");
+    } catch {
+      if (!this.#closed && !this.#revoked) {
+        this.#usagePending = new Set([...batch.filter(flag => this.#snapshot.containsFlag(flag)), ...this.#usagePending]);
+        this.#usageRetryAt = performance.now() + 60000;
+      }
+    } finally {
+      this.#usageTask = undefined;
+    }
+  }
   async #download() {
     try {
       const { status, tag, body, revoked } = await this.#request();
       this.#checkOpen();
       if (status === 401 && revoked) {
-        this.#revoked = true;
-        this.#snapshot = undefined;
-        this.#etag = undefined;
-        clearTimeout(this.#timer);
-        throw new KeyRevokedError("API Key revoked; build a new client with a valid key");
+        this.#revoke();
+        throw this.#lastError;
       }
       if (status === 401 || status === 403) throw new AuthenticationError("API Key rejected");
       if (status === 304) {
@@ -189,10 +231,14 @@ class Client {
       if (this.#snapshot && this.#snapshot.scope !== snapshot.scope) throw new InvalidPolicyError("Policy scope changed");
       this.#snapshot = snapshot;
       this.#etag = tag;
+      for (const flag of this.#usagePending) {
+        if (!snapshot.containsFlag(flag)) this.#usagePending.delete(flag);
+      }
       this.#lastError = null;
       return true;
     } catch (error) {
-      const failure = this.#closed ? new ClientClosedError("Client is closed")
+      const failure = this.#revoked ? new KeyRevokedError("API Key revoked; build a new client with a valid key")
+        : this.#closed ? new ClientClosedError("Client is closed")
         : error instanceof PartlyError ? error : new RefreshError("Network, timeout, or TLS failure");
       this.#lastError = failure;
       throw failure;
@@ -205,6 +251,7 @@ class Client {
     if (!this.#snapshot.containsFlag(flag)) {
       throw Object.assign(new FlagNotFoundError(`Flag '${flag}' is not defined in the loaded policy`), { flag_key: flag });
     }
+    this.#recordUsage(flag);
     if (context === null || typeof context !== "object" || Object.getOwnPropertySymbols(context).length ||
         ![Object.prototype, null].includes(Object.getPrototypeOf(context))) {
       throw new InvalidContextError("Context must be a flat object");
@@ -231,9 +278,11 @@ class Client {
   }
   async close() {
     this.#closed = true;
+    this.#usagePending.clear();
     clearTimeout(this.#timer);
     this.#abort.abort();
     await this.#queue;
+    await this.#usageTask;
     this.#agent?.destroy();
   }
 }

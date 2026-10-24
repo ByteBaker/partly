@@ -15,7 +15,7 @@
 <body>
   <header class="site-header">
     <div class="topbar">
-      <a class="brand" href="/" aria-label="Partly home"><span class="brand-mark" aria-hidden="true"><i></i><i></i></span>partly</a>
+      <a class="brand" href="/" aria-label="Partly home"><img class="brand-mark" src="/logo.svg" alt="" width="22" height="25">partly</a>
       <div id="session" class="session" hidden>
         <label class="environment-label" for="environment">Environment<span class="select-control"><button id="environment" type="button" disabled>Development</button></span></label>
         <button type="button" id="logout" class="quiet">Sign out</button>
@@ -48,9 +48,11 @@
       <div class="workspace-heading"><h1 id="screen-title">Feature flags</h1><div class="header-actions"><button type="button" id="create-flag" class="primary" hidden>Create flag</button><button type="button" id="create-app" class="primary" hidden>Create app</button><button type="button" id="create-user" class="primary" hidden>Create user</button></div></div>
       <section id="flags-screen" role="tabpanel" aria-labelledby="flags-tab">
         <div class="list-heading"><h2>Flags <span id="flag-count" class="count">0</span></h2></div>
+        <p class="usage-help small muted">Usage reports arrive in batches. Missing reports do not mean a flag is unused. Reload to update.</p>
         <div id="flags"></div>
       </section>
       <section id="apps-screen" role="tabpanel" aria-labelledby="apps-tab" hidden>
+        <p class="usage-help small muted">Usage reports arrive in batches. Missing reports do not mean a key is unused. Reload to update.</p>
         <div id="apps"></div>
         <p class="hint">API Keys can read feature flags and rules. Use the UI to make changes.</p>
       </section>
@@ -91,7 +93,7 @@
     <form id="confirm-flag-form"><div class="dialog-content"><h2 id="confirm-flag-title">Save flag changes?</h2><p id="flag-impact-description"></p><ul id="flag-impact-apps"></ul><label for="confirm-flag-input" id="confirm-flag-label">Type environment/flag_name to confirm</label><input type="text" id="confirm-flag-input" autocomplete="off" spellcheck="false" required><p id="confirm-flag-error" class="notice error item-error" role="alert" hidden></p></div><div class="dialog-actions"><button type="button" id="cancel-flag-confirmation">Keep editing</button><button type="submit" id="confirm-flag-submit" class="primary" disabled>Save changes</button></div></form>
   </dialog>
   <dialog id="revoke-key-dialog" class="confirm-dialog" aria-labelledby="revoke-key-title" aria-describedby="revoke-key-context revoke-key-description">
-    <div class="dialog-content"><h2 id="revoke-key-title">Revoke API Key?</h2><p id="revoke-key-context"></p><p id="revoke-key-description" class="muted">Connected SDKs will clear their policy and stop evaluating when their next refresh receives the revocation. Disconnected SDKs keep their cached policy until they reconnect.</p></div><div class="dialog-actions"><button type="button" id="cancel-key-revocation" autofocus>Cancel</button><button type="button" id="confirm-key-revocation" class="primary danger">Revoke key</button></div>
+    <div class="dialog-content"><h2 id="revoke-key-title">Revoke API Key?</h2><p id="revoke-key-context"></p><p id="revoke-key-description" class="muted">SDKs clear their policy and stop evaluating when a policy refresh or usage report confirms revocation. Offline SDKs keep their cached policy until they receive that response.</p></div><div class="dialog-actions"><button type="button" id="cancel-key-revocation" autofocus>Cancel</button><button type="button" id="confirm-key-revocation" class="primary danger">Revoke key</button></div>
   </dialog>
   <dialog id="user-dialog" aria-labelledby="user-dialog-title" aria-describedby="user-dialog-context">
     <div class="dialog-heading"><div><h2 id="user-dialog-title">Create user</h2><p id="user-dialog-context" class="muted">Assign access separately for each environment.</p></div><button id="close-user" type="button" class="quiet" aria-label="Close user dialog">✕</button></div>

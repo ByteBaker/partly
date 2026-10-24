@@ -100,7 +100,17 @@ Use a current browser; dropdowns require the Popover API. Sign in at `/`. The en
 - **Docs:** choose Python, Rust, Go, or Node.js. Copy the tested quickstart and replace its URL, environment, application ID, and API Key constants. Each example initializes once, reuses the client for local evaluation, handles errors, and closes at shutdown.
 - **Users** (administrators only): create accounts, set environment roles, reset passwords, or disable access. Changes sign the affected user out. The initial administrator stays enabled for offline recovery.
 
-API Keys only read policies. Masking hides keys visually; administrators and environment managers receive their values; other users receive only masked identifiers. When a refresh confirms revocation, the SDK clears its policy and stops evaluation and polling. Disconnected SDKs cannot discover revocation until they communicate again. Ordinary network and server failures preserve the accepted policy.
+API Keys read policies and report usage; they cannot edit flags or accounts. Masking hides keys visually; administrators and environment managers receive their values; other users receive only masked identifiers. When a policy or usage response confirms revocation, the SDK clears its policy and stops evaluation and background work. Disconnected SDKs cannot discover revocation until they communicate again. Ordinary network and server failures preserve the accepted policy.
+
+## Usage reporting
+
+The SDK remembers distinct known flag checks, including disabled decisions and checks with invalid context. During evaluation it schedules a background report when 128 names are pending or 60 seconds have elapsed. It sends up to 128 names per request; repeated checks of the same flag use one entry. Evaluation never waits for that request. Failures retain pending names and wait at least 60 seconds before another evaluation can retry. Idle clients do not send; shutdown cancels reports and discards pending names.
+
+The server stores one row per API Key and flag, using server receipt time. Each batch updates only the distinct flags still assigned to that key's app. Names removed since the SDK's last refresh are ignored. Policy contents, ETags, revisions, and audits are unaffected. Usage survives application edits and key revocation. Deleting a flag removes its usage; the key's displayed time is the maximum of its remaining flag rows.
+
+**Feature flags** shows **Last reported use**, expandable by application and key. **Apps & Keys** shows each key's last reported use. Reload the page for updated activity. An empty history says **No usage reported**. These are cleanup hints: an idle, disconnected, closed, crashed, or older SDK may not report a flag it still uses. No evaluation contexts, outcomes, counts, or event history are sent.
+
+Usage uses the initial v1 schema. Earlier development databases without its table are rejected without modification; use a fresh database path. No upgrade migration is included in this alpha.
 
 ## HTTP contract
 
@@ -123,14 +133,18 @@ Dashboard writes require `X-Partly-Request: dashboard`. Sessions use HttpOnly, S
 | `PUT /api/environments/{env}/apps/{id}` | Manager or higher; update `{name, flags}` without changing the ID |
 | `POST /api/environments/{env}/apps/{id}/keys` | Manager or higher; `{name}`; returns a new key |
 | `GET /api/environments/{env}/audits` | Viewer or higher; newest 100 entries, optional `before` ID, `action`, and `application_id` filters |
+| `GET /api/environments/{env}/usage` | Viewer or higher; `{usage: [...]}` with per-key/flag timestamps and app/key names, never secrets |
 | `PUT /api/keys/{id}` | Manager or higher; rename with `{name}` |
 | `DELETE /api/keys/{id}` | Manager or higher; revoke key |
 | `GET /api/users` | Instance administrator; accounts and permissions, never passwords |
 | `POST /api/users` | Instance administrator; create `{username, password, is_admin, enabled, permissions}`; saved user, status 201 |
 | `PUT /api/users/{id}` | Instance administrator; same fields, optional password; saved user, status 200 |
 | `GET /api/policy` | SDK bearer key; full policy or `304` |
+| `POST /api/usage` | SDK bearer key plus policy scope headers; `{flags: [key, ...]}`; `204` after commit |
 
 The `permissions` object maps environment names to `viewer`, `editor`, or `manager`; omit environments with no access. Administrators have an empty permissions object because their access is global. API Keys cannot call dashboard or account APIs. Denied signed-in requests return `403`.
+
+Usage reports require no dashboard header or session. They retain the API's cross-origin checks, accept at most 128 names and a 16 KiB body, and reject extra JSON fields or invalid names. Repeated names are deduplicated. Invalid credentials or scope return `401`; confirmed revocation uses the same `key_revoked` response as policy requests. Empty and entirely stale batches return `204` without updating usage.
 
 Login allows five attempts per peer IP per minute, ignoring forwarded headers. Busy or throttled requests return `429` with `Retry-After: 60`. Limits reset on restart.
 
