@@ -38,7 +38,7 @@ The native API remains available without OpenFeature:
 
 Defaults: poll 30 seconds after each refresh; timeout 5 seconds for the entire download; maximum policy size 1 MiB. Change timing with builder `.poll_interval(seconds)` and `.timeout(seconds)`, using finite positive values. Validation runs outside the application event loop. After initialization, policy updates use background polling or `refresh()`.
 
-Background errors are logged under `partly` and exposed in `client.last_refresh_error`; a successful refresh clears it. Running clients retain their policy during outages, but a new process needs a successful initial download. A closed client can still evaluate its last policy, but cannot reconnect or accept updates.
+Background refresh failures produce a warning through Python's `partly` logger on each failed poll and are exposed in `client.last_refresh_error`; a successful refresh clears it. Configure log handlers and levels in your application; the SDK does not configure global logging. Running clients retain their policy during outages, but a new process needs a successful initial download. A closed client can still evaluate its last policy, but cannot reconnect or accept updates.
 
 ## Flag usage reporting
 

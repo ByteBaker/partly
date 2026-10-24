@@ -61,6 +61,7 @@ test closes its context on success, failure, or timeout.
 | `tests/api/{control_plane,applications,rbac}.rs` | Setup, authentication, scoped flags and keys, confirmation, audits, roles |
 | `tests/api/usage.rs` | Exact per-key/flag writes, scope, rollback, retention, revocation, and schema compatibility |
 | `tests/api/{operations,https}.rs` | Restart, crash recovery, backups, password recovery, TLS validation, graceful shutdown |
+| `tests/api/logging.rs` | Operational events, quiet polling, log levels, throttling, and credential/data redaction |
 | `tests/sdk/contract.rs` | Four native SDKs and OpenFeature providers, typed rules, refresh, offline cache, revocation, invalid responses |
 | `tests/sdk/usage.rs` | Real native and OpenFeature usage batches in all four languages, HTTPS, deduplication, and shutdown |
 | `tests/sdk/{examples,go_build}.rs` | Runnable documentation, package installation, native Go relinking |

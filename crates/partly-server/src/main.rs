@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 
 mod auth;
+mod logging;
 mod store;
 
 use axum::{
@@ -29,6 +30,9 @@ use store::{Role, Store, UserInput};
 #[derive(Parser)]
 #[command(name = "partly", version, about = "Local feature flag control plane")]
 struct Cli {
+    /// Operational log level: off, error, warn, info, debug, or trace. Logs go to stderr.
+    #[arg(long, global = true, default_value = "info")]
+    log_level: tracing::level_filters::LevelFilter,
     #[command(subcommand)]
     command: Command,
 }
@@ -130,15 +134,24 @@ impl ApiError {
 
 impl From<rusqlite::Error> for ApiError {
     fn from(error: rusqlite::Error) -> Self {
-        Self::internal(format!("Database operation failed: {error}"))
+        match error.sqlite_error() {
+            Some(code) => Self::internal(format!(
+                "Database operation failed (SQLite code {})",
+                code.extended_code
+            )),
+            None => Self::internal("Database operation failed"),
+        }
     }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let revoked = self.0 == StatusCode::UNAUTHORIZED && self.1 == "key_revoked";
+        let diagnostic = self
+            .0
+            .is_server_error()
+            .then(|| logging::Failure(self.1.clone()));
         let message = if self.0.is_server_error() {
-            eprintln!("{}", self.1);
             "Storage operation failed. Check the server terminal.".to_owned()
         } else {
             self.1
@@ -158,6 +171,9 @@ impl IntoResponse for ApiError {
             response
                 .headers_mut()
                 .insert(header::RETRY_AFTER, HeaderValue::from_static("60"));
+        }
+        if let Some(diagnostic) = diagnostic {
+            response.extensions_mut().insert(diagnostic);
         }
         response
     }
@@ -886,7 +902,10 @@ async fn environment_dashboard(
 
 #[tokio::main]
 async fn main() {
-    let result = match Cli::parse().command {
+    let cli = Cli::parse();
+    logging::init(cli.log_level);
+    let reset = matches!(cli.command, Command::ResetPassword { .. });
+    let result = match cli.command {
         Command::ResetPassword { db } => reset_password(db),
         Command::Serve {
             host,
@@ -898,7 +917,11 @@ async fn main() {
         } => serve(host, port, db, tls_cert, tls_key, hostname).await,
     };
     if let Err(error) = result {
-        eprintln!("Partly could not start: {error}");
+        if reset {
+            tracing::error!(target: "partly", error = ?error.to_string(), "Password reset failed");
+        } else {
+            tracing::error!(target: "partly", error = ?error.to_string(), "Partly could not start or serve requests");
+        }
         std::process::exit(1);
     }
 }
@@ -924,6 +947,7 @@ fn reset_password(db: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     }
     let hash = auth::hash_password(&password).map_err(|e| e.1)?;
     store.reset_password(&hash).map_err(|e| e.1)?;
+    tracing::info!(target: "partly", "Administrator password reset");
     println!("Administrator password reset. Start the server and sign in with the new password.");
     Ok(())
 }
@@ -964,6 +988,7 @@ async fn serve(
     };
     let scheme = transport.scheme();
     let store = Store::open(db).map_err(|e| e.1)?;
+    let setup_required = !store.ready();
     if !store.ready() && !host.is_loopback() {
         return Err("Complete setup locally first: run with --host 127.0.0.1, create the administrator, then restart with the remote bind address".into());
     }
@@ -1054,13 +1079,16 @@ async fn serve(
         .route("/api/usage", post(report_usage))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(middleware::from_fn_with_state(transport, security))
+        .layer(middleware::from_fn(logging::request))
         .with_state(App::new(store));
     let listener = tokio::net::TcpListener::bind((host, port)).await?;
     println!("Partly listening at {scheme}://{}", listener.local_addr()?);
+    tracing::info!(target: "partly", version = env!("CARGO_PKG_VERSION"), scheme, address = %listener.local_addr()?, setup_required, "Server ready");
     let handle = axum_server::Handle::new();
     let shutdown = handle.clone();
     tokio::spawn(async move {
         shutdown_signal().await;
+        tracing::info!(target: "partly", "Shutdown requested");
         shutdown.graceful_shutdown(Some(std::time::Duration::from_secs(3)));
     });
     let listener = listener.into_std()?;
@@ -1076,6 +1104,7 @@ async fn serve(
             .serve(service)
             .await?;
     }
+    tracing::info!(target: "partly", "Server stopped");
     Ok(())
 }
 

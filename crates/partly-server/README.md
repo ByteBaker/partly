@@ -11,6 +11,26 @@ cargo build --release --locked -p partly-server
 
 These flags show the defaults. The database's parent directory must exist. Reuse the same path on restart. Ctrl+C or SIGTERM stops the server, allowing up to three seconds for requests to finish. Account sessions expire after 12 hours or a restart.
 
+## Logging
+
+Operational logs go to standard error (`stderr`), with a timestamp, level, and named fields. The default `info` level records startup, shutdown, setup state, and successful setup, login, logout, and dashboard write requests. It also includes warnings and errors. Successful reads, assets, policy downloads (`200`/`304`), and usage reports (`204`) stay quiet at this level.
+
+Warnings cover failed logins (`401`), denied requests (`403`), rejected hostnames (`421`), and the first throttled login for each peer IP in a rate-limit window. Further `429` responses in that window appear at `debug`. Internal request failures and process failures are errors.
+
+For request summaries, including routine polling and ordinary `4xx` responses, enable `debug`:
+
+```sh
+./target/release/partly serve --db ./partly.db --log-level debug
+```
+
+The global `--log-level` option accepts `off`, `error`, `warn`, `info`, `debug`, or `trace`. It controls Partly logs only. Dependency logs remain disabled, and `RUST_LOG` is ignored.
+
+Request entries include the HTTP method, matched route template, status, elapsed milliseconds, and actual peer IP, ignoring forwarded addresses. A route template such as `/api/environments/{env}/flags/{key}` keeps names out of logs. SQLite failures include safe error codes. Request and response bodies, headers, query strings, raw path values, credentials, and policy or context values are omitted.
+
+Use your service manager to capture and retain `stderr`; Partly does not create or rotate log files. The listening message and password-reset confirmation go to standard output (`stdout`).
+
+Operational logs describe server activity and request results. A successful write request can save the same values without changing data. Use **Audits** for the saved changes, who made them, and their before/after states. Audit entries are stored in SQLite in the same transaction as each change.
+
 ## HTTPS
 
 Complete setup on `127.0.0.1` first. Stop the server, then restart with a certificate and key:
@@ -158,7 +178,7 @@ Flag PUT/DELETE requests require `X-Partly-Confirm: environment/flag_name` and `
 
 All responses use `Cache-Control: no-store`. Active key lists include full secrets only for managers and instance administrators. Other roles and revoked entries receive `secret: null`, with masked identifiers and dates. Revocation removes the full stored secret, retaining its SHA-256 hash and partial identifier. Audit details never include full credentials. Audit entries cannot be edited through the API but are not protected from direct database access.
 
-There is no `/reveal` endpoint. Storage failures return a generic `500`, with details in the terminal. Credentials are not logged.
+There is no `/reveal` endpoint. Storage failures return a generic `500`, with safe diagnostics in the [operational logs](#logging). Credentials are not logged.
 
 ## License
 

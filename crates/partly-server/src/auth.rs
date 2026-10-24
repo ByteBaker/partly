@@ -43,6 +43,10 @@ impl Auth {
         }
         let (_, count) = attempts.entry(peer).or_insert((now, 0));
         if *count >= ATTEMPTS {
+            if *count == ATTEMPTS {
+                tracing::warn!(target: "partly", %peer, "Sign-in requests throttled");
+                *count += 1;
+            }
             return Err(ApiError::throttled());
         }
         *count += 1;

@@ -138,7 +138,7 @@ Git integration, approval workflows, lifecycle automation, HA, SSO, richer flag 
 
 ## Guides
 
-- [Server: HTTPS, backups, and password recovery](crates/partly-server/README.md)
+- [Server: logs, HTTPS, backups, and password recovery](crates/partly-server/README.md)
 - [OpenFeature: integration, verified behavior, and limits](docs/openfeature.md)
 - [Evaluation rules and percentage consistency](crates/partly-core/README.md)
 - [Development checks and release preparation](docs/releasing.md)

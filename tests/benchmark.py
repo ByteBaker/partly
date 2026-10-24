@@ -28,7 +28,7 @@ def running_server():
     with tempfile.TemporaryDirectory(prefix="partly-bench-") as directory:
         process = subprocess.Popen(
             [str(BINARY), "serve", "--port", "0", "--db", str(Path(directory) / "partly.db")],
-            cwd=directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            cwd=directory, stdout=subprocess.PIPE, text=True,
         )
         try:
             line = process.stdout.readline().strip()
@@ -44,7 +44,6 @@ def running_server():
                     process.kill()
                     process.wait()
             process.stdout.close()
-            process.stderr.close()
 
 
 async def main():
