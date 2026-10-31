@@ -27,6 +27,8 @@ modules; shared helpers are compiled once within that target.
 Install the development tools and Python 3.14 SDK as described in
 [release checks](../../docs/releasing.md). Activate that Python environment first.
 Rust, Go, and Node must also be available; missing SDKs or tools fail the tests.
+`task test` builds the components, prepares the SDKs and Chromium, and runs unit
+tests plus this complete suite. Use the commands below for focused E2E runs.
 
 ```sh
 cargo build --locked -p partly-server

@@ -4,7 +4,7 @@ Async policy downloads through Reqwest and rustls; local decisions through `part
 
 ## Use a release archive
 
-Requires Rust 1.89+. Until publication, extract the `partly-core` and `partly-rust` `.crate` archives into `third_party`, then use:
+Requires Rust 1.89+. Archives will be published on [GitHub Releases](https://github.com/ByteBaker/partly/releases). Once available, extract the `partly-core` and `partly-rust` `.crate` archives into `third_party`, then use:
 
 ```toml
 [dependencies]
@@ -16,7 +16,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 partly-core = { path = "third_party/partly-core-0.1.0-alpha.1" }
 ```
 
-The archives build without this checkout. For development inside the repository, use `sdk/rust` as the dependency path.
+The archives build without this checkout. For development inside the repository, use `sdk/rust` as the dependency path and run `task build:rust` from the root.
 
 Use the [complete OpenFeature quickstart](https://github.com/ByteBaker/partly/blob/main/examples/rust/quickstart.rs) for connection settings, provider registration, two requests sharing one initialized client, error handling, and shutdown. Handlers only evaluate locally. See [context mapping and upstream Rust limitations](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#rust).
 

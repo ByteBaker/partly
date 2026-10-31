@@ -6,17 +6,16 @@ The package includes type hints for mypy and editors, including the native evalu
 
 ## Build locally
 
-From the repository root, create a CPython 3.14 virtual environment and install the SDK:
+For repository development, install the [development tools](https://github.com/ByteBaker/partly/blob/main/docs/releasing.md#build-and-verify), then run from the root:
 
 ```sh
-python3.14 -m venv .venv
-source .venv/bin/activate
-python -m pip install 'maturin>=1.9.4,<2'
-maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels -i python3.14
-python -m pip install target/wheels/partly_sdk-0.1.0a1-cp314-cp314-*.whl
+task setup
+task install:python
 ```
 
-Supports regular CPython 3.14 only. Source builds also require Rust and a C compiler; a matching prebuilt wheel needs no Rust compiler. Free-threaded Python is not supported. Public downloads are not available yet; see [release targets and status](https://github.com/ByteBaker/partly/blob/main/docs/releasing.md#distribution-targets).
+Setup is only needed once. The SDK is installed in `.venv`; Task uses it without shell activation. Activate it when running Python commands directly.
+
+Supports regular CPython 3.14 only. Source builds also require Rust and a C compiler; a matching prebuilt wheel needs no Rust compiler. Free-threaded Python is not supported. Wheels will be published on [GitHub Releases](https://github.com/ByteBaker/partly/releases); none are available yet. See [release targets and status](https://github.com/ByteBaker/partly/blob/main/docs/releasing.md#distribution-targets).
 
 ## Use OpenFeature
 

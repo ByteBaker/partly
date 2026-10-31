@@ -4,7 +4,7 @@ Go handles HTTP and polling; a statically linked Rust library evaluates policies
 
 ## Use a release archive
 
-The OpenFeature integration requires Go 1.26+ and a C compiler with cgo enabled. Native-only use supports Go 1.22+. Extract the archive for your platform into `third_party/partly-go` in your application, then add:
+The OpenFeature integration requires Go 1.26+ and a C compiler with cgo enabled. Native-only use supports Go 1.22+. Download the archive for your platform from [GitHub Releases](https://github.com/ByteBaker/partly/releases) once assets are published. Extract it into `third_party/partly-go` in your application, then add:
 
 ```go
 require (
@@ -24,7 +24,7 @@ Go 1.22 is the compatibility minimum. Use a supported Go release with current se
 The OpenFeature example requires Go 1.26+, Rust, and a C compiler. From the repository root:
 
 ```sh
-sh sdk/go/build.sh
+task build:go
 cd examples/go
 go run -a .
 ```

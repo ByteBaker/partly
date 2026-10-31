@@ -5,7 +5,7 @@ One executable serves the dashboard and API, with Axum and embedded SQLite. No s
 From the repository root:
 
 ```sh
-cargo build --release --locked -p partly-server
+task build:server
 ./target/release/partly serve --host 127.0.0.1 --port 8080 --db ./partly.db
 ```
 
@@ -112,6 +112,15 @@ Before upgrading, back up the stopped database and keep the old executable. This
 
 ## Dashboard
 
+One server can manage several applications. Each app selects shared flags in its environment, and its API Keys download only that selection. Applications may run on other machines; evaluation stays inside their SDKs.
+
+```mermaid
+flowchart LR
+    CP[Partly control plane] -->|Policy refresh| A[Billing app: local SDK]
+    CP -->|Policy refresh| B[API service: local SDK]
+    CP -->|Policy refresh| C[Worker: local SDK]
+```
+
 Use a current browser; dropdowns require the Popover API. Sign in at `/`. The environment selector reloads the page with the environment in the URL, such as `/environments/production/flags`.
 
 - **Feature flags:** create and edit flags in the current environment. Choose everyone, percentage, custom rules, or nobody. Unsaved changes trigger navigation warnings; saving one flag preserves other drafts. Existing edits and deletions always list affected apps (including an empty list) and require the exact `environment/flag_name`. Concurrent changes invalidate the confirmation.
@@ -121,6 +130,8 @@ Use a current browser; dropdowns require the Popover API. Sign in at `/`. The en
 - **Users** (administrators only): create accounts, set environment roles, reset passwords, or disable access. Changes sign the affected user out. The initial administrator stays enabled for offline recovery.
 
 API Keys read policies and report usage; they cannot edit flags or accounts. Masking hides keys visually; administrators and environment managers receive their values; other users receive only masked identifiers. When a policy or usage response confirms revocation, the SDK clears its policy and stops evaluation and background work. Disconnected SDKs cannot discover revocation until they communicate again. Ordinary network and server failures preserve the accepted policy.
+
+![Audit history with before and after states and affected applications](../../docs/images/audits.png)
 
 ## Usage reporting
 

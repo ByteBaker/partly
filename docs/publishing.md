@@ -1,10 +1,10 @@
 # Publishing Partly
 
-Partly uses one release version for the server and every SDK. The current candidate is **0.1.0-alpha.1**. Public downloads and registry packages are not available yet.
+Partly uses one release version for the server and every SDK. The current candidate is **0.1.0-alpha.1**. Use [GitHub Releases](https://github.com/ByteBaker/partly/releases) for server binaries, wheels, and standalone SDK archives. No release assets or registry packages have been published yet.
 
 | Component | Release version | Destination |
 | --- | --- | --- |
-| Server | `0.1.0-alpha.1`, Git tag `v0.1.0-alpha.1` | Repository release downloads |
+| Server | `0.1.0-alpha.1`, Git tag `v0.1.0-alpha.1` | [GitHub Releases](https://github.com/ByteBaker/partly/releases) |
 | Python `partly-sdk` | `0.1.0a1` | PyPI |
 | Rust `partly-core`, `partly-rust` | `0.1.0-alpha.1` | crates.io |
 | Go `partly.sh/sdk/go` | `v0.1.0-alpha.1` | Tagged module repository, discovered through Go proxies |
@@ -29,7 +29,11 @@ Release every component from the same verified commit, including an SDK-only fix
 
 ## Before uploading
 
-Complete the [release checks](releasing.md#before-public-upload), confirm package ownership, replace placeholder links, and download the artifacts from the green workflow for the chosen commit. Verify their checksums. Use a clean release staging directory so older builds cannot be uploaded by a wildcard.
+Complete the [release checks](releasing.md#before-public-upload), confirm package ownership, and download the artifacts from the green workflow for the chosen commit. Verify their checksums. Use a clean release staging directory so older builds cannot be uploaded by a wildcard.
+
+Use a versioned GitHub release for the alpha; [prereleases cannot be marked latest](https://docs.github.com/en/rest/releases/releases#create-a-release), so do not rely on `/releases/latest`. After publication, an asset URL has the form `https://github.com/ByteBaker/partly/releases/download/v0.1.0-alpha.1/<asset-name>`. The release workflow currently uploads Actions artifacts only; those still need to be attached to a release after verification.
+
+The `partly.sh/sdk/go` paths below identify Go modules, not download URLs. The current archive-plus-`replace` installation does not need that domain. Public Go module discovery remains separate work.
 
 The commands below are instructions, not actions performed by CI. No release packages have been published. Account credentials belong outside the repository.
 

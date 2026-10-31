@@ -1,0 +1,64 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
+minimum_prek_version = "0.5.5"
+default_install_hook_types = ["pre-push"]
+default_stages = ["pre-push"]
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "check-merge-conflict" },
+  { id = "check-toml" },
+  { id = "check-json" },
+  { id = "check-yaml" },
+]
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "rust-format"
+name = "Rust formatting"
+language = "system"
+entry = "cargo fmt --all --check"
+files = '(\.rs$|(^|/)Cargo\.toml$)'
+pass_filenames = false
+
+[[repos.hooks]]
+id = "python-lint"
+name = "Python lint"
+language = "system"
+entry = "task hook:python --"
+types_or = ["python", "pyi"]
+
+[[repos.hooks]]
+id = "go-format"
+name = "Go formatting"
+language = "system"
+entry = "sh scripts/check_gofmt.sh"
+types = ["go"]
+
+[[repos.hooks]]
+id = "frontend-lint"
+name = "JavaScript, HTML and CSS lint"
+language = "system"
+entry = "npm run lint"
+files = '(\.(js|mjs|ts|html|css)$|^config/|(^|/)package(-lock)?\.json$)'
+exclude = '(^|/)RUST_STDLIB_NOTICES\.html$'
+pass_filenames = false
+
+[[repos.hooks]]
+id = "shell-lint"
+name = "Shell lint"
+language = "system"
+entry = "task hook:shell --"
+types = ["shell"]
+
+[[repos.hooks]]
+id = "release-versions"
+name = "Release version consistency"
+language = "system"
+entry = "task hook:versions"
+files = '(^|/)(Cargo\.(toml|lock)|pyproject\.toml|package\.json|go\.mod)$|^tests/test_release_versions\.py$'
+pass_filenames = false

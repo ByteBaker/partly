@@ -24,22 +24,17 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: Check source formatting and Python types
+      - name: Install frontend check tools
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run basic checks and task runner tests
         run: |
-          cargo fmt --all --check
-          python -m ruff check .
+          task check PYTHON="$(command -v python)"
+          python -m pytest -q tests/test_tasks.py
+      - name: Check Python and TypeScript types
+        run: |
           python -m mypy
-          gofmt -l sdk/go examples/go tests/sdk_contract/go tests/sdk_contract/go_openfeature > "$RUNNER_TEMP/gofmt.txt"
-          cat "$RUNNER_TEMP/gofmt.txt"
-          test ! -s "$RUNNER_TEMP/gofmt.txt"
-          python -m pytest -q tests/test_release_versions.py
-      - name: Check dashboard source and TypeScript
-        run: |
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm run lint
           npm run typecheck
       - name: Check shell scripts and workflows
         run: |
-          shellcheck sdk/go/build.sh
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           actionlint

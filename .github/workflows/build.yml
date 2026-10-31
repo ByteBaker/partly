@@ -34,12 +34,9 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Build all components
         run: |
-          rm -rf target/wheels
-          maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels -i python3.14
-          cargo build --release --locked -p partly-server
-          sh sdk/go/build.sh
+          npm ci --ignore-scripts --no-audit --no-fund
+          task build PYTHON="$(command -v python)"
           cargo build --locked -p partly-sdk-contract
-          node sdk/node/build.js
           (cd examples/go && go build -a -o ../../target/go-example .)
       - name: Bundle test inputs
         run: tar -czf target/test-inputs.tar.gz target/release/partly target/wheels sdk/go/native sdk/node/native
@@ -74,17 +71,8 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           cargo run --locked -p partly-e2e --features browser --bin partly-test-browsers -- --with-deps chromium
           cargo fetch --locked
-      - name: Run unit tests
-        run: |
-          python -m mypy.stubtest partly._native
-          cargo test --locked --workspace --all-features --exclude partly-e2e
-          (cd sdk/go && go test -a -race ./...)
-          (cd sdk/go/openfeature && go test -a -race ./...)
-          node --test sdk/node/test/*.test.js
-      - name: Test the installed SDKs and dashboard
-        run: |
-          python -m pytest -q
-          cargo test --locked -p partly-e2e --features browser --test e2e -- --test-threads=4
+      - name: Run unit, SDK and dashboard tests
+        run: task test:run PYTHON="$(command -v python)"
       - name: Upload browser failure traces
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

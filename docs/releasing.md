@@ -31,40 +31,47 @@ This candidate also adds individual accounts and environment permissions. The de
 
 ## Build and verify
 
-Follow the [server setup](../README.md#build-locally) and [Python SDK build](../sdk/python/README.md#build-locally), then run from the repository root with that virtual environment active. The full suite also needs Go and Node.js (locally tested with Go 1.27.3 and Node.js 26.10.0):
+Use Task as the single command entry point for development and CI. Its named tasks call Cargo and the existing language tools, with explicit ordering and shared commands defined in [Taskfile.yml](../Taskfile.yml).
+
+Install [Task](https://taskfile.dev/docs/installation), Rust, Go, Node.js, a C compiler, and regular CPython 3.14. CI pins Task 3.53.1. For just the server, Task, Rust, and a C compiler are enough: run `task build:server`.
+
+Prepare the development checkout once:
 
 ```sh
-python -m pip install -r config/requirements-dev.txt
-cargo run --locked -p partly-e2e --features browser --bin partly-test-browsers -- chromium
-cargo fmt --all --check
-python -m ruff check .
-python -m mypy
-npm ci --ignore-scripts --no-audit --no-fund
-npm run lint
-npm run typecheck
-shellcheck sdk/go/build.sh
-go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-actionlint
-go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
-for module in sdk/go sdk/go/openfeature examples/go tests/sdk_contract/go tests/sdk_contract/go_openfeature; do
-  (cd "$module" && go vet ./... && staticcheck ./...)
-done
-PLAYWRIGHT_SKIP_DRIVER_DOWNLOAD=1 PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-PYO3_PYTHON="$VIRTUAL_ENV/bin/python" cargo test --locked --workspace --all-features --exclude partly-e2e
-python -m mypy.stubtest partly._native
-cargo build --locked -p partly-server -p partly-sdk-contract
-sh sdk/go/build.sh
-node sdk/node/build.js
-(cd sdk/go && go vet ./... && go test -a -race ./...)
-(cd sdk/go/openfeature && go test -a -race ./...)
-node --test sdk/node/test/*.test.js
-python -m pytest -q
-cargo test --locked -p partly-e2e --features browser --test e2e -- --test-threads=4
+task setup
 ```
+
+This creates `.venv`, installs Python and frontend development dependencies, and installs the prek pre-push hook. It does not install system toolchains. An existing environment with the wrong Python version is rejected without replacing it. Task commands use this environment without requiring shell activation.
+
+| Command | What it does |
+| --- | --- |
+| `task` | List available commands |
+| `task check` | Basic pre-push checks; no builds |
+| `task build` | Check sources, then build the server and all four SDKs |
+| `task test` | Build, install the local wheel, prepare Chromium, and run all tests |
+| `task build:server` | Build only the release server at `target/release/partly` |
+| `task build:python` | Build only the CPython 3.14 wheel in `target/wheels/` |
+| `task build:rust` | Build only the Rust SDK with OpenFeature |
+| `task build:go` | Build only the Go native library |
+| `task build:node` | Build only the Node addon |
+| `task install:python` | Build and install the Python SDK locally |
+| `task test:run` | Run the suite against prepared artifacts, as CI does |
+
+A failed check stops `task build` and `task test` before compilation. Failed builds stop the later steps. Component targets allow focused builds. All commands live in `Taskfile.yml`; the language-specific native build helpers remain shared with release packaging. No task publishes packages.
+
+On Linux, install browser system dependencies once with `task browsers -- --with-deps chromium`. `task test` then reuses the downloaded browser. `task test:run` expects built native libraries, an installed Python wheel, development dependencies, and Chromium; missing requirements fail the run.
+
+For an existing environment, pass `VENV=/absolute/path` to a task. CI passes `PYTHON=/absolute/path/to/python` to use its installed interpreter. For Git hooks with a nondefault environment, export `PARTLY_PYTHON` and put that environment's `bin` directory on `PATH`. Normal `.venv` setups need no activation. The existing `PARTLY_BINARY` and `PARTLY_BROWSER` test settings still work.
+
+### Pre-push checks
+
+[prek](https://prek.j178.dev/0.5.5/reference/configuration/) runs `config/prek.toml` before a push. It checks conflict markers, JSON/TOML/YAML syntax, Rust and Go formatting, Python lint, frontend lint, shell scripts, and release-version consistency. Checks select files changed in the push; workspace-wide tools run once when relevant files change. They report problems without rewriting files. `task check` runs the same checks over all tracked files.
+
+The hook does not compile, run browsers, or scan dependencies. Strict type checks, Clippy, Go analysis, and vulnerability scans remain in **Verify**. Each contributor installs the hook with `task setup`; CI remains authoritative. The hook uses the same supported prek stages as [Apache Iggy's configuration](https://github.com/apache/iggy/blob/master/.pre-commit-config.yaml), with a smaller check set.
 
 Tests use temporary servers and databases. `PARTLY_BINARY` selects an absolute executable path. `PARTLY_BROWSER=firefox` or `webkit` selects an installed browser for focused checks. Test reports and screenshots stay outside Git.
 
-Python checks discover settings in the root `pyproject.toml`. Frontend settings live in `config/`; use the npm commands above so each tool loads the right file. CI uses those same commands and installs `config/requirements-dev.txt`.
+Python checks discover settings in the root `pyproject.toml`. Frontend settings live in `config/`; use `npm run lint` and `npm run typecheck` so each tool loads the right file. CI uses those same commands and installs `config/requirements-dev.txt`.
 
 The [Rust E2E harness](../tests/e2e/README.md) runs the [four-language contract](../tests/sdk_contract/README.md), [OpenFeature tests](../tests/sdk_contract/README.md#openfeature-contract), RBAC tests, and minimal examples. All must pass before committing. Go links a bundled Rust static library; use `-a` after replacing it because Go's cache does not track archive changes.
 
@@ -79,7 +86,13 @@ PARTLY_SDK_PACKAGES="$PWD/target/sdk-packages" cargo test --locked -p partly-e2e
 
 The output contains two Rust `.crate` files, a Go archive with its static library and optional provider module, and a Node npm tarball with its native extension and provider. Rust packaging verifies all features in a fresh temporary registry to avoid reusing an older unpublished alpha at the same version. Go and Node archives target the build machine; build both macOS ARM64 and Linux x86_64. Consumers do not need Rust for those prebuilt archives. During development only, `--allow-dirty` tests uncommitted packaging changes. Publishing to registries remains a separate step.
 
-Optional: `python tests/benchmark.py` measures a release build's size, startup, sampled memory, and Python evaluation including binding overhead. It is not a load test.
+### Benchmarks
+
+After `task build:server` and `task install:python`, run `.venv/bin/python tests/benchmark.py`. The script measures binary size, startup, sampled server memory, and native Python evaluation, including Rust binding overhead.
+
+The October 24, 2026 run recorded approximately **26.2 MiB server memory** and **0.57 µs per Python evaluation**. It used one 50% flag and a fixed user ID, taking the median of five batches of 100,000 calls. Evaluation includes binding and usage tracking costs, but excludes OpenFeature and report dispatch. Memory excludes the application SDK and browser.
+
+This is a historical baseline with no application load, not a production sizing recommendation, tail-latency measurement, or cross-product speed comparison. Rerun it for performance changes; do not treat it as a result for every later commit.
 
 ## CI gates
 
@@ -139,7 +152,7 @@ Run `python -m twine check --strict` on the wheel and source archive. Verify dow
 
 1. Verify packaged licenses, dependency terms, and contributor rights against [licensing boundaries](licensing.md).
 2. Use [ByteBaker/partly](https://github.com/ByteBaker/partly) as the source repository and confirm ownership of `partly-sdk` on PyPI.
-3. Deploy `https://partly.sh` and `https://partly.sh/install`, or replace these remaining placeholder metadata links.
+3. Use [GitHub Releases](https://github.com/ByteBaker/partly/releases) for public downloads. Attach verified artifacts to the matching versioned release; the domain is not a release prerequisite.
 4. Pass **Release artifacts** on the final commit, resolve advisories, and test the downloaded artifacts.
 5. Configure PyPI Trusted Publishing or a scoped credential outside source control.
 6. Publish approved archives, wheels, source, checksums, and release notes. Link the [backup and upgrade procedure](../crates/partly-server/README.md#backup-restore-and-upgrades).

@@ -99,7 +99,7 @@ The Rust harness starts the real server and runs all four language drivers. The 
 
 ## Acceptance target
 
-The target remains the smallest supported provider contract with Boolean flags and local evaluation. Optional tracking, static-context reconciliation, remote evaluation, and richer flag types are outside this scope. No OFREP endpoint or alternate server policy format is needed.
+The current target remains the smallest supported provider contract with Boolean flags and local evaluation. [Non-Boolean results and dashboard-defined types](roadmap.md#typed-evaluation-results) are planned separately; the tests and limits above describe the current implementation. Optional tracking, static-context reconciliation, and remote evaluation remain outside scope. OpenFeature itself does not require an OFREP endpoint or alternate server policy format.
 
 **OpenFeature-first** describes the recommended application API: all runnable quickstarts and dashboard snippets use it. It does not mean full specification conformance. Native clients remain available for refresh and cleanup. Track the Rust differences above and review newer specification requirements separately; prefer focused upstream contributions over a replacement SDK.
 

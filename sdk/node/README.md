@@ -4,7 +4,7 @@ Async HTTP downloads with local Rust evaluation through Node-API. Supports serve
 
 ## Install a release archive
 
-Install the `.tgz` for your platform with `npm install ./partly-node-<version>-<platform>.tgz @openfeature/server-sdk@^1.23.0`, then import from `partly-sdk`. It includes the native library; consumers do not need Rust or this checkout. Supported targets are macOS ARM64 and Linux x86_64. The tarballs are platform-specific; npm publishing remains separate.
+Download the `.tgz` for your platform from [GitHub Releases](https://github.com/ByteBaker/partly/releases) once assets are published. Install it with `npm install ./partly-node-<version>-<platform>.tgz @openfeature/server-sdk@^1.23.0`, then import from `partly-sdk`. It includes the native library; consumers do not need Rust or this checkout. Supported targets are macOS ARM64 and Linux x86_64. The tarballs are platform-specific; npm publishing remains separate.
 
 The Linux archive requires glibc 2.34 or newer. It does not run on Alpine.
 
@@ -14,7 +14,7 @@ Requires Rust and a C compiler. From the repository root:
 
 ```sh
 npm ci --ignore-scripts
-node sdk/node/build.js
+task build:node
 node examples/node/quickstart.js
 ```
 

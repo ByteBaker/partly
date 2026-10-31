@@ -7,5 +7,6 @@ pytest-asyncio>=0.24,<2
 ruff>=0.17,<0.18
 mypy==2.4.0
 shellcheck-py==0.11.0.1
+prek==0.5.5
 trustme>=1.2.1,<2
 openfeature-sdk==0.10.0

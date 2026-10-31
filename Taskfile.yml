@@ -1,0 +1,118 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
+version: '3'
+
+vars:
+  VENV: '{{.ROOT_DIR}}/.venv'
+  PYTHON: '{{default (printf "%s/bin/python" .VENV) .PARTLY_PYTHON}}'
+
+tasks:
+  default:
+    cmds: [task --list]
+
+  setup:
+    desc: Install development dependencies and the pre-push hook
+    cmds:
+      - |
+        if [ ! -e {{.VENV | shellQuote}} ]; then
+          python3.14 -m venv {{.VENV | shellQuote}}
+        fi
+      - task: python:validate
+      - '{{.PYTHON | shellQuote}} -m pip install -r config/requirements-dev.txt'
+      - npm ci --ignore-scripts --no-audit --no-fund
+      - PATH={{.VENV | shellQuote}}/bin:"$PATH" prek install -c config/prek.toml
+
+  check:
+    desc: Run basic pre-push checks without building
+    cmds:
+      - PARTLY_PYTHON={{.PYTHON | shellQuote}} PATH={{.VENV | shellQuote}}/bin:"$PATH" prek run -c config/prek.toml --all-files --stage pre-push
+
+  hook:python:
+    cmds:
+      - '{{.PYTHON | shellQuote}} -m ruff check {{.CLI_ARGS}}'
+
+  hook:versions:
+    cmds:
+      - '{{.PYTHON | shellQuote}} -m pytest -q tests/test_release_versions.py'
+
+  hook:shell:
+    cmds:
+      - PATH={{dir .PYTHON | shellQuote}}:"$PATH" shellcheck {{.CLI_ARGS}}
+
+  build:
+    desc: Check sources and build the server and all four SDKs
+    cmds:
+      - task: check
+      - task: build:server
+      - task: build:python
+      - task: build:rust
+      - task: build:go
+      - task: build:node
+
+  build:server:
+    desc: Build only the standalone server
+    cmds: [cargo build --release --locked -p partly-server]
+
+  build:python:
+    desc: Build the CPython 3.14 wheel
+    run: once
+    cmds:
+      - task: python:validate
+      - mkdir -p target/wheels
+      - rm -f target/wheels/partly_sdk-*.whl
+      - '{{.PYTHON | shellQuote}} -m maturin build --release --locked --manifest-path sdk/python/Cargo.toml --out target/wheels -i {{.PYTHON | shellQuote}}'
+
+  build:rust:
+    desc: Build the Rust SDK with OpenFeature
+    cmds: [cargo build --release --locked -p partly-rust --all-features]
+
+  build:go:
+    desc: Build the Go SDK native library
+    cmds: [sh sdk/go/build.sh]
+
+  build:node:
+    desc: Build the Node.js native addon
+    cmds: [node sdk/node/build.js]
+
+  install:python:
+    desc: Build and install the Python SDK in the development environment
+    cmds:
+      - task: build:python
+      - '{{.PYTHON | shellQuote}} -m pip install --force-reinstall target/wheels/partly_sdk-*.whl'
+
+  browsers:
+    desc: Install Chromium (or pass browser installer arguments after --)
+    cmds:
+      - cargo run --locked -p partly-e2e --features browser --bin partly-test-browsers -- {{default "chromium" .CLI_ARGS}}
+
+  test:
+    desc: Build, prepare SDKs and Chromium, then run the full test suite
+    cmds:
+      - task: build
+      - task: install:python
+      - task: browsers
+      - task: test:run
+
+  test:run:
+    desc: Run tests using already prepared artifacts (also used by CI)
+    cmds:
+      - |
+        set -eu
+        export PARTLY_PYTHON={{.PYTHON | shellQuote}}
+        export PYO3_PYTHON="$PARTLY_PYTHON"
+        task_binary={{.ROOT_DIR | shellQuote}}/target/release/partly
+        export PARTLY_BINARY="${PARTLY_BINARY:-$task_binary}"
+        "$PARTLY_PYTHON" -m mypy.stubtest partly._native
+        cargo test --locked --workspace --all-features --exclude partly-e2e
+        (cd sdk/go && go test -a -race ./...)
+        (cd sdk/go/openfeature && go test -a -race ./...)
+        node --test sdk/node/test/*.test.js
+        "$PARTLY_PYTHON" -m pytest -q
+        cargo test --locked -p partly-e2e --features browser --test e2e -- --test-threads=4
+
+  python:validate:
+    internal: true
+    cmds:
+      - >-
+        {{.PYTHON | shellQuote}} -c 'import sys, sysconfig; sys.exit(0 if sys.implementation.name == "cpython" and sys.version_info[:2] == (3, 14) and not sysconfig.get_config_var("Py_GIL_DISABLED") else "Use regular CPython 3.14. An existing environment is never replaced; choose another directory with VENV=/absolute/path.")'

@@ -1,6 +1,7 @@
 /target/
 /.venv/
 /.cache/
+/.task/
 *.db
 *.db-*
 *.db.lock
