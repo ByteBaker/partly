@@ -41,6 +41,7 @@ Read this file and the relevant package READMEs before changing the project. The
 
 ## Quality and documentation
 
+- Keep the HTTP contract generated with Utoipa from registered Axum routes and Rust types, served at `/openapi.json` and tracked in `docs/openapi.json`. Regenerate with `task api:export`; never edit the generated JSON directly. Preserve the CLI export without database/network side effects and real-response contract tests. Keep the core OpenAPI feature optional for SDK consumers.
 - Keep shared code under `crates/` and language-specific SDK implementations under `sdk/<language>` (`python`, `rust`, `go`, `node`). Keep application examples under `examples/<language>`. Add folders when implementing them, not as empty placeholders.
 - Keep frontend check configs and development requirements in `config/`, Python check settings in the root `pyproject.toml`, guides in `docs/`, and server dependency notices in `licenses/`. Run frontend checks through `npm run lint` and `npm run typecheck`. Keep workspace manifests, LICENSE, and NOTICE at the root; preserve the existing filenames inside release archives.
 - Keep the blue Console design: compact layout, white and neutral surfaces, restrained blue accents, clear borders, readable controls, and keyboard accessibility. Avoid gradients, decorative shadows, and generic AI-style decoration.

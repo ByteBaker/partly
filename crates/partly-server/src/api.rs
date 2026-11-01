@@ -1,0 +1,290 @@
+// Copyright 2026 ByteBaker
+// SPDX-License-Identifier: Elastic-2.0
+
+use crate::{store, App, SavedFlag};
+use axum::Router;
+use partly_core::Flag;
+use serde::Serialize;
+use serde_json::json;
+use utoipa::{
+    openapi::{
+        header::Header,
+        path::{ParameterBuilder, ParameterIn},
+        response::ResponseBuilder,
+        security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme},
+        Content, ObjectBuilder, OpenApi, Ref, RefOr, Required, Schema, Type,
+    },
+    OpenApi as _, PartialSchema, ToSchema,
+};
+use utoipa_axum::{router::OpenApiRouter, routes};
+
+#[derive(Serialize, ToSchema)]
+pub struct ErrorBody {
+    pub error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<RevocationCode>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RevocationCode {
+    KeyRevoked,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct Status {
+    pub setup_required: bool,
+    pub authenticated: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct LoginResult {
+    pub ok: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct Environments {
+    pub project: &'static str,
+    pub environments: Vec<&'static str>,
+    pub user: store::User,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct Users {
+    pub users: Vec<store::User>,
+}
+
+// Creation and update share a parser, but only creation requires a non-null password.
+pub struct CreateUserInput;
+
+impl PartialSchema for CreateUserInput {
+    fn schema() -> RefOr<Schema> {
+        let mut schema =
+            serde_json::to_value(store::UserInput::schema()).expect("User schema serializes");
+        schema["required"]
+            .as_array_mut()
+            .expect("Required account fields")
+            .push(json!("password"));
+        schema["properties"]["password"]["type"] = json!("string");
+        serde_json::from_value(schema).expect("Create user schema is valid")
+    }
+}
+
+impl ToSchema for CreateUserInput {
+    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
+        store::UserInput::schemas(schemas);
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct Applications {
+    pub applications: Vec<store::Application>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct Usage {
+    pub usage: Vec<store::FlagUsage>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AppReference {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct Impact {
+    pub applications: Vec<AppReference>,
+    /// Supply this token unchanged as X-Partly-Impact when saving or deleting.
+    pub token: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AuditEntry {
+    pub id: i64,
+    pub actor: String,
+    pub action: String,
+    pub item_type: String,
+    pub item_id: String,
+    pub item_name: String,
+    /// Event-specific states: before/after, affected applications, or key/account metadata.
+    /// Creation has a null before; deletion has a null after. Never includes full credentials.
+    #[schema(value_type = Object)]
+    pub details: serde_json::Value,
+    /// Server UTC timestamp in SQLite's YYYY-MM-DD HH:MM:SS format.
+    pub created_at: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct Audits {
+    #[schema(max_items = 100)]
+    pub audits: Vec<AuditEntry>,
+}
+
+// Flattening a closed Flag with allOf would incorrectly reject the added key.
+impl PartialSchema for SavedFlag {
+    fn schema() -> RefOr<Schema> {
+        let mut schema = serde_json::to_value(Flag::schema()).expect("Flag schema serializes");
+        for variant in schema["oneOf"]
+            .as_array_mut()
+            .expect("Tagged flag variants")
+        {
+            variant["maxProperties"] = json!(
+                variant["maxProperties"]
+                    .as_u64()
+                    .expect("Closed flag variant")
+                    + 1
+            );
+            variant["properties"]["key"] =
+                json!({"type": "string", "pattern": "^[a-z0-9_-]{1,64}$"});
+            variant["required"]
+                .as_array_mut()
+                .expect("Required mode")
+                .push(json!("key"));
+        }
+        serde_json::from_value(schema).expect("Saved flag schema is valid")
+    }
+}
+
+impl ToSchema for SavedFlag {
+    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
+        Flag::schemas(schemas);
+    }
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    info(title = "Partly HTTP API", description = "Dashboard administration and SDK policy/usage transport. Evaluation runs locally in SDKs. JSON request bodies are limited to 16 KiB; policies to 1 MiB. Sessions expire after 12 hours or server restart. Cross-site API requests are rejected; HTTPS adds Secure to session cookies. Host and Origin checks use the actual listener, never forwarded headers."),
+    components(schemas(ErrorBody, partly_core::Condition)),
+    tags(
+        (name = "Session", description = "Setup and dashboard authentication"),
+        (name = "Flags", description = "Viewer reads; Editor or higher writes"),
+        (name = "Applications", description = "Viewer reads; Manager or higher writes. Only managers and administrators receive key secrets."),
+        (name = "Users", description = "Instance administrator only"),
+        (name = "Audits", description = "Environment-scoped, read-only history; Viewer or higher"),
+        (name = "SDK", description = "Application-scoped API Keys. Cannot perform dashboard administration.")
+    )
+)]
+struct Contract;
+
+pub fn router() -> (Router<App>, OpenApi) {
+    let (router, mut document) = OpenApiRouter::with_openapi(Contract::openapi())
+        .routes(routes!(crate::status))
+        .routes(routes!(crate::setup))
+        .routes(routes!(crate::login))
+        .routes(routes!(crate::logout))
+        .routes(routes!(crate::environments))
+        .routes(routes!(crate::users, crate::create_user))
+        .routes(routes!(crate::update_user))
+        .routes(routes!(crate::flags, crate::create_flag))
+        .routes(routes!(crate::save_flag, crate::delete_flag))
+        .routes(routes!(crate::flag_impact))
+        .routes(routes!(crate::applications, crate::create_application))
+        .routes(routes!(crate::save_application))
+        .routes(routes!(crate::create_key))
+        .routes(routes!(crate::audits))
+        .routes(routes!(crate::flag_usage))
+        .routes(routes!(crate::rename_key, crate::revoke_key))
+        .routes(routes!(crate::policy))
+        .routes(routes!(crate::report_usage))
+        .split_for_parts();
+    let components = document.components.as_mut().expect("API components");
+    components.add_security_scheme(
+        "session",
+        SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new("partly_session"))),
+    );
+    components.add_security_scheme(
+        "api_key",
+        SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+    );
+
+    // These headers and failures come from shared middleware, rather than individual handlers.
+    for (path, item) in &mut document.paths.paths {
+        for (write, operation) in [
+            (false, &mut item.get),
+            (true, &mut item.post),
+            (true, &mut item.put),
+            (true, &mut item.delete),
+        ] {
+            let Some(operation) = operation else { continue };
+            let sdk = path == "/api/policy" || path == "/api/usage";
+            let parameters = operation.parameters.get_or_insert_default();
+            if write && !sdk {
+                parameters.push(ParameterBuilder::new().name("X-Partly-Request").parameter_in(ParameterIn::Header)
+                    .required(Required::True).schema(Some(ObjectBuilder::new().schema_type(Type::String).enum_values(Some(["dashboard"])))).example(Some(json!("dashboard")))
+                    .description(Some("Must equal dashboard for every dashboard write, including setup/login/logout.")).build().into());
+            }
+            if sdk {
+                for (name, description) in [
+                    (
+                        "X-Partly-Environment",
+                        "Exact environment bound to the API Key",
+                    ),
+                    (
+                        "X-Partly-Application",
+                        "Exact application ID bound to the API Key",
+                    ),
+                ] {
+                    parameters.push(
+                        ParameterBuilder::new()
+                            .name(name)
+                            .parameter_in(ParameterIn::Header)
+                            .required(Required::True)
+                            .schema(Some(String::schema()))
+                            .description(Some(description))
+                            .build()
+                            .into(),
+                    );
+                }
+            }
+            for (status, description) in [("400", "Invalid request or missing/invalid Host header"), ("403", "Insufficient permissions, missing dashboard header, or rejected Origin/cross-site request"), ("421", "Hostname is not allowed"), ("500", "Internal failure; details are omitted") ] {
+                operation.responses.responses.entry(status.into()).or_insert_with(|| ResponseBuilder::new().description(description)
+                    .content("application/json", Content::new(Some(Ref::from_schema_name("ErrorBody")))).build().into());
+            }
+            if operation
+                .security
+                .as_ref()
+                .is_some_and(|requirements| !requirements.is_empty())
+            {
+                operation
+                    .responses
+                    .responses
+                    .entry("401".into())
+                    .or_insert_with(|| {
+                        ResponseBuilder::new()
+                            .description("Authentication required or credentials invalid")
+                            .content(
+                                "application/json",
+                                Content::new(Some(Ref::from_schema_name("ErrorBody"))),
+                            )
+                            .build()
+                            .into()
+                    });
+            }
+            for response in operation.responses.responses.values_mut() {
+                if let RefOr::T(response) = response {
+                    let mut header = Header::new(String::schema());
+                    header.example = Some(json!("no-store"));
+                    response
+                        .headers
+                        .insert("Cache-Control".into(), header.into());
+                }
+            }
+        }
+    }
+    (router, document)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn committed_contract_matches_registered_handlers() {
+        let expected: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/openapi.json")).unwrap();
+        let actual = serde_json::to_value(super::router().1).unwrap();
+        assert_eq!(
+            actual, expected,
+            "Run task api:export after changing the HTTP API"
+        );
+    }
+}

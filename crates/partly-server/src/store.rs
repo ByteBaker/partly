@@ -27,7 +27,9 @@ pub struct Store {
     lock: Option<File>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    utoipa::ToSchema, Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Viewer,
@@ -35,7 +37,7 @@ pub enum Role {
     Manager,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(utoipa::ToSchema, Clone, Serialize)]
 pub struct User {
     pub id: i64,
     pub username: String,
@@ -69,13 +71,15 @@ impl User {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(utoipa::ToSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UserInput {
     pub username: String,
     pub is_admin: bool,
     pub enabled: bool,
     pub permissions: BTreeMap<String, Role>,
+    /// Required when creating an account; omit or use null to keep it on update.
+    #[schema(write_only = true)]
     pub password: Option<String>,
 }
 
@@ -109,24 +113,29 @@ impl UserInput {
     }
 }
 
-#[derive(Serialize)]
+#[derive(utoipa::ToSchema, Serialize)]
 pub struct SdkKey {
     id: String,
     name: String,
+    /// Null for revoked keys and for viewers/editors. Never returned after revocation.
+    #[schema(required = true)]
     secret: Option<String>,
     masked_secret: String,
     created_at: String,
+    #[schema(required = true)]
     revoked_at: Option<String>,
+    #[schema(required = true)]
     last_used_at: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(utoipa::ToSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UsageInput {
+    #[schema(max_items = 128)]
     pub flags: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(utoipa::ToSchema, Serialize)]
 pub struct FlagUsage {
     api_key_id: String,
     key_name: String,
@@ -136,7 +145,7 @@ pub struct FlagUsage {
     last_used_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(utoipa::ToSchema, Serialize)]
 pub struct Application {
     id: String,
     name: String,
@@ -751,17 +760,28 @@ impl Store {
         Ok(())
     }
 
-    fn flag_apps(db: &Connection, env: &str, key: &str) -> Result<Vec<Value>, ApiError> {
+    fn flag_apps(
+        db: &Connection,
+        env: &str,
+        key: &str,
+    ) -> Result<Vec<crate::api::AppReference>, ApiError> {
         let mut query = db.prepare("SELECT a.id, a.name FROM applications a JOIN application_flags f ON a.id = f.application_id WHERE f.environment = ?1 AND f.flag_key = ?2 ORDER BY a.name, a.id")?;
         let rows = query
             .query_map([env, key], |r| {
-                Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?}))
+                Ok(crate::api::AppReference {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                })
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
-    pub fn flag_impact(&self, env: &str, key: &str) -> Result<Vec<Value>, ApiError> {
+    pub fn flag_impact(
+        &self,
+        env: &str,
+        key: &str,
+    ) -> Result<Vec<crate::api::AppReference>, ApiError> {
         self.environment(env)?;
         if !self.policy(env)?.flags.contains_key(key) {
             return Err(ApiError::not_found("Flag not found"));
@@ -1097,14 +1117,31 @@ impl Store {
         before: Option<i64>,
         action: Option<&str>,
         app: Option<&str>,
-    ) -> Result<Vec<Value>, ApiError> {
+    ) -> Result<Vec<crate::api::AuditEntry>, ApiError> {
         self.environment(env)?;
         let mut query = self.db()?.prepare("SELECT id, actor, action, item_type, item_id, item_name, details, created_at FROM audits WHERE environment = ?1 AND (?2 IS NULL OR id < ?2) AND (?3 IS NULL OR action = ?3) AND (?4 IS NULL OR application_id = ?4 OR EXISTS (SELECT 1 FROM json_each(details, '$.applications') WHERE json_extract(value, '$.id') = ?4)) ORDER BY id DESC LIMIT 100")?;
-        let rows = query.query_map(params![env, before, action, app], |r| {
-            let raw: String = r.get(6)?;
-            let details: Value = serde_json::from_str(&raw).map_err(|e| rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e)))?;
-            Ok(json!({"id": r.get::<_, i64>(0)?, "actor": r.get::<_, String>(1)?, "action": r.get::<_, String>(2)?, "item_type": r.get::<_, String>(3)?, "item_id": r.get::<_, String>(4)?, "item_name": r.get::<_, String>(5)?, "details": details, "created_at": r.get::<_, String>(7)?}))
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let rows = query
+            .query_map(params![env, before, action, app], |r| {
+                let raw: String = r.get(6)?;
+                let details: Value = serde_json::from_str(&raw).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        6,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
+                Ok(crate::api::AuditEntry {
+                    id: r.get(0)?,
+                    actor: r.get(1)?,
+                    action: r.get(2)?,
+                    item_type: r.get(3)?,
+                    item_id: r.get(4)?,
+                    item_name: r.get(5)?,
+                    details,
+                    created_at: r.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 }

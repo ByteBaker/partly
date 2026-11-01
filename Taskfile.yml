@@ -71,6 +71,11 @@ tasks:
     cmds:
       - npm audit --package-lock-only --audit-level=low
 
+  api:export:
+    desc: Generate docs/openapi.json from the server's routes and Rust types
+    cmds:
+      - cargo run --quiet --locked -p partly-server -- openapi --output docs/openapi.json
+
   hook:python:
     cmds:
       - '{{.PYTHON | shellQuote}} -m ruff check {{.CLI_ARGS}}'

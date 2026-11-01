@@ -1,6 +1,7 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Elastic-2.0
 
+mod api;
 mod auth;
 mod logging;
 mod store;
@@ -11,13 +12,13 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, Method, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post, put},
+    routing::get,
     Json, Router,
 };
 use clap::{Parser, Subcommand};
 use partly_core::Flag;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
     io::{IsTerminal, Read},
@@ -39,6 +40,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Print the generated OpenAPI contract without opening a database or listener.
+    Openapi {
+        /// Write JSON to a file instead of standard output.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     /// Reset the local administrator password from one line on standard input. Stop the server first.
     ResetPassword {
         #[arg(long, default_value = "./partly.db")]
@@ -156,13 +163,19 @@ impl IntoResponse for ApiError {
         } else {
             self.1
         };
-        let mut response = (self.0, Json(json!({"error": message}))).into_response();
+        let mut response = (
+            self.0,
+            Json(api::ErrorBody {
+                error: if revoked {
+                    "API Key revoked".into()
+                } else {
+                    message
+                },
+                code: revoked.then_some(api::RevocationCode::KeyRevoked),
+            }),
+        )
+            .into_response();
         if revoked {
-            response = (
-                self.0,
-                Json(json!({"error": "API Key revoked", "code": "key_revoked"})),
-            )
-                .into_response();
             response
                 .headers_mut()
                 .insert("x-partly-error", HeaderValue::from_static("key_revoked"));
@@ -226,7 +239,7 @@ fn login_response(token: &str) -> Response {
             header::SET_COOKIE,
             format!("partly_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200"),
         )],
-        Json(json!({"ok": true})),
+        Json(api::LoginResult { ok: true }),
     )
         .into_response()
 }
@@ -347,17 +360,49 @@ async fn security(
     response
 }
 
-#[derive(Deserialize)]
+#[derive(utoipa::ToSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Credentials {
     username: String,
+    #[schema(write_only = true)]
     password: String,
 }
 
-async fn status(State(app): State<App>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
-    app.run(move |s| Ok(Json(json!({"setup_required": !s.ready(), "authenticated": s.authenticated(&session(&headers))})))).await
+/// Read setup and session state.
+#[utoipa::path(
+    get,
+    path = "/api/status",
+    tag = "Session",
+    responses(
+        (status = 200, description = "Success", body = api::Status)
+    )
+)]
+async fn status(State(app): State<App>, headers: HeaderMap) -> Result<Json<api::Status>, ApiError> {
+    app.run(move |s| {
+        Ok(Json(api::Status {
+            setup_required: !s.ready(),
+            authenticated: s.authenticated(&session(&headers)),
+        }))
+    })
+    .await
 }
 
+/// Complete first setup and start an administrator session.
+#[utoipa::path(
+    post,
+    path = "/api/setup",
+    tag = "Session",
+    request_body = Credentials,
+    responses(
+        (status = 200, description = "Success", body = api::LoginResult, headers(("Set-Cookie" = String, description = "HttpOnly; SameSite=Strict; Path=/; Secure on HTTPS. Max-Age=43200, or 0 for logout."))),
+        (status = 429, description = "Password workers busy or login throttled", body = api::ErrorBody, headers(("Retry-After" = u32, description = "60 seconds"))),
+        (status = 409, description = "Conflict, duplicate, or stale flag impact token", body = api::ErrorBody),
+        (status = 413, description = "Request exceeds 16 KiB", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected JSON content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON does not match the request schema", body = String, content_type = "text/plain"),
+        (status = 400, description = "Malformed JSON or invalid request", content((api::ErrorBody = "application/json"), (String = "text/plain")))
+    )
+)]
 async fn setup(State(app): State<App>, Json(c): Json<Credentials>) -> Result<Response, ApiError> {
     app.run(|s| {
         if s.ready() {
@@ -388,6 +433,22 @@ async fn setup(State(app): State<App>, Json(c): Json<Credentials>) -> Result<Res
     .await
 }
 
+/// Sign in; five attempts per peer IP per minute.
+#[utoipa::path(
+    post,
+    path = "/api/login",
+    tag = "Session",
+    request_body = Credentials,
+    responses(
+        (status = 200, description = "Success", body = api::LoginResult, headers(("Set-Cookie" = String, description = "HttpOnly; SameSite=Strict; Path=/; Secure on HTTPS. Max-Age=43200, or 0 for logout."))),
+        (status = 401, description = "Invalid credentials or disabled account", body = api::ErrorBody),
+        (status = 429, description = "Password workers busy or login throttled", body = api::ErrorBody, headers(("Retry-After" = u32, description = "60 seconds"))),
+        (status = 413, description = "Request exceeds 16 KiB", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected JSON content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON does not match the request schema", body = String, content_type = "text/plain"),
+        (status = 400, description = "Malformed JSON or invalid request", content((api::ErrorBody = "application/json"), (String = "text/plain")))
+    )
+)]
 async fn login(
     State(app): State<App>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -419,6 +480,15 @@ async fn login(
     .await
 }
 
+/// Clear the current session.
+#[utoipa::path(
+    post,
+    path = "/api/logout",
+    tag = "Session",
+    responses(
+        (status = 204, description = "No content", headers(("Set-Cookie" = String, description = "HttpOnly; SameSite=Strict; Path=/; Secure on HTTPS. Max-Age=43200, or 0 for logout.")))
+    )
+)]
 async fn logout(State(app): State<App>, headers: HeaderMap) -> Result<Response, ApiError> {
     app.run(move |s| {
         s.logout(&session(&headers));
@@ -435,24 +505,49 @@ async fn logout(State(app): State<App>, headers: HeaderMap) -> Result<Response, 
         .into_response())
 }
 
-async fn environments(State(app): State<App>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+/// List environments and the signed-in account permissions.
+#[utoipa::path(
+    get,
+    path = "/api/environments",
+    tag = "Session",
+    security(("session" = [])),
+    responses(
+        (status = 200, description = "Success", body = api::Environments)
+    )
+)]
+async fn environments(
+    State(app): State<App>,
+    headers: HeaderMap,
+) -> Result<Json<api::Environments>, ApiError> {
     app.run(move |s| {
         let user = s.authorize(&session(&headers))?;
         let environments: Vec<_> = ["development", "production"]
             .into_iter()
             .filter(|env| user.allows(env, Role::Viewer))
             .collect();
-        Ok(Json(
-            json!({"project": "default", "environments": environments, "user": user}),
-        ))
+        Ok(Json(api::Environments {
+            project: "default",
+            environments,
+            user,
+        }))
     })
     .await
 }
 
-async fn users(State(app): State<App>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+/// List accounts and permissions.
+#[utoipa::path(
+    get,
+    path = "/api/users",
+    tag = "Users",
+    security(("session" = [])),
+    responses(
+        (status = 200, description = "Success", body = api::Users)
+    )
+)]
+async fn users(State(app): State<App>, headers: HeaderMap) -> Result<Json<api::Users>, ApiError> {
     app.run(move |s| {
         s.authorize(&session(&headers))?.require_admin()?;
-        Ok(Json(json!({"users": s.users()?})))
+        Ok(Json(api::Users { users: s.users()? }))
     })
     .await
 }
@@ -462,7 +557,7 @@ async fn write_user(
     headers: HeaderMap,
     id: Option<i64>,
     mut input: UserInput,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<store::User>, ApiError> {
     let token = session(&headers);
     let check = token.clone();
     app.run(move |s| s.authorize(&check)?.require_admin())
@@ -475,45 +570,92 @@ async fn write_user(
     app.run(move |s| {
         let actor = s.authorize(&token)?;
         actor.require_admin()?;
-        Ok(Json(json!(s.save_user(
+        Ok(Json(s.save_user(
             &actor.username,
             id,
             &input,
-            hash.as_deref()
-        )?)))
+            hash.as_deref(),
+        )?))
     })
     .await
 }
 
+/// Create an account; password is required.
+#[utoipa::path(
+    post,
+    path = "/api/users",
+    tag = "Users",
+    request_body = api::CreateUserInput,
+    security(("session" = [])),
+    responses(
+        (status = 201, description = "Success", body = store::User),
+        (status = 429, description = "Password workers busy or login throttled", body = api::ErrorBody, headers(("Retry-After" = u32, description = "60 seconds"))),
+        (status = 409, description = "Conflict, duplicate, or stale flag impact token", body = api::ErrorBody),
+        (status = 413, description = "Request exceeds 16 KiB", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected JSON content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON does not match the request schema", body = String, content_type = "text/plain"),
+        (status = 400, description = "Malformed JSON or invalid request", content((api::ErrorBody = "application/json"), (String = "text/plain")))
+    )
+)]
 async fn create_user(
     State(app): State<App>,
     headers: HeaderMap,
     Json(input): Json<UserInput>,
-) -> Result<(StatusCode, Json<Value>), ApiError> {
+) -> Result<(StatusCode, Json<store::User>), ApiError> {
     Ok((
         StatusCode::CREATED,
         write_user(app, headers, None, input).await?,
     ))
 }
 
+/// Update an account; password is optional; changes invalidate its sessions.
+#[utoipa::path(
+    put,
+    path = "/api/users/{id}",
+    tag = "Users",
+    request_body = UserInput,
+    params(("id" = i64, Path)),
+    security(("session" = [])),
+    responses(
+        (status = 200, description = "Success", body = store::User),
+        (status = 429, description = "Password workers busy or login throttled", body = api::ErrorBody, headers(("Retry-After" = u32, description = "60 seconds"))),
+        (status = 409, description = "Conflict, duplicate, or stale flag impact token", body = api::ErrorBody),
+        (status = 404, description = "Requested item not found", body = api::ErrorBody),
+        (status = 413, description = "Request exceeds 16 KiB", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected JSON content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON does not match the request schema", body = String, content_type = "text/plain"),
+        (status = 400, description = "Malformed JSON or invalid request", content((api::ErrorBody = "application/json"), (String = "text/plain")))
+    )
+)]
 async fn update_user(
     State(app): State<App>,
     headers: HeaderMap,
     Path(id): Path<i64>,
     Json(input): Json<UserInput>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<store::User>, ApiError> {
     write_user(app, headers, Some(id), input).await
 }
 
+/// List shared flags in an environment.
+#[utoipa::path(
+    get,
+    path = "/api/environments/{env}/flags",
+    tag = "Flags",
+    params(("env" = String, Path)),
+    security(("session" = [])),
+    responses(
+        (status = 200, description = "Success", body = std::collections::BTreeMap<String, Flag>)
+    )
+)]
 async fn flags(
     State(app): State<App>,
     headers: HeaderMap,
     Path(env): Path<String>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<std::collections::BTreeMap<String, Flag>>, ApiError> {
     app.run(move |s| {
         let user = s.authorize(&session(&headers))?;
         user.require(&env, Role::Viewer)?;
-        Ok(Json(json!(s.policy(&env)?.flags)))
+        Ok(Json(s.policy(&env)?.flags))
     })
     .await
 }
@@ -551,6 +693,22 @@ fn parse_flag<T: DeserializeOwned>(headers: &HeaderMap, body: &[u8]) -> Result<T
     Ok(input)
 }
 
+/// Create a flag and return its saved state.
+#[utoipa::path(
+    post,
+    path = "/api/environments/{env}/flags",
+    tag = "Flags",
+    request_body = SavedFlag,
+    params(("env" = String, Path)),
+    security(("session" = [])),
+    responses(
+        (status = 201, description = "Success", body = SavedFlag),
+        (status = 409, description = "Conflict, duplicate, or stale flag impact token", body = api::ErrorBody),
+        (status = 413, description = "Request exceeds 16 KiB", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected JSON content type", body = api::ErrorBody),
+        (status = 422, description = "Invalid JSON shape, condition or number", body = api::ErrorBody)
+    )
+)]
 async fn create_flag(
     State(app): State<App>,
     headers: HeaderMap,
@@ -568,6 +726,23 @@ async fn create_flag(
     .await
 }
 
+/// Save a flag after reviewing affected applications and confirming the exact environment/flag name.
+#[utoipa::path(
+    put,
+    path = "/api/environments/{env}/flags/{key}",
+    tag = "Flags",
+    request_body = Flag,
+    params(("env" = String, Path), ("key" = String, Path), ("X-Partly-Confirm" = String, Header, description = "Exact case-sensitive environment/flag_name"), ("X-Partly-Impact" = String, Header, description = "Token returned by the impact endpoint; stale previews return 409")),
+    security(("session" = [])),
+    responses(
+        (status = 200, description = "Success", body = SavedFlag),
+        (status = 409, description = "Conflict, duplicate, or stale flag impact token", body = api::ErrorBody),
+        (status = 404, description = "Requested item not found", body = api::ErrorBody),
+        (status = 413, description = "Request exceeds 16 KiB", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected JSON content type", body = api::ErrorBody),
+        (status = 422, description = "Invalid JSON shape, condition or number", body = api::ErrorBody)
+    )
+)]
 async fn save_flag(
     State(app): State<App>,
     headers: HeaderMap,
@@ -589,6 +764,19 @@ async fn save_flag(
     .await
 }
 
+/// Delete a flag after reviewing affected applications and confirming the exact environment/flag name.
+#[utoipa::path(
+    delete,
+    path = "/api/environments/{env}/flags/{key}",
+    tag = "Flags",
+    params(("env" = String, Path), ("key" = String, Path), ("X-Partly-Confirm" = String, Header, description = "Exact case-sensitive environment/flag_name"), ("X-Partly-Impact" = String, Header, description = "Token returned by the impact endpoint; stale previews return 409")),
+    security(("session" = [])),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 409, description = "Conflict, duplicate, or stale flag impact token", body = api::ErrorBody),
+        (status = 404, description = "Requested item not found", body = api::ErrorBody)
+    )
+)]
 async fn delete_flag(
     State(app): State<App>,
     headers: HeaderMap,
@@ -604,12 +792,15 @@ async fn delete_flag(
     .await
 }
 
-fn flag_impact_value(s: &Store, env: &str, key: &str) -> Result<Value, ApiError> {
+fn flag_impact_value(s: &Store, env: &str, key: &str) -> Result<api::Impact, ApiError> {
     let apps = s.flag_impact(env, key)?;
     let policy = s.policy(env)?;
     let bytes = serde_json::to_vec(&json!({"flag": policy.flags.get(key), "applications": apps}))
         .map_err(|_| ApiError::internal("Cannot encode impact"))?;
-    Ok(json!({"applications": apps, "token": format!("{:x}", Sha256::digest(bytes))}))
+    Ok(api::Impact {
+        applications: apps,
+        token: format!("{:x}", Sha256::digest(bytes)),
+    })
 }
 
 fn check_flag_confirmation(
@@ -626,17 +817,29 @@ fn check_flag_confirmation(
     {
         return Err(ApiError::bad("Confirm the exact environment/flag name"));
     }
-    if headers.get("x-partly-impact").and_then(|v| v.to_str().ok()) != impact["token"].as_str() {
+    if headers.get("x-partly-impact").and_then(|v| v.to_str().ok()) != Some(impact.token.as_str()) {
         return Err(ApiError::conflict("The flag or its applications changed. Review the affected applications and confirm again."));
     }
     Ok(())
 }
 
+/// Read affected applications and the current confirmation token.
+#[utoipa::path(
+    get,
+    path = "/api/environments/{env}/flags/{key}/impact",
+    tag = "Flags",
+    params(("env" = String, Path), ("key" = String, Path)),
+    security(("session" = [])),
+    responses(
+        (status = 200, description = "Success", body = api::Impact),
+        (status = 404, description = "Requested item not found", body = api::ErrorBody)
+    )
+)]
 async fn flag_impact(
     State(app): State<App>,
     headers: HeaderMap,
     Path((env, key)): Path<(String, String)>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<api::Impact>, ApiError> {
     app.run(move |s| {
         let user = s.authorize(&session(&headers))?;
         user.require(&env, Role::Viewer)?;
@@ -645,11 +848,22 @@ async fn flag_impact(
     .await
 }
 
+/// List applications and keys; secrets are null for viewers/editors and revoked keys.
+#[utoipa::path(
+    get,
+    path = "/api/environments/{env}/apps",
+    tag = "Applications",
+    params(("env" = String, Path)),
+    security(("session" = [])),
+    responses(
+        (status = 200, description = "Success", body = api::Applications)
+    )
+)]
 async fn applications(
     State(app): State<App>,
     headers: HeaderMap,
     Path(env): Path<String>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<api::Applications>, ApiError> {
     app.run(move |s| {
         let user = s.authorize(&session(&headers))?;
         user.require(&env, Role::Viewer)?;
@@ -659,61 +873,92 @@ async fn applications(
                 app.hide_secrets();
             }
         }
-        Ok(Json(json!({"applications": apps})))
+        Ok(Json(api::Applications { applications: apps }))
     })
     .await
 }
 
-#[derive(Deserialize)]
+#[derive(utoipa::ToSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ApplicationInput {
     name: String,
     flags: Vec<String>,
 }
 
+/// Create an application with selected flags and its first named API Key.
+#[utoipa::path(
+    post,
+    path = "/api/environments/{env}/apps",
+    tag = "Applications",
+    request_body = ApplicationInput,
+    params(("env" = String, Path)),
+    security(("session" = [])),
+    responses(
+        (status = 201, description = "Success", body = store::Application),
+        (status = 409, description = "Conflict, duplicate, or stale flag impact token", body = api::ErrorBody),
+        (status = 413, description = "Request exceeds 16 KiB", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected JSON content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON does not match the request schema", body = String, content_type = "text/plain"),
+        (status = 400, description = "Malformed JSON or invalid request", content((api::ErrorBody = "application/json"), (String = "text/plain")))
+    )
+)]
 async fn create_application(
     State(app): State<App>,
     headers: HeaderMap,
     Path(env): Path<String>,
     Json(input): Json<ApplicationInput>,
-) -> Result<(StatusCode, Json<Value>), ApiError> {
+) -> Result<(StatusCode, Json<store::Application>), ApiError> {
     app.run(move |s| {
         let user = s.authorize(&session(&headers))?;
         user.require(&env, Role::Manager)?;
         Ok((
             StatusCode::CREATED,
-            Json(json!(s.save_application(
-                &user.username,
-                &env,
-                None,
-                &input.name,
-                &input.flags
-            )?)),
+            Json(s.save_application(&user.username, &env, None, &input.name, &input.flags)?),
         ))
     })
     .await
 }
 
+/// Update application name and selected flags; keep the permanent ID.
+#[utoipa::path(
+    put,
+    path = "/api/environments/{env}/apps/{id}",
+    tag = "Applications",
+    request_body = ApplicationInput,
+    params(("env" = String, Path), ("id" = String, Path)),
+    security(("session" = [])),
+    responses(
+        (status = 200, description = "Success", body = store::Application),
+        (status = 409, description = "Conflict, duplicate, or stale flag impact token", body = api::ErrorBody),
+        (status = 404, description = "Requested item not found", body = api::ErrorBody),
+        (status = 413, description = "Request exceeds 16 KiB", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected JSON content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON does not match the request schema", body = String, content_type = "text/plain"),
+        (status = 400, description = "Malformed JSON or invalid request", content((api::ErrorBody = "application/json"), (String = "text/plain")))
+    )
+)]
 async fn save_application(
     State(app): State<App>,
     headers: HeaderMap,
     Path((env, id)): Path<(String, String)>,
     Json(input): Json<ApplicationInput>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<store::Application>, ApiError> {
     app.run(move |s| {
         let user = s.authorize(&session(&headers))?;
         user.require(&env, Role::Manager)?;
-        Ok(Json(json!(s.save_application(
+        Ok(Json(s.save_application(
             &user.username,
             &env,
             Some(&id),
             &input.name,
-            &input.flags
-        )?)))
+            &input.flags,
+        )?))
     })
     .await
 }
 
+#[derive(utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AuditQuery {
@@ -722,47 +967,98 @@ struct AuditQuery {
     application_id: Option<String>,
 }
 
+/// Read at most 100 audit entries, newest first; use the last ID as before for the next page.
+#[utoipa::path(
+    get,
+    path = "/api/environments/{env}/audits",
+    tag = "Audits",
+    params(("env" = String, Path), AuditQuery),
+    security(("session" = [])),
+    responses(
+        (status = 200, description = "Success", body = api::Audits),
+        (status = 400, description = "Malformed parameters or invalid request", content((api::ErrorBody = "application/json"), (String = "text/plain")))
+    )
+)]
 async fn audits(
     State(app): State<App>,
     headers: HeaderMap,
     Path(env): Path<String>,
     Query(query): Query<AuditQuery>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<api::Audits>, ApiError> {
     app.run(move |s| {
         let user = s.authorize(&session(&headers))?;
         user.require(&env, Role::Viewer)?;
-        Ok(Json(json!({"audits": s.audits(
-            &env, query.before, query.action.as_deref(), query.application_id.as_deref()
-        )?})))
+        Ok(Json(api::Audits {
+            audits: s.audits(
+                &env,
+                query.before,
+                query.action.as_deref(),
+                query.application_id.as_deref(),
+            )?,
+        }))
     })
     .await
 }
 
-#[derive(Deserialize)]
+#[derive(utoipa::ToSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct KeyName {
     name: String,
 }
 
+/// Create an additional named API Key.
+#[utoipa::path(
+    post,
+    path = "/api/environments/{env}/apps/{id}/keys",
+    tag = "Applications",
+    request_body = KeyName,
+    params(("env" = String, Path), ("id" = String, Path)),
+    security(("session" = [])),
+    responses(
+        (status = 200, description = "Success", body = store::SdkKey),
+        (status = 404, description = "Requested item not found", body = api::ErrorBody),
+        (status = 413, description = "Request exceeds 16 KiB", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected JSON content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON does not match the request schema", body = String, content_type = "text/plain"),
+        (status = 400, description = "Malformed JSON or invalid request", content((api::ErrorBody = "application/json"), (String = "text/plain")))
+    )
+)]
 async fn create_key(
     State(app): State<App>,
     headers: HeaderMap,
     Path((env, id)): Path<(String, String)>,
     Json(input): Json<KeyName>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<store::SdkKey>, ApiError> {
     app.run(move |s| {
         let user = s.authorize(&session(&headers))?;
         user.require(&env, Role::Manager)?;
-        Ok(Json(json!(s.create_key(
+        Ok(Json(s.create_key(
             &user.username,
             &env,
             &id,
-            &input.name
-        )?)))
+            &input.name,
+        )?))
     })
     .await
 }
 
+/// Rename an active API Key.
+#[utoipa::path(
+    put,
+    path = "/api/keys/{id}",
+    tag = "Applications",
+    request_body = KeyName,
+    params(("id" = String, Path)),
+    security(("session" = [])),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 404, description = "Requested item not found", body = api::ErrorBody),
+        (status = 413, description = "Request exceeds 16 KiB", body = String, content_type = "text/plain"),
+        (status = 415, description = "Expected JSON content type", body = String, content_type = "text/plain"),
+        (status = 422, description = "JSON does not match the request schema", body = String, content_type = "text/plain"),
+        (status = 400, description = "Malformed JSON or invalid request", content((api::ErrorBody = "application/json"), (String = "text/plain")))
+    )
+)]
 async fn rename_key(
     State(app): State<App>,
     headers: HeaderMap,
@@ -778,6 +1074,18 @@ async fn rename_key(
     .await
 }
 
+/// Revoke an API Key; connected SDKs clear policy when they next receive confirmed revocation.
+#[utoipa::path(
+    delete,
+    path = "/api/keys/{id}",
+    tag = "Applications",
+    params(("id" = String, Path)),
+    security(("session" = [])),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 404, description = "Requested item not found", body = api::ErrorBody)
+    )
+)]
 async fn revoke_key(
     State(app): State<App>,
     headers: HeaderMap,
@@ -801,6 +1109,19 @@ fn bearer_key(headers: &HeaderMap) -> Result<String, ApiError> {
         .ok_or_else(ApiError::unauthorized)
 }
 
+/// Report distinct known flag checks; ignore names no longer assigned; receipt time is stored without changing policy or audits.
+#[utoipa::path(
+    post,
+    path = "/api/usage",
+    tag = "SDK",
+    request_body = store::UsageInput,
+    security(("api_key" = [])),
+    responses(
+        (status = 204, description = "No content"),
+        (status = 401, description = "Invalid key/scope, or confirmed revocation with code key_revoked and X-Partly-Error header", body = api::ErrorBody, headers(("X-Partly-Error" = String, description = "key_revoked only for confirmed revocation"))),
+        (status = 413, description = "Request exceeds 16 KiB", body = api::ErrorBody)
+    )
+)]
 async fn report_usage(
     State(app): State<App>,
     headers: HeaderMap,
@@ -832,19 +1153,51 @@ async fn report_usage(
     .await
 }
 
+/// Read last reported usage per API Key and flag; missing reports do not prove a flag is unused.
+#[utoipa::path(
+    get,
+    path = "/api/environments/{env}/usage",
+    tag = "Flags",
+    params(("env" = String, Path)),
+    security(("session" = [])),
+    responses(
+        (status = 200, description = "Success", body = api::Usage)
+    )
+)]
 async fn flag_usage(
     State(app): State<App>,
     headers: HeaderMap,
     Path(env): Path<String>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<api::Usage>, ApiError> {
     app.run(move |s| {
         s.authorize(&session(&headers))?
             .require(&env, Role::Viewer)?;
-        Ok(Json(json!({"usage": s.flag_usage(&env)?})))
+        Ok(Json(api::Usage {
+            usage: s.flag_usage(&env)?,
+        }))
     })
     .await
 }
 
+/// Download the application policy; authenticate before checking If-None-Match.
+///
+/// A 200 contains the complete selected policy and a quoted SHA-256 content ETag.
+/// Identical saves and changes outside the application selection keep its ETag unchanged.
+/// The revision increases only when that application's selected policy changes.
+/// A confirmed key_revoked response clears SDK policy even if the ETag matched;
+/// ordinary errors preserve the last accepted snapshot.
+#[utoipa::path(
+    get,
+    path = "/api/policy",
+    tag = "SDK",
+    params(("If-None-Match" = Option<String>, Header, description = "Previously accepted quoted ETag; weak tags, lists and wildcard are supported")),
+    security(("api_key" = [])),
+    responses(
+        (status = 200, description = "Success", body = partly_core::Policy, headers(("ETag" = String, description = "Quoted SHA-256 content hash"))),
+        (status = 304, description = "Unchanged policy; no body", headers(("ETag" = String))),
+        (status = 401, description = "Invalid key/scope, or confirmed revocation with code key_revoked and X-Partly-Error header", body = api::ErrorBody, headers(("X-Partly-Error" = String, description = "key_revoked only for confirmed revocation")))
+    )
+)]
 async fn policy(State(app): State<App>, headers: HeaderMap) -> Result<Response, ApiError> {
     let key = bearer_key(&headers)?;
     app.run(move |s| {
@@ -905,7 +1258,9 @@ async fn main() {
     let cli = Cli::parse();
     logging::init(cli.log_level);
     let reset = matches!(cli.command, Command::ResetPassword { .. });
+    let export = matches!(cli.command, Command::Openapi { .. });
     let result = match cli.command {
+        Command::Openapi { output } => export_openapi(output),
         Command::ResetPassword { db } => reset_password(db),
         Command::Serve {
             host,
@@ -919,11 +1274,22 @@ async fn main() {
     if let Err(error) = result {
         if reset {
             tracing::error!(target: "partly", error = ?error.to_string(), "Password reset failed");
+        } else if export {
+            tracing::error!(target: "partly", error = ?error.to_string(), "OpenAPI export failed");
         } else {
             tracing::error!(target: "partly", error = ?error.to_string(), "Partly could not start or serve requests");
         }
         std::process::exit(1);
     }
+}
+
+fn export_openapi(output: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+    let json = api::router().1.to_json()? + "\n";
+    match output {
+        Some(path) => std::fs::write(path, json)?,
+        None => print!("{json}"),
+    }
+    Ok(())
 }
 
 fn reset_password(db: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
@@ -992,7 +1358,14 @@ async fn serve(
     if !store.ready() && !host.is_loopback() {
         return Err("Complete setup locally first: run with --host 127.0.0.1, create the administrator, then restart with the remote bind address".into());
     }
+    let (api_router, contract) = api::router();
+    let contract = Arc::new(contract);
     let app = Router::new()
+        .merge(api_router)
+        .route(
+            "/openapi.json",
+            get(move || async move { Json(contract.as_ref().clone()) }),
+        )
         .route("/", get(dashboard))
         .route("/environments/{env}/{screen}", get(environment_dashboard))
         .route(
@@ -1047,36 +1420,6 @@ async fn serve(
                 ))
             }),
         )
-        .route("/api/status", get(status))
-        .route("/api/setup", post(setup))
-        .route("/api/login", post(login))
-        .route("/api/logout", post(logout))
-        .route("/api/environments", get(environments))
-        .route("/api/users", get(users).post(create_user))
-        .route("/api/users/{id}", put(update_user))
-        .route(
-            "/api/environments/{env}/flags",
-            get(flags).post(create_flag),
-        )
-        .route(
-            "/api/environments/{env}/flags/{key}",
-            put(save_flag).delete(delete_flag),
-        )
-        .route(
-            "/api/environments/{env}/flags/{key}/impact",
-            get(flag_impact),
-        )
-        .route(
-            "/api/environments/{env}/apps",
-            get(applications).post(create_application),
-        )
-        .route("/api/environments/{env}/apps/{id}", put(save_application))
-        .route("/api/environments/{env}/apps/{id}/keys", post(create_key))
-        .route("/api/environments/{env}/audits", get(audits))
-        .route("/api/environments/{env}/usage", get(flag_usage))
-        .route("/api/keys/{id}", put(rename_key).delete(revoke_key))
-        .route("/api/policy", get(policy))
-        .route("/api/usage", post(report_usage))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(middleware::from_fn_with_state(transport, security))
         .layer(middleware::from_fn(logging::request))

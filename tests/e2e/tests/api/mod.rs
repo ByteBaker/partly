@@ -5,6 +5,7 @@ mod applications;
 mod control_plane;
 mod https;
 mod logging;
+mod openapi;
 mod operations;
 mod rbac;
 mod usage;

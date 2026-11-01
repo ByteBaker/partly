@@ -88,6 +88,6 @@ Partly's [measurement](docs/releasing.md#benchmarks) used one flag without appli
 Use `task setup` once, then `task check`, `task build`, or `task test`. Pre-push checks include vulnerability scans without building product artifacts. See [requirements, commands, and CI tiers](docs/releasing.md#build-and-verify).
 
 - [Server: permissions, logs, HTTPS, backups, and recovery](crates/partly-server/README.md)
-- [Evaluation rules](crates/partly-core/README.md) · [OpenFeature](docs/openfeature.md) · [Roadmap](docs/roadmap.md)
+- [HTTP API contract](docs/openapi.json) · [Evaluation rules](crates/partly-core/README.md) · [OpenFeature](docs/openfeature.md) · [Roadmap](docs/roadmap.md)
 
 The server and dashboard are source-available under **ELv2**. SDKs, shared evaluation code, bindings, and application examples use **Apache-2.0**. [License details](docs/licensing.md).

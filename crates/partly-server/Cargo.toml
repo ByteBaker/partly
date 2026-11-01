@@ -13,7 +13,7 @@ name = "partly"
 path = "src/main.rs"
 
 [dependencies]
-partly-core.workspace = true
+partly-core = { workspace = true, features = ["openapi"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -27,3 +27,5 @@ argon2 = "0.6"
 rand = "0.8"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+utoipa = { version = "6.0.0", features = ["axum_extras"] }
+utoipa-axum = "0.3.0"

@@ -48,6 +48,7 @@ This creates `.venv`, installs Python/frontend dependencies and audit tools, and
 | `task` | List available commands |
 | `task check` | Pre-push lint and vulnerability checks; no product builds |
 | `task lint` | Source checks only; CI runs security as a separate required tier |
+| `task api:export` | Generate `docs/openapi.json` from the server; compiles the server if needed |
 | `task audit` | All four vulnerability scans; use `audit:rust`, `audit:python`, `audit:go`, or `audit:node` for one |
 | `task build` | Check sources, then build the server and all four SDKs |
 | `task test` | Build, install the local wheel, prepare Chromium, and run all tests |

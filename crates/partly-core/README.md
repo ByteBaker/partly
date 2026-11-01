@@ -77,6 +77,8 @@ Percentages describe hash buckets, not exact user counts. Small samples may diff
 cargo test -p partly-core
 ```
 
+The optional `openapi` feature generates schemas for the control plane. It is disabled by default; SDK-only builds do not need Utoipa.
+
 ## License
 
 [Apache-2.0](LICENSE), independent of the server's ELv2 license. Preserve the license and attribution notices when redistributing.

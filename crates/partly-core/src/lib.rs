@@ -1,6 +1,9 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(feature = "openapi")]
+mod openapi;
+
 use regex::Regex;
 use regex_syntax::ast::{Ast, Flag as RegexFlag};
 use serde::{Deserialize, Serialize};
@@ -12,20 +15,29 @@ use thiserror::Error;
 pub type Context = BTreeMap<String, Value>;
 pub const MAX_POLICY_BYTES: usize = 1024 * 1024;
 
+// Utoipa needs property limits on variants to mirror Serde's deny_unknown_fields.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Flag {
+    #[cfg_attr(feature = "openapi", schema(max_properties = 1))]
     Enabled {},
+    #[cfg_attr(feature = "openapi", schema(max_properties = 1))]
     Disabled {},
+    #[cfg_attr(feature = "openapi", schema(max_properties = 2))]
     Percentage {
+        #[cfg_attr(feature = "openapi", schema(minimum = 0, maximum = 100))]
         percentage: u8,
     },
+    #[cfg_attr(feature = "openapi", schema(max_properties = 3))]
     Custom {
         action: MatchAction,
+        #[cfg_attr(feature = "openapi", schema(schema_with = openapi::groups))]
         groups: Vec<Vec<Condition>>,
     },
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MatchAction {
@@ -33,6 +45,7 @@ pub enum MatchAction {
     Disable,
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Operator {
@@ -174,9 +187,11 @@ impl Flag {
     }
 }
 
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
+    #[cfg_attr(feature = "openapi", schema(minimum = 1, maximum = 1))]
     pub schema_version: u32,
     pub project: String,
     pub environment: String,

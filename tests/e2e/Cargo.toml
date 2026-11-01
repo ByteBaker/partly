@@ -16,6 +16,7 @@ playwright-rs = { version = "=0.20.1", optional = true, default-features = false
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "time", "net", "sync"] }
 
 [dev-dependencies]
+jsonschema = { version = "0.60.2", default-features = false }
 futures-util = "0.3"
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "cookies", "rustls-tls-webpki-roots"] }
 serde_json.workspace = true

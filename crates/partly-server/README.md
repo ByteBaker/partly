@@ -145,52 +145,24 @@ Usage uses the initial v1 schema. Earlier development databases without its tabl
 
 ## HTTP contract
 
-Dashboard writes require `X-Partly-Request: dashboard`. Sessions use HttpOnly, SameSite=Strict cookies, plus Secure over HTTPS. Cross-site browser API requests are rejected. Origin checks use the listener's scheme and allowed hostname, ignoring forwarded headers; TLS termination at a reverse proxy is not configured by `--hostname`.
+[OpenAPI JSON](../../docs/openapi.json) is the API reference: routes, request/response schemas, status codes, authentication, headers, and limits. Development and release servers serve it at `GET /openapi.json` without sign-in, including before setup. The file, CLI export, and HTTP response use compact JSON. It contains no instance data or credentials.
 
-| Method and path | Access and result |
-| --- | --- |
-| `GET /api/status` | Setup and session state |
-| `POST /api/setup` | Initial `{username, password}`; one-time setup |
-| `POST /api/login` | `{username, password}`; account session |
-| `POST /api/logout` | Clear session |
-| `GET /api/environments` | Signed-in account; allowed environments and its own permissions |
-| `GET /api/environments/{env}/flags` | Viewer or higher; flag map |
-| `POST /api/environments/{env}/flags` | Editor or higher; create `{key, ...flag}`; return saved flag with key, status 201 |
-| `PUT /api/environments/{env}/flags/{key}` | Editor or higher; update existing flag; return saved flag with key, status 200 |
-| `DELETE /api/environments/{env}/flags/{key}` | Editor or higher; delete flag |
-| `GET /api/environments/{env}/flags/{key}/impact` | Viewer or higher; affected applications and confirmation token |
-| `GET /api/environments/{env}/apps` | Viewer or higher; applications with selected flags and keys |
-| `POST /api/environments/{env}/apps` | Manager or higher; `{name, flags: [key, ...]}`; returns app ID, selections, and first key, status 201 |
-| `PUT /api/environments/{env}/apps/{id}` | Manager or higher; update `{name, flags}` without changing the ID |
-| `POST /api/environments/{env}/apps/{id}/keys` | Manager or higher; `{name}`; returns a new key |
-| `GET /api/environments/{env}/audits` | Viewer or higher; newest 100 entries, optional `before` ID, `action`, and `application_id` filters |
-| `GET /api/environments/{env}/usage` | Viewer or higher; `{usage: [...]}` with per-key/flag timestamps and app/key names, never secrets |
-| `PUT /api/keys/{id}` | Manager or higher; rename with `{name}` |
-| `DELETE /api/keys/{id}` | Manager or higher; revoke key |
-| `GET /api/users` | Instance administrator; accounts and permissions, never passwords |
-| `POST /api/users` | Instance administrator; create `{username, password, is_admin, enabled, permissions}`; saved user, status 201 |
-| `PUT /api/users/{id}` | Instance administrator; same fields, optional password; saved user, status 200 |
-| `GET /api/policy` | SDK bearer key; full policy or `304` |
-| `POST /api/usage` | SDK bearer key plus policy scope headers; `{flags: [key, ...]}`; `204` after commit |
+The contract is generated with Utoipa from the registered Axum handlers and Rust types. Do not edit the JSON by hand. After changing the API, run from the repository root:
 
-The `permissions` object maps environment names to `viewer`, `editor`, or `manager`; omit environments with no access. Administrators have an empty permissions object because their access is global. API Keys cannot call dashboard or account APIs. Denied signed-in requests return `403`.
+```sh
+task api:export
+```
 
-Usage reports require no dashboard header or session. They retain the API's cross-origin checks, accept at most 128 names and a 16 KiB body, and reject extra JSON fields or invalid names. Repeated names are deduplicated. Invalid credentials or scope return `401`; confirmed revocation uses the same `key_revoked` response as policy requests. Empty and entirely stale batches return `204` without updating usage.
+The standalone executable can also export it without opening a database or starting a server:
 
-Login allows five attempts per peer IP per minute, ignoring forwarded headers. Busy or throttled requests return `429` with `Retry-After: 60`. Limits reset on restart.
+```sh
+./target/release/partly openapi --output openapi.json
+```
 
-Policy downloads authenticate before checking `If-None-Match`. The key fixes the environment and application. Supply both `X-Partly-Environment` and `X-Partly-Application`; a mismatch is rejected. The policy includes `application_id` and only the app's selected flags. A revoked key receives `401`, JSON `code: "key_revoked"`, and `X-Partly-Error: key_revoked`, even with an unchanged ETag. A `200` response contains the full policy and a quoted SHA-256 ETag; `304` has no body. Identical saves and changes outside an app's selected flags leave its ETag unchanged. The content hash identifies the snapshot; each app's revision increases only when its selected policy changes.
+Omit `--output` to print JSON to standard output. Import the document into your OpenAPI viewer or API client. The dashboard's **Docs** tab remains focused on SDK examples.
 
-See the [policy format and rule operators](../partly-core/README.md#policy-format) for flag JSON. Duplicate creation returns `409`; updating a missing flag returns `404`. Custom actions are `enable` or `disable`, with the opposite decision for nonmatching context. Invalid rules are rejected.
+Dashboard writes use a session cookie and `X-Partly-Request: dashboard`. API Keys use bearer authentication with `X-Partly-Environment` and `X-Partly-Application`; they can only download policy and report usage. Confirmed revocation is a terminal `401` with `code: "key_revoked"` and `X-Partly-Error: key_revoked`. Ordinary failures preserve the SDK's accepted policy.
 
-Admin JSON bodies are limited to 16 KiB; each environment's complete policy to 1 MiB. An oversized policy save returns `400` and preserves the previous flag and revision.
+Contract tests compare the generated document with the checked-in file and validate real responses for every documented operation. They cover nullable/masked keys, typed rules, policy caching, revocation, and empty `204`/`304` bodies. Run `cargo test --locked -p partly-server`, then build the server and run `cargo test --locked -p partly-e2e --test e2e api::openapi::`. These run in CI's **Build and test** tier.
 
-Flag PUT/DELETE requests require `X-Partly-Confirm: environment/flag_name` and `X-Partly-Impact` from the impact endpoint. A stale preview returns `409`; review it again.
-
-All responses use `Cache-Control: no-store`. Active key lists include full secrets only for managers and instance administrators. Other roles and revoked entries receive `secret: null`, with masked identifiers and dates. Revocation removes the full stored secret, retaining its SHA-256 hash and partial identifier. Audit details never include full credentials. Audit entries cannot be edited through the API but are not protected from direct database access.
-
-There is no `/reveal` endpoint. Storage failures return a generic `500`, with safe diagnostics in the [operational logs](#logging). Credentials are not logged.
-
-## License
-
-The control plane and dashboard are source-available under the [Elastic License 2.0](../../LICENSE). The bundled evaluator and quickstart examples retain their Apache-2.0 license. See [licensing boundaries](../../docs/licensing.md) before redistributing the executable.
+Schemas describe wire structure. Validation that depends on stored state or runtime behavior—permissions, unique names, valid Rust regex, impact tokens, and policy size—still runs on the server. Axum extraction failures may be plain text; application errors are JSON. Both are documented.
