@@ -172,11 +172,13 @@ async fn app_selection_keys_and_audits() -> Result {
         .map(|a| text(&a["item_type"]))
         .collect();
     assert_eq!(types, BTreeSet::from(["app", "flag", "api_key"]));
-    assert!(audits
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|a| a["actor"] == "admin"));
+    assert!(
+        audits
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|a| a["actor"] == "admin")
+    );
     assert!(
         !audits.to_string().contains(secret)
             && !audits.to_string().contains(text(&replacement["secret"]))

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use napi::{
-    bindgen_prelude::{AsyncTask, Buffer},
     Env, Error, Result, Task,
+    bindgen_prelude::{AsyncTask, Buffer},
 };
 use napi_derive::napi;
 use partly_ffi::Snapshot;

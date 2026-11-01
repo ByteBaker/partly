@@ -279,11 +279,13 @@ async fn permission_password_and_account_changes_end_sessions() -> Result {
         .await?
         .get("/api/environments/development/audits")
         .await?;
-    assert!(entries["audits"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|entry| entry["actor"] == "admin"));
+    assert!(
+        entries["audits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["actor"] == "admin")
+    );
     assert_eq!(entries["audits"][0]["details"]["password_changed"], true);
     for secret in [PASSWORD, password, "$argon2"] {
         assert!(!entries.to_string().contains(secret));

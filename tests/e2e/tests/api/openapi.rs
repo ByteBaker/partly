@@ -3,7 +3,7 @@
 
 use crate::support::*;
 use reqwest::{Method, Response};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{collections::BTreeSet, process::Command};
 
 fn validator(document: &Value, mut schema: Value) -> Result<jsonschema::Validator> {
@@ -382,11 +382,13 @@ async fn exported_and_served_contract_matches_every_api_operation() -> Result {
             200,
         )
         .await?;
-    assert!(revoked["applications"][0]["keys"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|k| !k["revoked_at"].is_null() && k["secret"].is_null()));
+    assert!(
+        revoked["applications"][0]["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|k| !k["revoked_at"].is_null() && k["secret"].is_null())
+    );
     let impact = admin.get(&impact_path).await?;
     contract
         .check(

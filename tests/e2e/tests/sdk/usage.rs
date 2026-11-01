@@ -79,11 +79,13 @@ async fn reports(language: &str, openfeature: bool) -> Result {
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     };
-    assert!(recorded
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|row| row["api_key_id"] == app["keys"][0]["id"]));
+    assert!(
+        recorded
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["api_key_id"] == app["keys"][0]["id"])
+    );
     driver.evaluate(&names[128], json!({})).await?;
     driver.simple("close", json!({"ok":true})).await?;
     driver.finish().await?;

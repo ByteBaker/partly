@@ -6,13 +6,15 @@ use std::time::Duration;
 
 #[test]
 fn build_validates_without_a_runtime_or_network() {
-    assert!(Client::builder()
-        .url("https://127.0.0.1:1")
-        .environment("development")
-        .application_id("app_test")
-        .secret_key("key")
-        .build()
-        .is_ok());
+    assert!(
+        Client::builder()
+            .url("https://127.0.0.1:1")
+            .environment("development")
+            .application_id("app_test")
+            .secret_key("key")
+            .build()
+            .is_ok()
+    );
     for url in [
         "ftp://host",
         "http://name:password@host",
@@ -34,21 +36,25 @@ fn build_validates_without_a_runtime_or_network() {
             "{url}"
         );
     }
-    assert!(Client::builder()
-        .url("http://localhost")
-        .environment("development")
-        .application_id("app_test")
-        .secret_key("key\n")
-        .build()
-        .is_err());
-    assert!(Client::builder()
-        .url("http://localhost")
-        .environment("development")
-        .application_id("app_test")
-        .secret_key("key")
-        .timeout(Duration::ZERO)
-        .build()
-        .is_err());
+    assert!(
+        Client::builder()
+            .url("http://localhost")
+            .environment("development")
+            .application_id("app_test")
+            .secret_key("key\n")
+            .build()
+            .is_err()
+    );
+    assert!(
+        Client::builder()
+            .url("http://localhost")
+            .environment("development")
+            .application_id("app_test")
+            .secret_key("key")
+            .timeout(Duration::ZERO)
+            .build()
+            .is_err()
+    );
 }
 
 #[test]
@@ -247,24 +253,30 @@ async fn invalid_policy_errors_redact_response_values_and_retain_policy_and_etag
 #[test]
 fn application_scope_is_required_and_validated() {
     for value in ["", "Bad", "app name", "app\n"] {
-        assert!(Client::builder()
-            .url("http://localhost")
-            .secret_key("key")
-            .environment("development")
-            .application_id(value)
-            .build()
-            .is_err());
-        assert!(Client::builder()
-            .url("http://localhost")
-            .secret_key("key")
-            .environment(value)
-            .application_id("app_test")
-            .build()
-            .is_err());
+        assert!(
+            Client::builder()
+                .url("http://localhost")
+                .secret_key("key")
+                .environment("development")
+                .application_id(value)
+                .build()
+                .is_err()
+        );
+        assert!(
+            Client::builder()
+                .url("http://localhost")
+                .secret_key("key")
+                .environment(value)
+                .application_id("app_test")
+                .build()
+                .is_err()
+        );
     }
-    assert!(Client::builder()
-        .url("http://localhost")
-        .secret_key("key")
-        .build()
-        .is_err());
+    assert!(
+        Client::builder()
+            .url("http://localhost")
+            .secret_key("key")
+            .build()
+            .is_err()
+    );
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use open_feature::{EvaluationContext, EvaluationResult, OpenFeature};
-use partly::{openfeature::PartlyProvider, Client};
+use partly::{Client, openfeature::PartlyProvider};
 use std::sync::Arc;
 
 const CONTROL_PLANE_URL: &str = "http://127.0.0.1:8080";

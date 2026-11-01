@@ -34,7 +34,10 @@ async fn contract_links_rebuilt_native_archive() -> Result {
     for path in ["sdk/go", "tests/sdk_contract/go"] {
         copy_directory(&root().join(path), &workspace.join(path))?;
     }
-    fs::write(workspace.join("Cargo.toml"),"[package]\nname = \"partly-ffi\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[lib]\npath = \"native.rs\"\ncrate-type = [\"staticlib\"]\n")?;
+    fs::write(
+        workspace.join("Cargo.toml"),
+        "[package]\nname = \"partly-ffi\"\nversion = \"0.0.0\"\nedition = \"2021\"\n[lib]\npath = \"native.rs\"\ncrate-type = [\"staticlib\"]\n",
+    )?;
     fs::write(workspace.join("native.rs"), NATIVE)?;
     let mut command = Command::new("cargo");
     command

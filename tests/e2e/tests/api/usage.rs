@@ -4,7 +4,7 @@
 use crate::support::*;
 use reqwest::Method;
 use rusqlite::params;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 async fn report(api: &Api, key: &Value, body: Value, expected: u16) -> Result {
     status(
@@ -104,8 +104,7 @@ async fn reports_deduplicate_without_changing_policy_or_audits() -> Result {
         |r| r.get(0),
     )?;
     assert_eq!(
-        admin.get("/api/environments/development/apps").await?["applications"][0]["keys"][0]
-            ["last_used_at"],
+        admin.get("/api/environments/development/apps").await?["applications"][0]["keys"][0]["last_used_at"],
         last
     );
     assert_eq!(

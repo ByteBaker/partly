@@ -2,6 +2,8 @@
 
 Shared policy validation and flag evaluation for the server and all language SDKs. No HTTP, storage, or Python dependencies.
 
+`src/models.rs` defines the policy and error types. `policy.rs` validates snapshots, `rules.rs` handles conditions and regexes, `numbers.rs` preserves numeric precision, and `evaluation.rs` makes decisions and computes percentage buckets. Public types and functions remain exported from `lib.rs`; unit tests live in `tests.rs`.
+
 ## Policy format
 
 ```json

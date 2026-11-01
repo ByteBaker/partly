@@ -1,58 +1,20 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Elastic-2.0
 
-use crate::{store, App, SavedFlag};
-use axum::Router;
+use super::models::{ErrorBody, SavedFlag};
+use crate::store;
 use partly_core::Flag;
-use serde::Serialize;
 use serde_json::json;
 use utoipa::{
+    PartialSchema, ToSchema,
     openapi::{
+        Content, ObjectBuilder, OpenApi, Ref, RefOr, Required, Schema, Type,
         header::Header,
         path::{ParameterBuilder, ParameterIn},
         response::ResponseBuilder,
         security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme},
-        Content, ObjectBuilder, OpenApi, Ref, RefOr, Required, Schema, Type,
     },
-    OpenApi as _, PartialSchema, ToSchema,
 };
-use utoipa_axum::{router::OpenApiRouter, routes};
-
-#[derive(Serialize, ToSchema)]
-pub struct ErrorBody {
-    pub error: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<RevocationCode>,
-}
-
-#[derive(Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RevocationCode {
-    KeyRevoked,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct Status {
-    pub setup_required: bool,
-    pub authenticated: bool,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct LoginResult {
-    pub ok: bool,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct Environments {
-    pub project: &'static str,
-    pub environments: Vec<&'static str>,
-    pub user: store::User,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct Users {
-    pub users: Vec<store::User>,
-}
 
 // Creation and update share a parser, but only creation requires a non-null password.
 pub struct CreateUserInput;
@@ -74,51 +36,6 @@ impl ToSchema for CreateUserInput {
     fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
         store::UserInput::schemas(schemas);
     }
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct Applications {
-    pub applications: Vec<store::Application>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct Usage {
-    pub usage: Vec<store::FlagUsage>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct AppReference {
-    pub id: String,
-    pub name: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct Impact {
-    pub applications: Vec<AppReference>,
-    /// Supply this token unchanged as X-Partly-Impact when saving or deleting.
-    pub token: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct AuditEntry {
-    pub id: i64,
-    pub actor: String,
-    pub action: String,
-    pub item_type: String,
-    pub item_id: String,
-    pub item_name: String,
-    /// Event-specific states: before/after, affected applications, or key/account metadata.
-    /// Creation has a null before; deletion has a null after. Never includes full credentials.
-    #[schema(value_type = Object)]
-    pub details: serde_json::Value,
-    /// Server UTC timestamp in SQLite's YYYY-MM-DD HH:MM:SS format.
-    pub created_at: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct Audits {
-    #[schema(max_items = 100)]
-    pub audits: Vec<AuditEntry>,
 }
 
 // Flattening a closed Flag with allOf would incorrectly reject the added key.
@@ -165,29 +82,9 @@ impl ToSchema for SavedFlag {
         (name = "SDK", description = "Application-scoped API Keys. Cannot perform dashboard administration.")
     )
 )]
-struct Contract;
+pub(super) struct Contract;
 
-pub fn router() -> (Router<App>, OpenApi) {
-    let (router, mut document) = OpenApiRouter::with_openapi(Contract::openapi())
-        .routes(routes!(crate::status))
-        .routes(routes!(crate::setup))
-        .routes(routes!(crate::login))
-        .routes(routes!(crate::logout))
-        .routes(routes!(crate::environments))
-        .routes(routes!(crate::users, crate::create_user))
-        .routes(routes!(crate::update_user))
-        .routes(routes!(crate::flags, crate::create_flag))
-        .routes(routes!(crate::save_flag, crate::delete_flag))
-        .routes(routes!(crate::flag_impact))
-        .routes(routes!(crate::applications, crate::create_application))
-        .routes(routes!(crate::save_application))
-        .routes(routes!(crate::create_key))
-        .routes(routes!(crate::audits))
-        .routes(routes!(crate::flag_usage))
-        .routes(routes!(crate::rename_key, crate::revoke_key))
-        .routes(routes!(crate::policy))
-        .routes(routes!(crate::report_usage))
-        .split_for_parts();
+pub(super) fn finish(document: &mut OpenApi) {
     let components = document.components.as_mut().expect("API components");
     components.add_security_scheme(
         "session",
@@ -237,9 +134,29 @@ pub fn router() -> (Router<App>, OpenApi) {
                     );
                 }
             }
-            for (status, description) in [("400", "Invalid request or missing/invalid Host header"), ("403", "Insufficient permissions, missing dashboard header, or rejected Origin/cross-site request"), ("421", "Hostname is not allowed"), ("500", "Internal failure; details are omitted") ] {
-                operation.responses.responses.entry(status.into()).or_insert_with(|| ResponseBuilder::new().description(description)
-                    .content("application/json", Content::new(Some(Ref::from_schema_name("ErrorBody")))).build().into());
+            for (status, description) in [
+                ("400", "Invalid request or missing/invalid Host header"),
+                (
+                    "403",
+                    "Insufficient permissions, missing dashboard header, or rejected Origin/cross-site request",
+                ),
+                ("421", "Hostname is not allowed"),
+                ("500", "Internal failure; details are omitted"),
+            ] {
+                operation
+                    .responses
+                    .responses
+                    .entry(status.into())
+                    .or_insert_with(|| {
+                        ResponseBuilder::new()
+                            .description(description)
+                            .content(
+                                "application/json",
+                                Content::new(Some(Ref::from_schema_name("ErrorBody"))),
+                            )
+                            .build()
+                            .into()
+                    });
             }
             if operation
                 .security
@@ -271,20 +188,5 @@ pub fn router() -> (Router<App>, OpenApi) {
                 }
             }
         }
-    }
-    (router, document)
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn committed_contract_matches_registered_handlers() {
-        let expected: serde_json::Value =
-            serde_json::from_str(include_str!("../../../docs/openapi.json")).unwrap();
-        let actual = serde_json::to_value(super::router().1).unwrap();
-        assert_eq!(
-            actual, expected,
-            "Run task api:export after changing the HTTP API"
-        );
     }
 }

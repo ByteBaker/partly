@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Elastic-2.0
 
 use open_feature::{EvaluationContext, EvaluationContextFieldValue as Field, OpenFeature};
-use partly::{openfeature::PartlyProvider, Client};
-use serde_json::{json, Value};
+use partly::{Client, openfeature::PartlyProvider};
+use serde_json::{Value, json};
 use std::{
     io::{self, BufRead, Write},
     sync::Arc,

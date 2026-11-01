@@ -3,7 +3,7 @@
 
 use crate::support::{driver::*, *};
 use reqwest::Method;
-use rustls::pki_types::{pem::PemObject, CertificateDer};
+use rustls::pki_types::{CertificateDer, pem::PemObject};
 use serde_json::json;
 use std::{fs, sync::Arc, time::Duration};
 use tokio::{
@@ -132,12 +132,14 @@ async fn setup_cookies_origins_and_hostname() -> Result {
     status(login, 200).await?;
     admin.get("/api/environments").await?;
     assert!(!server.log().contains(text(&key["secret"])));
-    assert!(reqwest::Client::new()
-        .get(server.url.replace("https:", "http:"))
-        .timeout(Duration::from_secs(1))
-        .send()
-        .await
-        .is_err());
+    assert!(
+        reqwest::Client::new()
+            .get(server.url.replace("https:", "http:"))
+            .timeout(Duration::from_secs(1))
+            .send()
+            .await
+            .is_err()
+    );
     Ok(())
 }
 

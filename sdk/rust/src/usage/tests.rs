@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::{Client, Context, Decision};
-use std::sync::{atomic::AtomicBool, RwLock};
+use std::sync::{RwLock, atomic::AtomicBool};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -250,16 +250,18 @@ async fn bounded_single_flight_fifo_and_fresh_tail() {
     assert_eq!(report.flags[0], "flag_128");
     server.finish(report, 204).await;
     server.client.evaluate("flag_000", &Context::new()).unwrap();
-    assert!(server
-        .client
-        .inner
-        .usage
-        .lock()
-        .unwrap()
-        .task
-        .as_ref()
-        .unwrap()
-        .is_finished());
+    assert!(
+        server
+            .client
+            .inner
+            .usage
+            .lock()
+            .unwrap()
+            .task
+            .as_ref()
+            .unwrap()
+            .is_finished()
+    );
     assert!(server.reports.try_recv().is_err());
     server.due();
     server.client.evaluate("flag_000", &Context::new()).unwrap();

@@ -2,6 +2,8 @@
 
 Async policy downloads through Reqwest and rustls; local decisions through `partly-core`. Initialize one client at application startup, before accepting requests. Store it in application state, pass it to request handlers, and close it at shutdown. Use `Arc<Client>` to share ownership between tasks.
 
+Source modules separate shared types (`models.rs`), configuration (`builder.rs`), lifecycle (`client.rs`), downloads (`policy.rs`), reporting (`usage.rs`), errors, and the optional OpenFeature adapter. `lib.rs` preserves the public exports. Provider and reporting unit tests live beside their modules; public client tests are in `tests/client.rs`.
+
 ## Use a release archive
 
 Requires Rust 1.89+. Archives will be published on [GitHub Releases](https://github.com/ByteBaker/partly/releases). Once available, extract the `partly-core` and `partly-rust` `.crate` archives into `third_party`, then use:

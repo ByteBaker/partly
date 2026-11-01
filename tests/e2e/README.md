@@ -22,6 +22,13 @@ tests/e2e/
 Cargo discovers `tests/e2e.rs` as the `e2e` target. It includes the suites as
 modules; shared helpers are compiled once within that target.
 
+API and dashboard suites are grouped by workflow. `sdk/contract.rs` registers each
+language; `sdk/contract/` separates native evaluation, refresh/revocation,
+OpenFeature, and lifecycle checks. `support/` separates API helpers, server
+processes, TLS, command execution, and browser utilities. Language drivers keep
+process communication in `driver.rs`, source builds in `driver/source.rs`, and
+release installation in `driver/packages.rs`.
+
 ## Run
 
 Install the development tools and Python 3.14 SDK as described in
@@ -60,12 +67,12 @@ test closes its context on success, failure, or timeout.
 
 | Files | Checks |
 | --- | --- |
-| `tests/api/{control_plane,applications,rbac}.rs` | Setup, authentication, scoped flags and keys, confirmation, audits, roles |
+| `tests/api/{control_plane,flags,keys,applications,rbac}.rs` | Setup, authentication, scoped flags and keys, confirmation, audits, roles |
 | `tests/api/usage.rs` | Exact per-key/flag writes, scope, rollback, retention, revocation, and schema compatibility |
-| `tests/api/{operations,https}.rs` | Restart, crash recovery, backups, password recovery, TLS validation, graceful shutdown |
+| `tests/api/{operations,recovery,https}.rs` | Restart, crash recovery, backups, password recovery, TLS validation, graceful shutdown |
 | `tests/api/openapi.rs` | CLI/HTTP export, generated contract consistency, every API operation, and JSON Schema validation |
 | `tests/api/logging.rs` | Operational events, quiet polling, log levels, throttling, and credential/data redaction |
-| `tests/sdk/contract.rs` | Four native SDKs and OpenFeature providers, typed rules, refresh, offline cache, revocation, invalid responses |
+| `tests/sdk/contract.rs`, `tests/sdk/contract/` | Four native SDKs and OpenFeature providers, typed rules, refresh, offline cache, revocation, invalid responses |
 | `tests/sdk/usage.rs` | Real native and OpenFeature usage batches in all four languages, HTTPS, deduplication, and shutdown |
 | `tests/sdk/{examples,go_build}.rs` | Runnable documentation, package installation, native Go relinking |
 | `tests/dashboard/` | Forms, navigation, keyboard access, responsive layout, feedback, audits, users, SDK integration |

@@ -5,6 +5,13 @@ use crate::support::{browser::*, *};
 use serde_json::json;
 
 mod administration;
+mod applications;
+mod audits;
+mod docs;
+mod drafts;
+mod dropdowns;
 mod forms;
+mod layout;
 mod navigation;
 mod usage;
+mod users;

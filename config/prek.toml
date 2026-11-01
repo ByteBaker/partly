@@ -22,7 +22,7 @@ id = "rust-format"
 name = "Rust formatting"
 language = "system"
 entry = "cargo fmt --all --check"
-files = '(\.rs$|(^|/)Cargo\.toml$)'
+files = '(\.rs$|(^|/)Cargo\.toml$|^\.rustfmt\.toml$)'
 pass_filenames = false
 
 [[repos.hooks]]

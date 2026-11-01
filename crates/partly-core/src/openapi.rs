@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{Condition, Operator};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use utoipa::{
-    openapi::{RefOr, Schema},
     PartialSchema, ToSchema,
+    openapi::{RefOr, Schema},
 };
 
 // The operator determines v's type; an unconstrained JSON value would hide invalid rules.

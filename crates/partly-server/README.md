@@ -2,6 +2,21 @@
 
 One executable serves the dashboard and API, with Axum and embedded SQLite. No separate assets or frontend runtime are needed.
 
+## Source layout
+
+| Location | Responsibility |
+| --- | --- |
+| `src/main.rs`, `cli.rs`, `server.rs` | Entry point, commands, listening, and shutdown |
+| `src/api/handlers/` | HTTP handlers grouped by resource |
+| `src/api/{models,openapi,error}.rs` | Request/response types, contract generation, HTTP errors |
+| `src/store/` | Database operations grouped by resource; stored types in `models.rs` |
+| `src/{auth,state,transport,logging}.rs` | Authentication limits, shared state, HTTP security, operational logs |
+| `src/dashboard.rs` | Bundled dashboard routes and assets |
+
+Unit tests live beside their module in `tests.rs`; process and browser tests are in [the E2E harness](../../tests/e2e/README.md). See the [Rust style rules](../../docs/releasing.md#rust-structure-and-formatting).
+
+## Local build
+
 From the repository root:
 
 ```sh

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 
 use partly::{Client, Context, Decision, Error, EvaluationError};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 

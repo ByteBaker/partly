@@ -66,6 +66,14 @@ On Linux, install browser system dependencies once with `task browsers -- --with
 
 For an existing environment, pass `VENV=/absolute/path` to a task. CI passes `PYTHON=/absolute/path/to/python` to use its installed interpreter. For Git hooks with a nondefault environment, export `PARTLY_PYTHON` and put that environment's `bin` directory on `PATH`. Normal `.venv` setups need no activation. The existing `PARTLY_BINARY` and `PARTLY_BROWSER` test settings still work.
 
+### Rust structure and formatting
+
+Group modules by responsibility, then separate models, logic, and tests. The server has `api/handlers/` for HTTP resources and `store/` for database operations; each has its own `models.rs`. The evaluator separates policy validation, rules, numeric handling, and evaluation. Keep entry points and module registries small, with public SDK exports preserved at the crate root.
+
+Put unit tests in a sibling `tests.rs` or `tests/` directory, and group E2E tests by workflow. Review files approaching 400 lines for unrelated responsibilities; do not split a coherent workflow just to meet a line count. Keep small helpers with the code that uses them.
+
+Run `cargo fmt --all` before checking changes. The root `.rustfmt.toml` uses stable settings: 100-column layout, Unix line endings, ordered imports/modules, field shorthand, and the 2024 formatting style. The Rust language edition stays 2021. Editors, prek, and CI use the same file; no nightly toolchain is needed. Rustfmt cannot choose module boundaries or reliably wrap long SQL and macro bodies, so review those manually.
+
 ### Pre-push checks
 
 [prek](https://prek.j178.dev/0.5.5/reference/configuration/) runs `config/prek.toml` before a push. Source checks cover conflict markers, JSON/TOML/YAML syntax, Rust/Go formatting, Python/frontend/shell lint, and version consistency. They select changed files. RustSec, pip-audit, govulncheck, and npm audit run on **every push**, even when only documentation changes: new advisories can affect unchanged dependencies. The four scans run concurrently after source checks and share their Task commands with CI.

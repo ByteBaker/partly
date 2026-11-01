@@ -1,10 +1,11 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Error, Inner, Policy};
+use crate::{Error, models::Inner};
+use partly_core::Policy;
 use std::{
     collections::{HashSet, VecDeque},
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
 use tokio::{runtime::Handle, task::JoinHandle};

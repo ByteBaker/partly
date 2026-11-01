@@ -3,9 +3,12 @@
 
 mod applications;
 mod control_plane;
+mod flags;
 mod https;
+mod keys;
 mod logging;
 mod openapi;
 mod operations;
 mod rbac;
+mod recovery;
 mod usage;
