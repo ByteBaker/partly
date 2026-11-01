@@ -6,6 +6,7 @@ version: '3'
 vars:
   VENV: '{{.ROOT_DIR}}/.venv'
   PYTHON: '{{default (printf "%s/bin/python" .VENV) .PARTLY_PYTHON}}'
+  AUDIT_TOOLS: '{{.ROOT_DIR}}/.cache/audit-tools'
 
 tasks:
   default:
@@ -21,12 +22,54 @@ tasks:
       - task: python:validate
       - '{{.PYTHON | shellQuote}} -m pip install -r config/requirements-dev.txt'
       - npm ci --ignore-scripts --no-audit --no-fund
+      - task: tools:rust-audit
+      - task: tools:go-audit
       - PATH={{.VENV | shellQuote}}/bin:"$PATH" prek install -c config/prek.toml
 
   check:
-    desc: Run basic pre-push checks without building
+    desc: Run pre-push lint and vulnerability checks without product builds
     cmds:
       - PARTLY_PYTHON={{.PYTHON | shellQuote}} PATH={{.VENV | shellQuote}}/bin:"$PATH" prek run -c config/prek.toml --all-files --stage pre-push
+
+  lint:
+    desc: Run source checks (CI runs vulnerability checks separately)
+    cmds:
+      - PARTLY_PYTHON={{.PYTHON | shellQuote}} PATH={{.VENV | shellQuote}}/bin:"$PATH" prek run -c config/prek.toml --all-files --stage manual
+
+  tools:rust-audit:
+    cmds:
+      - cargo install cargo-audit --version 0.22.2 --locked --root {{.AUDIT_TOOLS | shellQuote}}
+
+  tools:go-audit:
+    cmds:
+      - mkdir -p {{.AUDIT_TOOLS | shellQuote}}/bin
+      - GOTOOLCHAIN=go1.27.3 GOBIN={{.AUDIT_TOOLS | shellQuote}}/bin go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
+  audit:
+    desc: Scan Rust, Python, Go and npm dependencies for vulnerabilities
+    deps: [audit:rust, audit:python, audit:go, audit:node]
+
+  audit:rust:
+    cmds:
+      - '{{.AUDIT_TOOLS | shellQuote}}/bin/cargo-audit audit'
+
+  audit:python:
+    cmds:
+      - task: python:validate
+      - '{{.PYTHON | shellQuote}} scripts/audit_python.py'
+
+  audit:go:
+    cmds:
+      - |
+        set -eu
+        export GOTOOLCHAIN=go1.27.3
+        for module in sdk/go sdk/go/openfeature examples/go tests/sdk_contract/go tests/sdk_contract/go_openfeature; do
+          (cd "$module" && {{.AUDIT_TOOLS | shellQuote}}/bin/govulncheck ./...)
+        done
+
+  audit:node:
+    cmds:
+      - npm audit --package-lock-only --audit-level=low
 
   hook:python:
     cmds:
@@ -44,6 +87,11 @@ tasks:
     desc: Check sources and build the server and all four SDKs
     cmds:
       - task: check
+      - task: build:artifacts
+
+  build:artifacts:
+    # CI calls this only after its Verify prerequisite has passed.
+    cmds:
       - task: build:server
       - task: build:python
       - task: build:rust

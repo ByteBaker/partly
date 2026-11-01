@@ -3,7 +3,7 @@
 
 minimum_prek_version = "0.5.5"
 default_install_hook_types = ["pre-push"]
-default_stages = ["pre-push"]
+default_stages = ["pre-push", "manual"]
 
 [[repos]]
 repo = "builtin"
@@ -62,3 +62,43 @@ language = "system"
 entry = "task hook:versions"
 files = '(^|/)(Cargo\.(toml|lock)|pyproject\.toml|package\.json|go\.mod)$|^tests/test_release_versions\.py$'
 pass_filenames = false
+
+[[repos.hooks]]
+id = "audit-rust"
+name = "Rust vulnerabilities"
+language = "system"
+entry = "task audit:rust"
+stages = ["pre-push"]
+always_run = true
+pass_filenames = false
+priority = 100
+
+[[repos.hooks]]
+id = "audit-python"
+name = "Python vulnerabilities"
+language = "system"
+entry = "task audit:python"
+stages = ["pre-push"]
+always_run = true
+pass_filenames = false
+priority = 100
+
+[[repos.hooks]]
+id = "audit-go"
+name = "Go vulnerabilities"
+language = "system"
+entry = "task audit:go"
+stages = ["pre-push"]
+always_run = true
+pass_filenames = false
+priority = 100
+
+[[repos.hooks]]
+id = "audit-node"
+name = "npm vulnerabilities"
+language = "system"
+entry = "task audit:node"
+stages = ["pre-push"]
+always_run = true
+pass_filenames = false
+priority = 100

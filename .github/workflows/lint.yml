@@ -28,7 +28,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run basic checks and task runner tests
         run: |
-          task check PYTHON="$(command -v python)"
+          task lint PYTHON="$(command -v python)"
           python -m pytest -q tests/test_tasks.py
       - name: Check Python and TypeScript types
         run: |

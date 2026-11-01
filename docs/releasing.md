@@ -41,12 +41,14 @@ Prepare the development checkout once:
 task setup
 ```
 
-This creates `.venv`, installs Python and frontend development dependencies, and installs the prek pre-push hook. It does not install system toolchains. An existing environment with the wrong Python version is rejected without replacing it. Task commands use this environment without requiring shell activation.
+This creates `.venv`, installs Python/frontend dependencies and audit tools, and installs the prek pre-push hook. Rust and Go scanners live in `.cache/audit-tools`; Go downloads the pinned audit toolchain when needed. Other system toolchains must already be installed. An existing environment with the wrong Python version is rejected without replacing it. Shell activation is not needed.
 
 | Command | What it does |
 | --- | --- |
 | `task` | List available commands |
-| `task check` | Basic pre-push checks; no builds |
+| `task check` | Pre-push lint and vulnerability checks; no product builds |
+| `task lint` | Source checks only; CI runs security as a separate required tier |
+| `task audit` | All four vulnerability scans; use `audit:rust`, `audit:python`, `audit:go`, or `audit:node` for one |
 | `task build` | Check sources, then build the server and all four SDKs |
 | `task test` | Build, install the local wheel, prepare Chromium, and run all tests |
 | `task build:server` | Build only the release server at `target/release/partly` |
@@ -57,7 +59,7 @@ This creates `.venv`, installs Python and frontend development dependencies, and
 | `task install:python` | Build and install the Python SDK locally |
 | `task test:run` | Run the suite against prepared artifacts, as CI does |
 
-A failed check stops `task build` and `task test` before compilation. Failed builds stop the later steps. Component targets allow focused builds. All commands live in `Taskfile.yml`; the language-specific native build helpers remain shared with release packaging. No task publishes packages.
+A failed check stops `task build` and `task test` before compilation. Failed builds stop the later steps. CI calls `build:artifacts` after Verify passes, avoiding duplicate scans. Component targets allow focused builds. All commands live in `Taskfile.yml`; the language-specific native build helpers remain shared with release packaging. No task publishes packages.
 
 On Linux, install browser system dependencies once with `task browsers -- --with-deps chromium`. `task test` then reuses the downloaded browser. `task test:run` expects built native libraries, an installed Python wheel, development dependencies, and Chromium; missing requirements fail the run.
 
@@ -65,9 +67,13 @@ For an existing environment, pass `VENV=/absolute/path` to a task. CI passes `PY
 
 ### Pre-push checks
 
-[prek](https://prek.j178.dev/0.5.5/reference/configuration/) runs `config/prek.toml` before a push. It checks conflict markers, JSON/TOML/YAML syntax, Rust and Go formatting, Python lint, frontend lint, shell scripts, and release-version consistency. Checks select files changed in the push; workspace-wide tools run once when relevant files change. They report problems without rewriting files. `task check` runs the same checks over all tracked files.
+[prek](https://prek.j178.dev/0.5.5/reference/configuration/) runs `config/prek.toml` before a push. Source checks cover conflict markers, JSON/TOML/YAML syntax, Rust/Go formatting, Python/frontend/shell lint, and version consistency. They select changed files. RustSec, pip-audit, govulncheck, and npm audit run on **every push**, even when only documentation changes: new advisories can affect unchanged dependencies. The four scans run concurrently after source checks and share their Task commands with CI.
 
-The hook does not compile, run browsers, or scan dependencies. Strict type checks, Clippy, Go analysis, and vulnerability scans remain in **Verify**. Each contributor installs the hook with `task setup`; CI remains authoritative. The hook uses the same supported prek stages as [Apache Iggy's configuration](https://github.com/apache/iggy/blob/master/.pre-commit-config.yaml), with a smaller check set.
+Findings, missing scanners, failed resolution, and network errors block the push. Scans need network access and do not fix files automatically. Run `task setup` after pulling changes to tool requirements. `task check` also checks every tracked source file. No product builds or browser tests run during a push. Strict types, Clippy, and Go analysis remain in **Verify**, alongside the required security jobs. Daily scans remain enabled.
+
+Python audits resolve declared runtime, OpenFeature, and development requirements in isolation, without building or querying the unpublished Partly wheel. npm audits the committed lockfile, including development dependencies. Go audits all five modules with the pinned patched toolchain. These checks cover the project dependencies, not every package installed in a developer's environment.
+
+The temporary `minimatch` override selects 11.0.1 for [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249). Remove it when ESLint and TypeScript-ESLint resolve patched versions themselves; verify frontend lint and types after either change.
 
 Tests use temporary servers and databases. `PARTLY_BINARY` selects an absolute executable path. `PARTLY_BROWSER=firefox` or `webkit` selects an installed browser for focused checks. Test reports and screenshots stay outside Git.
 

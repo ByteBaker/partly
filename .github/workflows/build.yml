@@ -35,7 +35,7 @@ jobs:
       - name: Build all components
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          task build PYTHON="$(command -v python)"
+          task build:artifacts PYTHON="$(command -v python)"
           cargo build --locked -p partly-sdk-contract
           (cd examples/go && go build -a -o ../../target/go-example .)
       - name: Bundle test inputs

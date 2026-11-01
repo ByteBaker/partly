@@ -85,7 +85,7 @@ Partly's [measurement](docs/releasing.md#benchmarks) used one flag without appli
 
 ## Development and guides
 
-Use `task setup` once, then `task check`, `task build`, or `task test`. Setup installs the prek pre-push hook; checks do not build artifacts. See [requirements, commands, and CI tiers](docs/releasing.md#build-and-verify).
+Use `task setup` once, then `task check`, `task build`, or `task test`. Pre-push checks include vulnerability scans without building product artifacts. See [requirements, commands, and CI tiers](docs/releasing.md#build-and-verify).
 
 - [Server: permissions, logs, HTTPS, backups, and recovery](crates/partly-server/README.md)
 - [Evaluation rules](crates/partly-core/README.md) · [OpenFeature](docs/openfeature.md) · [Roadmap](docs/roadmap.md)

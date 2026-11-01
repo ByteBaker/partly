@@ -9,6 +9,9 @@
     "lint": "eslint --config config/eslint.config.mjs . --max-warnings 0 && biome lint --config-path config/biome.jsonc crates/partly-server/dashboard/style.css --error-on-warnings && html-validate --config config/htmlvalidate.mjs 'crates/partly-server/dashboard/*.html'",
     "typecheck": "tsc --project config/tsconfig.json"
   },
+  "overrides": {
+    "minimatch": "11.0.1"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@eslint/js": "10.0.1",

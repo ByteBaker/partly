@@ -6,9 +6,12 @@
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+from scripts import audit_python
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -112,3 +115,77 @@ def test_gofmt_check_rejects_changes_and_syntax_errors_without_editing(tmp_path)
         result = subprocess.run(["sh", str(ROOT / "scripts/check_gofmt.sh"), str(source)])
         assert (result.returncode == 0) is succeeds
         assert source.read_text() == contents
+
+
+@pytest.mark.parametrize(("stage", "failed"), [
+    ("manual", ""), ("pre-push", ""), ("pre-push", "rust"),
+    ("pre-push", "python"), ("pre-push", "go"), ("pre-push", "node"),
+])
+def test_prepush_audits_run_for_docs_and_block_scanner_failures(checkout, stage, failed):
+    root, env = checkout
+    subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+    (root / "config").mkdir()
+    shutil.copy2(ROOT / "config/prek.toml", root / "config/prek.toml")
+    (root / "README.md").write_text("Documentation-only change.\n")
+    task = Path(env["PATH"].split(os.pathsep)[0]) / "task"
+    task.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$1" >> "$TASK_TRACE"\n'
+        'if [ "$1" = "$AUDIT_FAIL" ]; then exit 19; fi\n'
+    )
+    task.chmod(0o755)
+    prek = Path(sys.executable).parent / "prek"
+    result = subprocess.run([
+        str(prek), "run", "-c", "config/prek.toml", "--stage", stage, "--files", "README.md",
+    ], cwd=root, env={**env, "PREK_HOME": str(root / ".prek-cache"), "AUDIT_FAIL": f"audit:{failed}"})
+    assert (result.returncode == 0) is (not failed)
+    if stage == "manual":
+        assert not Path(env["TASK_TRACE"]).exists()
+    else:
+        assert set(Path(env["TASK_TRACE"]).read_text().splitlines()) == {
+            "audit:rust", "audit:python", "audit:go", "audit:node",
+        }
+
+
+def test_python_audit_covers_declared_dependencies_and_propagates_failure(tmp_path, monkeypatch):
+    (tmp_path / "sdk/python").mkdir(parents=True)
+    (tmp_path / "config").mkdir()
+    (tmp_path / "sdk/python/pyproject.toml").write_text(
+        '[project]\ndependencies = ["httpx>=0.28,<0.29"]\n'
+        '[project.optional-dependencies]\nopenfeature = ["openfeature-sdk>=0.10,<0.11"]\n'
+    )
+    (tmp_path / "config/requirements-dev.txt").write_text("pytest==9.0.0\n")
+    monkeypatch.setattr(audit_python, "ROOT", tmp_path)
+
+    def fail(command, *, check):
+        assert command[:3] == [sys.executable, "-m", "pip_audit"]
+        assert "--strict" in command and check
+        assert set(Path(command[-1]).read_text().split()) == {
+            "pytest==9.0.0", "httpx>=0.28,<0.29", "openfeature-sdk>=0.10,<0.11",
+        }
+        raise subprocess.CalledProcessError(19, command)
+
+    monkeypatch.setattr(audit_python.subprocess, "run", fail)
+    with pytest.raises(subprocess.CalledProcessError) as failure:
+        audit_python.main()
+    assert failure.value.returncode == 19
+    assert not Path(failure.value.cmd[-1]).exists()
+
+
+@pytest.mark.parametrize("exit_code", [0, 19])
+def test_go_audit_checks_each_module_and_propagates_failure(checkout, exit_code):
+    root, env = checkout
+    modules = ["sdk/go", "sdk/go/openfeature", "examples/go", "tests/sdk_contract/go", "tests/sdk_contract/go_openfeature"]
+    for module in modules:
+        (root / module).mkdir(parents=True, exist_ok=True)
+    scanner = root / ".cache/audit-tools/bin/govulncheck"
+    scanner.parent.mkdir(parents=True)
+    scanner.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$PWD" "$GOTOOLCHAIN" >> "$TASK_TRACE"\n'
+        f'exit {exit_code}\n'
+    )
+    scanner.chmod(0o755)
+    result = run_task(root, env, "audit:go")
+    assert result.returncode == exit_code
+    visited = Path(env["TASK_TRACE"]).read_text().splitlines()
+    assert visited[::2] == [str(root / module) for module in (modules[:1] if exit_code else modules)]
+    assert set(visited[1::2]) == {"go1.27.3"}
