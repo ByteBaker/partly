@@ -30,6 +30,8 @@ impl Snapshot {
         struct Request {
             flag: String,
             context: Context,
+            kind: Option<String>,
+            expected_type: Option<String>,
         }
         let invalid = || {
             json!({"error": "invalid_context", "message": "Supply a flat context with supported numbers"}).to_string()
@@ -40,13 +42,37 @@ impl Snapshot {
         let Ok(request) = serde_json::from_slice::<Request>(bytes) else {
             return invalid();
         };
-        match self.0.evaluate(&request.flag, &request.context) {
-            Ok(decision) => json!({"decision": match decision {
-                Decision::Enabled => "enabled", Decision::Disabled => "disabled",
-            }}),
+        let result = if let Some(kind) = request.kind {
+            self.0
+                .resolve(
+                    &request.flag,
+                    &request.context,
+                    &kind,
+                    request.expected_type.as_deref(),
+                )
+                .map(|result| serde_json::to_value(result).unwrap())
+        } else {
+            self.0
+                .evaluate(&request.flag, &request.context)
+                .map(|decision| {
+                    json!({"decision": match decision {
+                        Decision::Enabled => "enabled", Decision::Disabled => "disabled",
+                    }})
+                })
+        };
+        match result {
+            Ok(value) => value,
             Err(error) => {
                 let message = error.to_string();
                 match error {
+                    EvaluationError::ResultType { flag_key, expected_type, actual_type } => json!({
+                        "error": "result_type", "message": message, "flag_key": flag_key,
+                        "expected_type": expected_type, "actual_type": actual_type,
+                    }),
+                    EvaluationError::NamedType { flag_key, expected_type, actual_type } => json!({
+                        "error": "named_type", "message": message, "flag_key": flag_key,
+                        "expected_type": expected_type, "actual_type": actual_type,
+                    }),
                     EvaluationError::FlagNotFound(flag) => json!({
                         "error": "flag_not_found", "message": message, "flag_key": flag,
                     }),

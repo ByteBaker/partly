@@ -37,7 +37,7 @@ button.quiet { background: transparent; border-color: transparent; color: var(--
 button.quiet:hover { background: var(--inset); border-color: var(--border); color: var(--text); }
 button.danger { color: var(--danger); }
 button.primary.danger { background: var(--danger); border-color: var(--danger); color: white; }
-:where(input, button, a, pre, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+:where(input, textarea, button, a, pre, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 550; }
 input[type=radio] { min-height: 16px; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .site-header { position: sticky; top: 0; z-index: 10; background: var(--surface); }
@@ -327,3 +327,43 @@ dialog::backdrop { background: rgb(19 32 52 / 38%); }
 @media (max-width: 480px) {
   .user-permissions { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Result types use the same bounded headers and quiet metadata as flags. */
+.typed-editor { padding: 16px; }
+.typed-editor > label { max-width: 320px; margin-bottom: 16px; }
+.typed-editor .rollout-editor { padding-inline: 0; }
+.result-type { display: inline-block; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.result-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.result-panel { border: 1px solid var(--border); min-width: 0; }
+.result-panel h3 { margin: 0; padding: 10px 14px; background: var(--inset); border-bottom: 1px solid var(--border); font-size: 14px; }
+.result-panel > .result-input { padding: 14px; }
+.result-input { min-width: 0; }
+.result-input label { display: grid; min-width: 0; gap: 6px; overflow-wrap: anywhere; }
+.result-input > .result-input + .result-input { margin-top: 12px; }
+.result-input input { width: 100%; }
+.result-input .bool-values input { width: auto; }
+.type-card { border: 1px solid var(--border); margin-bottom: 16px; }
+.type-card h2 { font-size: 16px; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.type-definition { padding: 16px; }
+.type-choices { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.type-choices li { padding: 4px 8px; border: 1px solid var(--border); overflow-wrap: anywhere; white-space: pre-wrap; }
+.type-fields { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(100px, 2fr); gap: 8px 16px; margin: 0; }
+.type-fields dt { font-weight: 600; }
+.type-fields dd { margin: 0; }
+.type-fields dt, .type-fields dd, .result-value { overflow-wrap: anywhere; white-space: pre-wrap; }
+.type-footer { padding: 10px 16px; margin: 0; border-top: 1px solid var(--border); background: var(--inset); font-size: 13px; overflow-wrap: anywhere; }
+.type-field-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: end; margin-bottom: 12px; }
+#new-type .dialog-content { display: grid; gap: 14px; }
+#type-choices { width: 100%; resize: vertical; border: 1px solid var(--border); font: inherit; padding: 8px; }
+@media (width <= 640px) {
+  .result-values { grid-template-columns: 1fr; }
+  .type-field-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+.dialog-content .typed-editor { padding: 0; }
+
+.docs-options { max-width: 220px; margin-bottom: 16px; }
+.type-card > .action-notice { top: -8px; bottom: auto; left: auto; right: 16px; padding: 2px 7px; border: 1px solid var(--border); background: var(--surface); }
+#create-type > .action-notice { bottom: calc(100% + 6px); left: auto; right: 0; padding: 3px 7px; border: 1px solid var(--border); background: var(--surface); }
+
+.result-input textarea { width: 100%; min-width: 0; resize: vertical; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--control); border-radius: 3px; padding: 7px 10px; }

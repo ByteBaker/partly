@@ -8,12 +8,12 @@ Build the native client with its URL, environment, application ID, and API Key a
 
 ## Evaluation contract
 
-- Flags remain Boolean. Other typed getters return `TYPE_MISMATCH`; unknown flags return `FLAG_NOT_FOUND`.
+- Boolean, string, integer, float, and object getters evaluate locally. Named enums use string getters; named records use object getters. Wrong getters return `TYPE_MISMATCH`; unknown flags return `FLAG_NOT_FOUND`. Node uses one number getter for integer and float flags.
 - OpenFeature's targeting key maps to Partly's `context.id`, overriding an `id` attribute when both exist. String, number, and Boolean attributes retain their names and types. Structured and datetime fields are ignored; rules requiring one return `INVALID_CONTEXT`.
 - Missing or incorrectly typed rule inputs return `INVALID_CONTEXT`. Error messages do not contain context values or credentials.
 - Python, Go, and Node return the caller's fallback on errors, with error details. A valid `false` decision is not an error. Rust's upstream SDK returns `Result` instead; handle its error explicitly.
 - Ordinary refresh failures keep the accepted policy. Confirmed key revocation makes evaluations fail with `PROVIDER_FATAL` (a general error with that label in Rust).
-- Boolean checks through these providers use the native client's lazy usage reporter. It sends only distinct checked flag names; reporting failures do not alter evaluation results. A usage response confirming revocation has the same terminal effect as a policy response. See [usage reporting](../crates/partly-server/README.md#usage-reporting).
+- Known flag checks through these providers use the native client's lazy usage reporter. It sends only distinct checked flag names; reporting failures do not alter evaluation results. A usage response confirming revocation has the same terminal effect as a policy response. See [usage reporting](../crates/partly-server/README.md#usage-reporting).
 - Provider registration uses the already downloaded policy. Registering too early reports an initialization error in Python, Go, and Node; Rust exposes an error status and rejects evaluation. Shutting down OpenFeature does not close the borrowed native client; close it separately at application shutdown.
 
 OpenFeature reduces application API changes when switching tools. Flag definitions, targeting rules, and rollout assignments still require migration; percentage cohorts are not portable across vendors.
@@ -49,7 +49,7 @@ replace partly.sh/sdk/go => ./third_party/partly-go
 replace partly.sh/sdk/go/openfeature => ./third_party/partly-go/openfeature
 ```
 
-Register `provider.New(client)` using `of.SetNamedProviderAndWait("partly", provider.New(client))`. Keep the returned client from `of.NewClient("partly")` for requests. Boolean getters return both the value and an error; check the error first.
+Register `provider.New(client)` using `of.SetNamedProviderAndWait("partly", provider.New(client))`. Keep the returned client from `of.NewClient("partly")` for requests. Getters return both the value and an error; check the error first.
 
 ## Node.js / TypeScript
 
@@ -71,9 +71,9 @@ This is a tested provider integration, **not certification or a claim of complet
 | Contract / specification requirement | Evidence and ownership |
 | --- | --- |
 | Provider identity (2.1.1) | All adapters expose `Partly`; checked through SDK metadata or hook context |
-| Typed resolution (2.2.1–2.2.3) | All official typed getters exist. Known Boolean flags reject other types; unknown flags stay `FLAG_NOT_FOUND`. Rust's trait omits the default argument required by 2.2.1: an upstream difference, not a pass |
-| Resolution details and errors (2.2.4–2.2.8) | Tests distinguish a valid `false` from failure, check `enabled`/`disabled` variants and `CACHED`, and check defaults/error codes. Official SDK detail types are reused |
-| Flag metadata (2.2.9–2.2.10, later baselines) | Partly adds no optional flag metadata. The official SDK supplies its typed metadata structure |
+| Typed resolution (2.2.1–2.2.3) | Tests cover all supported typed getters, enum/record values, type errors, and unknown flags. Rust's trait omits the default argument required by 2.2.1: an upstream difference, not a pass |
+| Resolution details and errors (2.2.4–2.2.8) | Tests distinguish a valid `false` from failure, check `enabled`/`disabled` Boolean variants, `selected`/`other` typed variants, and `CACHED`, and check defaults/error codes. Official SDK detail types are reused |
+| Flag metadata (2.2.9–2.2.10, later baselines) | Named types supply `partly.result_type` through the official metadata structure; the key and its meaning are Partly-specific |
 | Hooks (2.3, section 4) | Provider hook support comes from the official interfaces; Partly adds no provider-owned hooks. Tests exercise application before/after/error/finally hooks and hook context overrides in every language |
 | Initialization / shutdown (2.4–2.5, later baselines) | Tests reject uninitialized native clients and reset adapters on shutdown. Native resources remain application-owned. Rust exposes status and drop-based cleanup rather than a provider shutdown callback |
 | Context (section 3) | Tests cover global → client → invocation → before-hook precedence, targeting-key precedence, scalar types, invalid required fields, and ignored structured fields |
@@ -90,6 +90,7 @@ Run the focused checks after installing the native extensions and development de
 ```sh
 cargo build --locked -p partly-server
 cargo test --locked -p partly-e2e --test e2e openfeature
+cargo test --locked -p partly-e2e --test e2e typed_results
 cargo test --locked -p partly-rust --features openfeature openfeature::tests
 (cd sdk/go/openfeature && go test -race ./...)
 node --test sdk/node/test/openfeature.test.js
@@ -99,9 +100,15 @@ The Rust harness starts the real server and runs all four language drivers. The 
 
 ## Acceptance target
 
-The current target remains the smallest supported provider contract with Boolean flags and local evaluation. [Non-Boolean results and dashboard-defined types](roadmap.md#typed-evaluation-results) are planned separately; the tests and limits above describe the current implementation. Optional tracking, static-context reconciliation, and remote evaluation remain outside scope. OpenFeature itself does not require an OFREP endpoint or alternate server policy format.
+The target remains the smallest supported provider contract with local evaluation, now including [typed results](typed-results.md). The tests and limits above describe the implementation. Optional tracking, static-context reconciliation, and remote evaluation remain outside scope. OpenFeature itself does not require an OFREP endpoint or alternate server policy format.
 
 **OpenFeature-first** describes the recommended application API: all runnable quickstarts and dashboard snippets use it. It does not mean full specification conformance. Native clients remain available for refresh and cleanup. Track the Rust differences above and review newer specification requirements separately; prefer focused upstream contributions over a replacement SDK.
+
+## Partly enhancements
+
+The [typed-results guide](typed-results.md#openfeature-and-partly-enhancements) separates standard getters, **Partly metadata through OpenFeature**, and **Partly SDK enhancements**. Exact named-type assertions need a direct SDK call. Refresh controls and structured native errors are also Partly-specific. These calls reuse the same initialized client and cache.
+
+Schema validation, dashboard permissions, audits, targeting, app isolation, and reporting benefit both paths. Caller defaults are not schema-validated; check detailed errors before using a record. Typed results do not remove the Rust SDK's upstream differences or establish full conformance.
 
 OpenFeature's [provider conformance assets](https://github.com/open-feature/spec/tree/specification/assets/provider-tck/v0.1.0/specification/assets/provider-tck) are experimental and separate from the SDK test suites. Use their relevant scenarios as additional evidence, with exclusions explained. Their fixture set includes non-Boolean flags, so a selected subset is not a full-suite pass or certification.
 

@@ -24,6 +24,13 @@ CREATE TABLE permissions (
     role TEXT NOT NULL CHECK (role IN ('viewer', 'editor', 'manager')),
     PRIMARY KEY (user_id, environment)
 );
+CREATE TABLE result_types (
+    environment TEXT NOT NULL REFERENCES environments(name),
+    name TEXT NOT NULL,
+    definition TEXT NOT NULL CHECK (json_valid(definition)),
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK (deleted IN (0, 1)),
+    PRIMARY KEY (environment, name)
+);
 CREATE TABLE flags (
     environment TEXT NOT NULL REFERENCES environments(name),
     key TEXT NOT NULL,

@@ -32,6 +32,15 @@ pub(crate) fn router() -> Router<App> {
             }),
         )
         .route(
+            "/types.js",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "text/javascript")],
+                    include_str!("../dashboard/types.js"),
+                )
+            }),
+        )
+        .route(
             "/app.js",
             get(|| async {
                 (
@@ -62,6 +71,10 @@ pub(crate) fn router() -> Router<App> {
             "/docs/{example}",
             get(|Path(example): Path<String>| async move {
                 let source = match example.as_str() {
+                    "typed-python.py" => include_str!("../../../examples/python/typed_results.py"),
+                    "typed-rust.rs" => include_str!("../../../examples/rust/typed_results.rs"),
+                    "typed-go.go" => include_str!("../../../examples/go/typed/main.go"),
+                    "typed-node.js" => include_str!("../../../examples/node/typed_results.js"),
                     "python.py" => include_str!("../../../examples/python/quickstart.py"),
                     "rust.rs" => include_str!("../../../examples/rust/quickstart.rs"),
                     "go.go" => include_str!("../../../examples/go/main.go"),
@@ -89,7 +102,7 @@ async fn environment_dashboard(
 ) -> Result<Response, ApiError> {
     if !matches!(
         screen.as_str(),
-        "flags" | "apps" | "audits" | "docs" | "users"
+        "flags" | "apps" | "types" | "audits" | "docs" | "users"
     ) {
         return Err(ApiError::not_found("Unknown screen"));
     }

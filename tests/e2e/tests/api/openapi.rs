@@ -6,7 +6,7 @@ use reqwest::{Method, Response};
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, process::Command};
 
-fn validator(document: &Value, mut schema: Value) -> Result<jsonschema::Validator> {
+pub(super) fn validator(document: &Value, mut schema: Value) -> Result<jsonschema::Validator> {
     schema["components"] = document["components"].clone();
     Ok(jsonschema::options().build(&schema)?)
 }
@@ -185,6 +185,28 @@ async fn exported_and_served_contract_matches_every_api_operation() -> Result {
             )
             .await?;
     }
+    let types = "/api/environments/development/types";
+    let types_template = "/api/environments/{env}/types";
+    contract.check("post", types_template, admin.request(Method::POST, types).json(&json!({"name":"Layout","definition":{"kind":"enum","values":["compact","wide"]}})).send().await?, 201).await?;
+    contract
+        .check(
+            "get",
+            types_template,
+            admin.request(Method::GET, types).send().await?,
+            200,
+        )
+        .await?;
+    contract
+        .check(
+            "delete",
+            "/api/environments/{env}/types/{name}",
+            admin
+                .request(Method::DELETE, &format!("{types}/Layout"))
+                .send()
+                .await?,
+            204,
+        )
+        .await?;
     let flags = "/api/environments/development/flags";
     let flag_template = "/api/environments/{env}/flags";
     contract

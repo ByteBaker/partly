@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 
 const { Client, ContextTypeError, Decision } = createRequire(import.meta.url)("../../../sdk/node");
 const errors = {
+  ResultTypeError: "result_type", NamedTypeError: "named_type",
   FlagNotFoundError: "flag_not_found",
   InvalidContextError: "invalid_context",
   ContextTypeError: "context_type",
@@ -39,6 +40,14 @@ try {
             throw new Error("SDK returned an unknown decision");
           }
           result = { decision: decision === Decision.ENABLED ? "enabled" : "disabled" };
+          break;
+        }
+        case "resolve": {
+          result = client.resolve(command.flag, command.kind, command.context, command.expected_type);
+          const method = { string: 'evaluateString', integer: 'evaluateInteger', float: 'evaluateFloat', object: 'evaluateObject' }[command.kind];
+          const value = command.kind === 'named' ? client.evaluateNamed(command.flag, command.expected_type, command.context) : client[method](command.flag, command.context);
+          if (JSON.stringify(value) !== JSON.stringify(result.value)) throw new Error('Typed getter mismatch');
+          if (typeof value === 'object') { value.extra = 'mutation'; if (client.evaluateObject(command.flag, command.context).extra) throw new Error('Result changed cached policy'); }
           break;
         }
         case "refresh":

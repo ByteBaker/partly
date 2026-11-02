@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
-    Context, Decision, Error,
+    Context, Decision, Error, Resolution,
     models::{Client, ClientBuilder, Inner},
 };
 use reqwest::{Certificate, redirect};
@@ -106,6 +106,23 @@ impl Client {
     }
 
     pub fn evaluate(&self, key: &str, context: &Context) -> Result<Decision, Error> {
+        Ok(self.evaluation_policy(key)?.evaluate(key, context)?)
+    }
+
+    /// Resolve a built-in kind, or `named` with an exact expected dashboard type name.
+    pub fn resolve(
+        &self,
+        key: &str,
+        context: &Context,
+        kind: &str,
+        expected_type: Option<&str>,
+    ) -> Result<Resolution, Error> {
+        Ok(self
+            .evaluation_policy(key)?
+            .resolve(key, context, kind, expected_type)?)
+    }
+
+    fn evaluation_policy(&self, key: &str) -> Result<Arc<partly_core::Policy>, Error> {
         let accepted = self.inner.accepted.read().unwrap();
         if self.inner.revoked.load(Ordering::Acquire) {
             return Err(Error::KeyRevoked);
@@ -115,7 +132,7 @@ impl Client {
             self.inner.record_usage(key);
         }
         drop(accepted);
-        Ok(policy.evaluate(key, context)?)
+        Ok(policy)
     }
 
     pub fn last_refresh_error(&self) -> Option<Arc<Error>> {

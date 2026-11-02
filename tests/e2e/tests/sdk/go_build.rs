@@ -15,7 +15,7 @@ pub unsafe extern "C" fn partly_snapshot_new(_: *const u8,_: usize,scope: *mut *
 }
 #[no_mangle]
 pub extern "C" fn partly_snapshot_evaluate(_: *const u8,_: *const u8,_: usize)->*mut c_char {
-    CString::new(r#"{"decision":"DECISION"}"#).unwrap().into_raw()
+    CString::new(r#"{"value":BOOLEAN,"kind":"boolean","variant":"DECISION"}"#).unwrap().into_raw()
 }
 #[no_mangle]
 pub extern "C" fn partly_snapshot_has_flag(_: *const u8,_: *const u8,_: usize)->c_int {1}
@@ -49,6 +49,14 @@ async fn contract_links_rebuilt_native_archive() -> Result {
             workspace.join("native.rs"),
             NATIVE
                 .replace("DECISION", decision)
+                .replace(
+                    "BOOLEAN",
+                    if decision == "enabled" {
+                        "true"
+                    } else {
+                        "false"
+                    },
+                )
                 .replace("APPLICATION_ID", text(&key["application_id"])),
         )?;
         let mut command = Command::new("sh");

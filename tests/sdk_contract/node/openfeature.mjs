@@ -27,6 +27,12 @@ try {
           result = { value: details.value, error: details.errorCode ?? '', variant: details.variant, reason: details.reason };
           break;
         }
+        case 'resolve': {
+          const method = { boolean: 'getBooleanDetails', string: 'getStringDetails', integer: 'getNumberDetails', float: 'getNumberDetails', object: 'getObjectDetails' }[command.kind];
+          const details = await OpenFeature.getClient('contract')[method](command.flag, command.fallback, command.context);
+          result = { value: details.value, error: details.errorCode ?? '', variant: details.variant, named_type: details.flagMetadata?.['partly.result_type'] ?? null };
+          break;
+        }
         case 'refresh': result = { updated: await native.refresh() }; break;
         case 'close': await OpenFeature.close(); await native.close(); break;
         default: throw new Error(`Unknown operation: ${command.op}`);

@@ -127,3 +127,19 @@ def test_rule_validation_does_not_short_circuit():
         policy.evaluate("checkout", {"staff": True})
     with pytest.raises(ContextTypeError):
         policy.evaluate("checkout", {"staff": True, "age": "18"})
+
+
+def test_named_result_error_details_do_not_expose_values():
+    from partly import NamedTypeError, ResultTypeError
+
+    policy = Snapshot(json.dumps({"schema_version": 2, "application_id": "app_test", "project": "default", "environment": "development", "revision": 1,
+                                  "types": {"Layout": {"kind": "enum", "values": ["private-result"]}},
+                                  "flags": {"flag": {"mode": "typed", "result_type": "Layout", "selected": "private-result", "other": "private-result", "rollout": {"mode": "enabled"}}}}).encode())
+    for kind, expected, exception in [("integer", None, ResultTypeError), ("named", "Other", NamedTypeError)]:
+        with pytest.raises(exception) as captured:
+            policy.resolve("flag", {}, kind, expected)
+        assert isinstance(captured.value, ResultTypeError)
+        assert captured.value.flag_key == "flag"
+        assert captured.value.expected_type == (expected or kind)
+        assert captured.value.actual_type == ("Layout" if expected else "string")
+        assert "private-result" not in str(captured.value)

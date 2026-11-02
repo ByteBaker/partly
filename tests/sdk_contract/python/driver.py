@@ -13,6 +13,8 @@ from contextlib import redirect_stdout
 from partly import Client, ContextTypeError, Decision, InvalidContextError, PartlyError
 
 ERRORS = {
+    "ResultTypeError": "result_type",
+    "NamedTypeError": "named_type",
     "FlagNotFoundError": "flag_not_found",
     "InvalidContextError": "invalid_context",
     "ContextTypeError": "context_type",
@@ -45,6 +47,18 @@ async def main():
                 elif op == "evaluate":
                     decision = client.evaluate(command["flag"], context=command["context"])
                     result = {"decision": {Decision.ENABLED: "enabled", Decision.DISABLED: "disabled"}[decision]}
+                elif op == "resolve":
+                    result = client.resolve(command["flag"], command["kind"], context=command["context"], expected_type=command.get("expected_type"))
+                    if command["kind"] == "named":
+                        value = client.evaluate_named(command["flag"], command["expected_type"], context=command["context"])
+                    else:
+                        value = getattr(client, f"evaluate_{command['kind']}")(command["flag"], context=command["context"])
+                    assert value == result["value"]
+                    if isinstance(value, dict):
+                        if "rate" in value:
+                            assert isinstance(value["rate"], float)
+                        value.clear()
+                        assert client.evaluate_object(command["flag"], context=command["context"]) == result["value"]
                 elif op == "refresh":
                     result = {"updated": await client.refresh()}
                 elif op == "close":

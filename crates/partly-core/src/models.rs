@@ -1,6 +1,7 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::TypeDefinition;
 #[cfg(feature = "openapi")]
 use crate::openapi;
 use regex::Regex;
@@ -17,6 +18,14 @@ pub const MAX_POLICY_BYTES: usize = 1024 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Flag {
+    #[cfg_attr(feature = "openapi", schema(max_properties = 5))]
+    Typed {
+        result_type: String,
+        selected: Value,
+        other: Value,
+        #[cfg_attr(feature = "openapi", schema(schema_with = openapi::rollout))]
+        rollout: Box<Flag>,
+    },
     #[cfg_attr(feature = "openapi", schema(max_properties = 1))]
     Enabled {},
     #[cfg_attr(feature = "openapi", schema(max_properties = 1))]
@@ -81,13 +90,15 @@ pub(crate) struct RawCondition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
-    #[cfg_attr(feature = "openapi", schema(minimum = 1, maximum = 1))]
+    #[cfg_attr(feature = "openapi", schema(minimum = 1, maximum = 2))]
     pub schema_version: u32,
     pub project: String,
     pub environment: String,
     pub application_id: String,
     pub revision: u64,
     pub flags: BTreeMap<String, Flag>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub types: BTreeMap<String, TypeDefinition>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +109,22 @@ pub enum Decision {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum EvaluationError {
+    #[error(
+        "Result type mismatch for flag '{flag_key}': expected {expected_type}, got {actual_type}"
+    )]
+    ResultType {
+        flag_key: String,
+        expected_type: String,
+        actual_type: String,
+    },
+    #[error(
+        "Named type mismatch for flag '{flag_key}': expected {expected_type}, got {actual_type}"
+    )]
+    NamedType {
+        flag_key: String,
+        expected_type: String,
+        actual_type: String,
+    },
     #[error("Flag '{0}' is not defined in the loaded policy")]
     FlagNotFound(String),
     #[error("Invalid context for flag '{flag_key}', key '{k}': {reason}")]

@@ -69,3 +69,9 @@ A confirmed revoked-key response clears policy and ETag, stops polling, and make
 Install the optional peer `@openfeature/server-sdk` and import `PartlyProvider` from `partly-sdk/openfeature`. Initialize the native client once before registering the provider. Registration makes no network requests; evaluations use the same local policy.
 
 OpenFeature returns your fallback on errors. Use detailed getters to inspect `errorCode` before accepting that value. Keep the native client for refresh and close it at shutdown. See the [integration guide](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#nodejs--typescript) and [tested compatibility](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#coverage-and-limits).
+
+## Typed results
+
+OpenFeature supports Boolean, string, numeric, and object results. Enums use the string getter; named records use the object getter. Check detailed errors before accepting a caller default. Named results include **Partly metadata through OpenFeature** at `partly.result_type`.
+
+Native typed getters are also available. **Partly SDK enhancement:** require an exact named type with a named-evaluation call. Reuse the same initialized client; no second cache or initialization is needed. See [methods, errors, limits, and compatibility](https://github.com/ByteBaker/partly/blob/main/docs/typed-results.md). Upgrade the SDK before assigning typed flags to an application.

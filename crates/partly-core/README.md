@@ -2,7 +2,7 @@
 
 Shared policy validation and flag evaluation for the server and all language SDKs. No HTTP, storage, or Python dependencies.
 
-`src/models.rs` defines the policy and error types. `policy.rs` validates snapshots, `rules.rs` handles conditions and regexes, `numbers.rs` preserves numeric precision, and `evaluation.rs` makes decisions and computes percentage buckets. Public types and functions remain exported from `lib.rs`; unit tests live in `tests.rs`.
+`src/models.rs` defines the policy and error types. `policy.rs` validates snapshots, `rules.rs` handles conditions and regexes, `numbers.rs` preserves numeric precision, and `evaluation.rs` makes decisions and computes percentage buckets. `values/` separates result models, schema validation, and typed resolution. Public types and functions remain exported from `lib.rs`; unit tests live in `tests.rs`.
 
 ## Policy format
 
@@ -34,6 +34,18 @@ Flag, project, environment, and application keys use 1–64 lowercase ASCII lett
 `Policy::from_json()` parses and validates a policy once. For standalone flag JSON, also run `validate_json_number_limits()` on the original bytes to prevent rounded integer literals. `evaluate(flag_key, &context)` returns `Result<Decision, EvaluationError>`.
 
 Context is a flat map of string keys to strings, numbers, or booleans. Nulls, arrays, and nested objects are rejected. Percentage mode requires a nonblank `id` of 1–256 UTF-8 bytes; other modes only need their rule fields.
+
+## Typed policy format
+
+A Boolean-only policy keeps the v1 shape above. Format v2 adds optional `types` and flags with `mode: "typed"`, `result_type`, `selected`, `other`, and `rollout`. The rollout is one of the existing four modes; nested typed rollouts are rejected. Example:
+
+```json
+{"mode":"typed","result_type":"string","selected":"wide","other":"compact","rollout":{"mode":"percentage","percentage":25}}
+```
+
+`Policy::resolve(key, &context, kind, expected_name)` returns an owned `Resolution`: `value`, base `kind`, `variant`, and optional `named_type`. Use `kind: "named"` and the exact type name for a native assertion. A wrong result kind or name is separate from a context error. `evaluate` remains Boolean-only and returns the existing `Decision` enum. Construct accepted policies with `Policy::from_json`, or call `validate` before evaluating manually constructed models.
+
+Named type definitions, field limits, numeric result bounds, and compatibility rules are in [typed results](https://github.com/ByteBaker/partly/blob/main/docs/typed-results.md). Both result branches validate when accepting a policy; percentage hashing is unchanged.
 
 ## Custom rules
 

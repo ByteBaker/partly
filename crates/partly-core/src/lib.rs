@@ -12,6 +12,7 @@ mod policy;
 mod rules;
 #[cfg(test)]
 mod tests;
+mod values;
 
 pub use evaluation::bucket;
 pub use models::{
@@ -21,3 +22,5 @@ pub use models::{
 pub use numbers::validate_json_number_limits;
 pub use policy::valid_key;
 pub use rules::value_type;
+
+pub use values::{MAX_STRING_BYTES, Resolution, TypeDefinition, valid_type_name, validate_types};

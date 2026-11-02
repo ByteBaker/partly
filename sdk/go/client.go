@@ -31,6 +31,8 @@ var (
 	ErrFlagNotFound   = errors.New("flag not found")
 	ErrInvalidContext = errors.New("invalid context")
 	ErrContextType    = errors.New("wrong context type")
+	ErrResultType     = errors.New("wrong result type")
+	ErrNamedType      = errors.New("wrong named result type")
 	ErrPolicyNotReady = errors.New("no policy loaded; call Init first")
 	ErrKeyRevoked     = errors.New("API Key revoked; build a new client with a valid key")
 	ErrAuthentication = errors.New("API Key rejected")
@@ -53,7 +55,7 @@ type Error struct {
 func (e *Error) Error() string { return e.Kind.Error() + ": " + e.Message }
 func (e *Error) Unwrap() error { return e.Kind }
 func (e *Error) Is(target error) bool {
-	return e.Kind == target || (e.Kind == ErrContextType && target == ErrInvalidContext)
+	return e.Kind == target || (e.Kind == ErrContextType && target == ErrInvalidContext) || (e.Kind == ErrNamedType && target == ErrResultType)
 }
 
 type ClientBuilder struct {
@@ -313,17 +315,29 @@ func validETag(tag string) bool {
 }
 
 func (c *Client) Evaluate(flag string, context map[string]any) (Decision, error) {
+	result, err := c.Resolve(flag, context, "boolean", "")
+	if err != nil {
+		return "", err
+	}
+	if result.Value == true {
+		return Enabled, nil
+	}
+	return Disabled, nil
+}
+
+// Resolve evaluates a built-in kind, or a named type with an exact expectedType.
+func (c *Client) Resolve(flag string, context map[string]any, kind, expectedType string) (Resolution, error) {
 	c.mu.RLock()
 	if c.revoked {
 		c.mu.RUnlock()
-		return "", ErrKeyRevoked
+		return Resolution{}, ErrKeyRevoked
 	}
 	policy := c.policy
 	c.mu.RUnlock()
 	if policy == nil {
-		return "", ErrPolicyNotReady
+		return Resolution{}, ErrPolicyNotReady
 	}
-	decision, err := policy.evaluate(flag, context)
+	decision, err := policy.resolve(flag, context, kind, expectedType)
 	if !errors.Is(err, ErrFlagNotFound) {
 		c.mu.Lock()
 		if !c.closed && !c.revoked && (c.policy == policy || (c.policy != nil && c.policy.hasFlag(flag))) {

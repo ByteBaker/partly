@@ -15,6 +15,8 @@ class PartlyError extends Error {
 class FlagNotFoundError extends PartlyError {}
 class InvalidContextError extends PartlyError {}
 class ContextTypeError extends InvalidContextError {}
+class ResultTypeError extends PartlyError {}
+class NamedTypeError extends ResultTypeError {}
 class PolicyNotReadyError extends PartlyError {}
 class AuthenticationError extends PartlyError {}
 class KeyRevokedError extends AuthenticationError {}
@@ -24,6 +26,7 @@ class ClientClosedError extends PartlyError {}
 
 const Decision = Object.freeze({ ENABLED: "enabled", DISABLED: "disabled" });
 const evaluationErrors = {
+  result_type: ResultTypeError, named_type: NamedTypeError,
   flag_not_found: FlagNotFoundError, invalid_context: InvalidContextError, context_type: ContextTypeError,
 };
 
@@ -244,7 +247,13 @@ class Client {
       throw failure;
     }
   }
-  evaluate(flag, context = {}) {
+  evaluate(flag, context = {}) { return this.resolve(flag, "boolean", context).value ? Decision.ENABLED : Decision.DISABLED; }
+  evaluateString(flag, context = {}) { return this.resolve(flag, "string", context).value; }
+  evaluateInteger(flag, context = {}) { return this.resolve(flag, "integer", context).value; }
+  evaluateFloat(flag, context = {}) { return this.resolve(flag, "float", context).value; }
+  evaluateObject(flag, context = {}) { return this.resolve(flag, "object", context).value; }
+  evaluateNamed(flag, expectedType, context = {}) { return this.resolve(flag, "named", context, expectedType).value; }
+  resolve(flag, kind, context = {}, expectedType = null) {
     if (this.#revoked) throw new KeyRevokedError("API Key revoked; build a new client with a valid key");
     if (!this.#snapshot) throw new PolicyNotReadyError("Await init first");
     if (typeof flag !== "string") throw new TypeError("Flag key must be a string");
@@ -252,6 +261,7 @@ class Client {
       throw Object.assign(new FlagNotFoundError(`Flag '${flag}' is not defined in the loaded policy`), { flag_key: flag });
     }
     this.#recordUsage(flag);
+    if (typeof kind !== "string" || (expectedType !== null && typeof expectedType !== "string")) throw new TypeError("Supply a result kind and an optional expected type name");
     if (context === null || typeof context !== "object" || Object.getOwnPropertySymbols(context).length ||
         ![Object.prototype, null].includes(Object.getPrototypeOf(context))) {
       throw new InvalidContextError("Context must be a flat object");
@@ -265,7 +275,7 @@ class Client {
       values[k] = value === null || ["string", "number", "boolean"].includes(typeof value)
         ? value : Array.isArray(value) ? Object.setPrototypeOf([], null) : Object.create(null);
     }
-    const request = Object.assign(Object.create(null), { flag, context: values });
+    const request = Object.assign(Object.create(null), { flag, kind, expected_type: expectedType, context: values });
     const result = JSON.parse(this.#snapshot.evaluate(JSON.stringify(request)));
     if (result.error) {
       const ErrorType = evaluationErrors[result.error];
@@ -273,8 +283,9 @@ class Client {
       const { error: _, message, ...details } = result;
       throw Object.assign(new ErrorType(message), details);
     }
-    if (result.decision !== Decision.ENABLED && result.decision !== Decision.DISABLED) throw new PartlyError("Unknown native decision");
-    return result.decision;
+    const valueType = { boolean: "boolean", string: "string", integer: "number", float: "number", object: "object" }[result.kind];
+    if (!valueType || result.value === null || typeof result.value !== valueType || Array.isArray(result.value)) throw new InvalidPolicyError("Invalid native result");
+    return result;
   }
   async close() {
     this.#closed = true;
@@ -288,6 +299,6 @@ class Client {
 }
 
 module.exports = {
-  Client, ClientBuilder, Decision, PartlyError, FlagNotFoundError, InvalidContextError, ContextTypeError,
+  Client, ClientBuilder, Decision, PartlyError, ResultTypeError, NamedTypeError, FlagNotFoundError, InvalidContextError, ContextTypeError,
   PolicyNotReadyError, AuthenticationError, KeyRevokedError, InvalidPolicyError, RefreshError, ClientClosedError,
 };

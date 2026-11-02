@@ -14,6 +14,9 @@ export class ContextTypeError extends InvalidContextError {
   expected_type: string;
   actual_type: string;
 }
+export class ResultTypeError extends PartlyError { flag_key: string; expected_type: string; actual_type: string }
+export class NamedTypeError extends ResultTypeError {}
+export interface Resolution { value: string | number | boolean | Context; kind: string; variant: string; named_type?: string }
 export class PolicyNotReadyError extends PartlyError {}
 export class AuthenticationError extends PartlyError {}
 export class KeyRevokedError extends AuthenticationError {}
@@ -38,5 +41,11 @@ export class Client {
   init(): Promise<void>;
   refresh(): Promise<boolean>;
   evaluate(flag: string, context?: Context): Decision;
+  resolve(flag: string, kind: string, context?: Context, expectedType?: string | null): Resolution;
+  evaluateString(flag: string, context?: Context): string;
+  evaluateInteger(flag: string, context?: Context): number;
+  evaluateFloat(flag: string, context?: Context): number;
+  evaluateObject(flag: string, context?: Context): Context;
+  evaluateNamed(flag: string, expectedType: string, context?: Context): string | Context;
   close(): Promise<void>;
 }

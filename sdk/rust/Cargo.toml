@@ -40,3 +40,8 @@ required-features = ["openfeature"]
 name = "openfeature-contract"
 path = "../../tests/sdk_contract/rust/openfeature.rs"
 required-features = ["openfeature"]
+
+[[example]]
+name = "typed-results"
+path = "../../examples/rust/typed_results.rs"
+required-features = ["openfeature"]

@@ -28,7 +28,7 @@ async fn dashboard_setup_flags_keys_and_restart() -> Result {
         page.get_by_role(Button,named("Save new_checkout")).click(None).await?;
         confirm_flag(page,"new_checkout").await?;
         expect(page.get_by_role(Status,None)).to_contain_text("Saved").await?;
-        texts(page.get_by_role(Tab,None),&["Feature flags","Apps & Keys","Audits","Docs","Users"]).await?;
+        texts(page.get_by_role(Tab,None),&["Feature flags","Apps & Keys","Types","Audits","Docs","Users"]).await?;
         page.get_by_role(Tab,named("Apps & Keys")).click(None).await?;
         expect_page(page).to_have_url(&format!("{}/environments/development/apps",server.url)).await?;
         let heading = geometry(page,".workspace-heading").await?;

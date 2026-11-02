@@ -81,3 +81,9 @@ Evaluations collect the distinct known flag names used by this application, incl
 A later evaluation sends up to 128 names in the background when 128 distinct names are waiting or 60 seconds have passed since initialization or the last report. There is no reporting timer. Only one report runs at a time; failures retain current flag names and wait at least 60 seconds before another evaluation can retry. Policy refresh removes names that are no longer assigned to the application.
 
 Reporting never waits for a network response during evaluation. Ordinary reporting failures do not change decisions, policy, or refresh diagnostics. Confirmed key revocation uses the same terminal behavior as policy refresh. Closing cancels reporting and discards pending names without sending a final report; cached evaluation after close does not collect usage. These reports are best effort: idle clients, shutdown, or crashes can leave recent usage unreported.
+
+## Typed results
+
+OpenFeature supports Boolean, string, numeric, and object results. Enums use the string getter; named records use the object getter. Check detailed errors before accepting a caller default. Named results include **Partly metadata through OpenFeature** at `partly.result_type`.
+
+Native typed getters are also available. **Partly SDK enhancement:** require an exact named type with a named-evaluation call. Reuse the same initialized client; no second cache or initialization is needed. See [methods, errors, limits, and compatibility](https://github.com/ByteBaker/partly/blob/main/docs/typed-results.md). Upgrade the SDK before assigning typed flags to an application.

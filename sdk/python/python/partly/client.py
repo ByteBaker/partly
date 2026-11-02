@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+import json
 import logging
 import math
 import os
@@ -11,13 +12,14 @@ from enum import Enum
 from itertools import islice
 from threading import Lock
 from time import monotonic
-from typing import Never, Self
+from typing import Never, Self, cast
 from urllib.parse import urlsplit
 
 import certifi
 import httpx
 
 from ._native import MAX_POLICY_BYTES, InvalidPolicyError, PartlyError, Snapshot
+from .values import Context, Record, Resolution
 
 logger = logging.getLogger("partly")
 
@@ -184,6 +186,20 @@ class Client:
             return await self._download()
 
     def evaluate(self, flag_key: str, *, context: dict[str, str | int | float | bool] | None = None) -> Decision:
+        snapshot = self._evaluation_snapshot(flag_key)
+        enabled = snapshot.evaluate(flag_key, {} if context is None else context)
+        return Decision.ENABLED if enabled else Decision.DISABLED
+
+    def resolve(self, flag_key: str, kind: str, *, context: Context | None = None,
+                expected_type: str | None = None) -> Resolution:
+        """Resolve a typed value locally, with variant and optional named-type metadata."""
+        snapshot = self._evaluation_snapshot(flag_key)
+        if kind == "boolean":
+            value = snapshot.evaluate(flag_key, {} if context is None else context)
+            return {"value": value, "kind": "boolean", "variant": "enabled" if value else "disabled"}
+        return cast(Resolution, json.loads(snapshot.resolve(flag_key, {} if context is None else context, kind, expected_type)))
+
+    def _evaluation_snapshot(self, flag_key: str) -> Snapshot:
         if self._revoked:
             raise KeyRevokedError("API Key revoked; build a new client with a valid key")
         snapshot = self._snapshot
@@ -192,7 +208,23 @@ class Client:
         if not isinstance(flag_key, str):
             raise TypeError("flag_key must be a string")
         self._record_usage(flag_key, snapshot)
-        return Decision.ENABLED if snapshot.evaluate(flag_key, {} if context is None else context) else Decision.DISABLED
+        return snapshot
+
+    def evaluate_string(self, flag_key: str, *, context: Context | None = None) -> str:
+        return cast(str, self.resolve(flag_key, "string", context=context)["value"])
+
+    def evaluate_integer(self, flag_key: str, *, context: Context | None = None) -> int:
+        return cast(int, self.resolve(flag_key, "integer", context=context)["value"])
+
+    def evaluate_float(self, flag_key: str, *, context: Context | None = None) -> float:
+        return cast(float, self.resolve(flag_key, "float", context=context)["value"])
+
+    def evaluate_object(self, flag_key: str, *, context: Context | None = None) -> Record:
+        return cast(Record, self.resolve(flag_key, "object", context=context)["value"])
+
+    def evaluate_named(self, flag_key: str, expected_type: str, *, context: Context | None = None) -> str | Record:
+        """Partly enhancement: require the exact dashboard-defined type name."""
+        return cast(str | Record, self.resolve(flag_key, "named", context=context, expected_type=expected_type)["value"])
 
     def has_flag(self, flag_key: str) -> bool:
         """Check the loaded policy without evaluating context; unavailable policies still raise."""

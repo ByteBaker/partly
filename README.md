@@ -2,12 +2,12 @@
 
 Self-hosted feature flags in one Rust executable, with a dashboard and SQLite. No Docker or external services required.
 
-- Boolean flags with percentage rollouts and custom rules.
+- Boolean, string, numeric, and named JSON results with percentage rollouts and custom rules.
 - Python, Rust, Go, and Node.js SDKs with OpenFeature providers.
 - Shared flags, app-scoped API Keys, and environment permissions.
 - Audit logs and last-reported usage. User context stays local.
 
-![Partly dashboard with rollout controls, custom rules, and usage reports grouped by flag](docs/images/dashboard.png)
+![Partly dashboard with typed values, percentage rollouts, and last-reported usage](docs/images/dashboard.png)
 
 ## Build locally
 
@@ -50,7 +50,7 @@ All five support a shared, self-hosted control plane. Local evaluation runs insi
 | Boolean flags | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Percentage rollouts | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Context-based targeting | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Non-Boolean values / variants | ❌ | ✅ [Variants](https://docs.flipt.io/v2/concepts#variant-flags) | ✅ [Values](https://gofeatureflag.org/docs/configure_flag/create-flags) | ✅ [Variants](https://docs.getunleash.io/concepts/strategy-variants) | ✅ [Values](https://docs.flagsmith.com/managing-flags/core-management#remote-config) |
+| Non-Boolean results | ✅ [Types](docs/typed-results.md) | ✅ [Variants](https://docs.flipt.io/v2/concepts#variant-flags) | ✅ [Values](https://gofeatureflag.org/docs/configure_flag/create-flags) | ✅ [Variants](https://docs.getunleash.io/concepts/strategy-variants) | ✅ [Values](https://docs.flagsmith.com/managing-flags/core-management#remote-config) |
 | Local backend evaluation | ✅ | ✅ | ✅ (by provider) | ✅ | ✅ (opt-in) |
 | Dashboard roles | ✅ Environment roles | ✅ [Policy-based](https://docs.flipt.io/v2/configuration/authorization) | ❌ | ✅ Basic; advanced paid | ✅ [Enterprise](https://www.flagsmith.com/open-source) |
 | Audit / change history | ✅ Audit log | ✅ Git history | [External notifications](https://gofeatureflag.org/docs/concepts/notifier) | ✅ Basic; advanced paid | ✅ [Enterprise](https://www.flagsmith.com/open-source) |
@@ -78,7 +78,7 @@ Partly's [measurement](docs/releasing.md#benchmarks) used one flag without appli
 
 ## Limits and next steps
 
-- Boolean results only. [Planned next](docs/roadmap.md): strings, integers, floating-point numbers, and dashboard-defined named JSON types.
+- Named records are flat, with required fields. No nested records, arrays, or weighted experiments. [Typed results and SDK enhancements](docs/typed-results.md).
 - Single server; no HA or SSO. API Keys are plaintext in SQLite and backups; keep them private.
 - Policies live in SDK memory. Existing clients tolerate outages; new processes need the server. Revocation takes effect when received.
 - Release targets: macOS ARM64 and Linux x86_64. [Release checks and remaining work](docs/releasing.md).

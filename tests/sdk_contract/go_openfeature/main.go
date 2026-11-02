@@ -29,10 +29,10 @@ func run() error {
 	output := json.NewEncoder(os.Stdout)
 	for scanner.Scan() {
 		var command struct {
-			Op, URL, Key, Environment, Flag string
-			ApplicationID                   string `json:"application_id"`
-			Context                         map[string]any
-			Fallback                        bool
+			Op, URL, Key, Environment, Flag, Kind string
+			ApplicationID                         string `json:"application_id"`
+			Context                               map[string]any
+			Fallback                              any
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &command); err != nil {
 			return err
@@ -50,8 +50,32 @@ func run() error {
 			}
 		case "evaluate":
 			key, _ := command.Context[of.TargetingKey].(string)
-			value, _ := of.NewClient("contract").BooleanValueDetails(ctx, command.Flag, command.Fallback, of.NewEvaluationContext(key, command.Context))
+			value, _ := of.NewClient("contract").BooleanValueDetails(ctx, command.Flag, command.Fallback == true, of.NewEvaluationContext(key, command.Context))
 			result = map[string]any{"value": value.Value, "error": string(value.ErrorCode), "variant": value.Variant, "reason": string(value.Reason)}
+		case "resolve":
+			key, _ := command.Context[of.TargetingKey].(string)
+			client := of.NewClient("contract")
+			context := of.NewEvaluationContext(key, command.Context)
+			var value any
+			var detail of.EvaluationDetails
+			switch command.Kind {
+			case "boolean":
+				v, _ := client.BooleanValueDetails(ctx, command.Flag, command.Fallback == true, context)
+				value, detail = v.Value, v.EvaluationDetails
+			case "string":
+				v, _ := client.StringValueDetails(ctx, command.Flag, command.Fallback.(string), context)
+				value, detail = v.Value, v.EvaluationDetails
+			case "integer":
+				v, _ := client.IntValueDetails(ctx, command.Flag, int64(command.Fallback.(float64)), context)
+				value, detail = v.Value, v.EvaluationDetails
+			case "float":
+				v, _ := client.FloatValueDetails(ctx, command.Flag, command.Fallback.(float64), context)
+				value, detail = v.Value, v.EvaluationDetails
+			case "object":
+				v, _ := client.ObjectValueDetails(ctx, command.Flag, command.Fallback, context)
+				value, detail = v.Value, v.EvaluationDetails
+			}
+			result = map[string]any{"value": value, "error": string(detail.ErrorCode), "variant": detail.Variant, "named_type": detail.FlagMetadata["partly.result_type"]}
 		case "refresh":
 			result = map[string]any{}
 			result["updated"], err = native.Refresh(ctx)

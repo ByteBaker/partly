@@ -41,25 +41,26 @@ impl ToSchema for CreateUserInput {
 // Flattening a closed Flag with allOf would incorrectly reject the added key.
 impl PartialSchema for SavedFlag {
     fn schema() -> RefOr<Schema> {
-        let mut schema = serde_json::to_value(Flag::schema()).expect("Flag schema serializes");
-        for variant in schema["oneOf"]
-            .as_array_mut()
-            .expect("Tagged flag variants")
-        {
-            variant["maxProperties"] = json!(
-                variant["maxProperties"]
-                    .as_u64()
-                    .expect("Closed flag variant")
-                    + 1
+        let mut schema = Flag::schema();
+        let RefOr::T(Schema::OneOf(variants)) = &mut schema else {
+            panic!("Tagged flag variants")
+        };
+        for variant in &mut variants.items {
+            let RefOr::T(Schema::Object(object)) = variant else {
+                panic!("Flag variant object")
+            };
+            object.max_properties = object.max_properties.map(|count| count + 1);
+            object.properties.insert(
+                "key".into(),
+                ObjectBuilder::new()
+                    .schema_type(Type::String)
+                    .pattern(Some("^[a-z0-9_-]{1,64}$"))
+                    .build()
+                    .into(),
             );
-            variant["properties"]["key"] =
-                json!({"type": "string", "pattern": "^[a-z0-9_-]{1,64}$"});
-            variant["required"]
-                .as_array_mut()
-                .expect("Required mode")
-                .push(json!("key"));
+            object.required.push("key".into());
         }
-        serde_json::from_value(schema).expect("Saved flag schema is valid")
+        schema
     }
 }
 
@@ -75,6 +76,7 @@ impl ToSchema for SavedFlag {
     components(schemas(ErrorBody, partly_core::Condition)),
     tags(
         (name = "Session", description = "Setup and dashboard authentication"),
+        (name = "Types", description = "Immutable named result schemas. Viewer reads; Manager or higher creates and deletes unused types."),
         (name = "Flags", description = "Viewer reads; Editor or higher writes"),
         (name = "Applications", description = "Viewer reads; Manager or higher writes. Only managers and administrators receive key secrets."),
         (name = "Users", description = "Instance administrator only"),

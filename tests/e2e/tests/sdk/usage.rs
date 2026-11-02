@@ -24,14 +24,21 @@ async fn reports(language: &str, openfeature: bool) -> Result {
     }
     server.start().await?;
     let admin = server.setup().await?;
+    admin.post("/api/environments/development/types", json!({"name":"UsageRecord","definition":{"kind":"record","fields":{"label":"string"}}}), 201).await?;
     let names: Vec<String> = (0..129).map(|n| format!("usage_{n:03}")).collect();
     for (index, name) in names.iter().enumerate() {
+        let mut flag = match index {
+            1 => {
+                json!({"mode":"typed","result_type":"string","selected":"yes","other":"no","rollout":{"mode":"enabled"}})
+            }
+            2 => {
+                json!({"mode":"typed","result_type":"UsageRecord","selected":{"label":"yes"},"other":{"label":"no"},"rollout":{"mode":"enabled"}})
+            }
+            _ => json!({"mode":if index % 2 == 0 {"enabled"} else {"disabled"}}),
+        };
+        flag["key"] = json!(name);
         admin
-            .post(
-                "/api/environments/development/flags",
-                json!({"key":name,"mode":if index % 2 == 0 {"enabled"} else {"disabled"}}),
-                201,
-            )
+            .post("/api/environments/development/flags", flag, 201)
             .await?;
     }
     let app = admin
@@ -56,7 +63,28 @@ async fn reports(language: &str, openfeature: bool) -> Result {
         "Repeated checks must not fill the distinct-name batch"
     );
     for (index, name) in names[..128].iter().enumerate() {
+        if index == 2 && !openfeature {
+            let result = driver
+                .call(
+                    "resolve",
+                    json!({"flag":name,"kind":"named","expected_type":"OtherRecord","context":{}}),
+                )
+                .await?;
+            assert_eq!(result["error"], "named_type");
+            continue;
+        }
         let result = driver.evaluate(name, json!({})).await?;
+        if index == 1 || index == 2 {
+            assert_eq!(
+                result["error"],
+                if openfeature {
+                    "TYPE_MISMATCH"
+                } else {
+                    "result_type"
+                }
+            );
+            continue;
+        }
         if openfeature {
             assert_eq!(result["error"], "");
             assert_eq!(result["value"], index % 2 == 0);

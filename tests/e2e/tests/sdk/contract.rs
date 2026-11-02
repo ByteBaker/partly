@@ -12,6 +12,7 @@ mod lifecycle;
 mod native;
 mod openfeature;
 mod refresh;
+mod typed;
 
 use native::contract;
 use openfeature::openfeature;
@@ -21,6 +22,7 @@ macro_rules! language_tests {
     ($($language:ident),+) => {$ (
         mod $language {
             use super::*;
+            #[tokio::test] async fn typed_results() -> Result { typed::contract(stringify!($language)).await }
             #[tokio::test] async fn native_contract() -> Result { contract(stringify!($language)).await }
             #[tokio::test] async fn application_scope_and_background_revocation() -> Result { scope(stringify!($language)).await }
             #[tokio::test] async fn bad_refresh_preserves_snapshot_and_etag() -> Result { bad_refresh(stringify!($language)).await }

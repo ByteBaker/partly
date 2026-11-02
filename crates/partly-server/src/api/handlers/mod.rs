@@ -7,4 +7,5 @@ pub(super) mod flags;
 pub(super) mod keys;
 pub(super) mod sdk;
 pub(super) mod session;
+pub(super) mod types;
 pub(super) mod users;

@@ -23,6 +23,7 @@ async fn app_selection_confirmation_revoked_history_and_audits() -> Result {
         expect(page.get_by_role(Button,named("Save unused"))).to_be_enabled().await?;
         page.get_by_role(Button,named("Save unused")).click(None).await?;
         confirm_flag(page,"unused").await?;
+        expect(page.locator(".flag-row[data-key=unused]")).to_have_attribute("data-dirty", "false").await?;
         page.get_by_role(Tab,named("Apps & Keys")).click(None).await?;
         for name in ["Billing","Storefront"] {
             page.get_by_role(Button,named("Create app")).click(None).await?;
@@ -44,9 +45,11 @@ async fn app_selection_confirmation_revoked_history_and_audits() -> Result {
         expect(page.get_by_role(Dialog,named("Discard your changes?"))).to_be_visible().await?;
         page.get_by_role(Button,named("Keep editing")).click(None).await?;
         billing.get_by_role(Button,named("Save app")).click(None).await?;
+        expect(billing.locator(".app-settings form")).to_have_attribute("data-dirty", "false").await?;
         expect(billing.get_by_role(Button,named("Save app"))).to_be_disabled().await?;
         page.get_by_role(Tab,named("Feature flags")).click(None).await?;
         choose(page,page.get_by_label("Rollout mode for shared",true),"disabled").await?;
+        let mut held = hold_route(page, "**/api/environments/development/flags/shared").await?;
         page.get_by_role(Button,named("Save shared")).click(None).await?;
         texts(modal.locator("li"),&["Billing","Storefront"]).await?;
         expect(modal.locator("#confirm-flag-label code")).to_have_text("development/shared").await?;
@@ -54,6 +57,11 @@ async fn app_selection_confirmation_revoked_history_and_audits() -> Result {
         modal.locator("#confirm-flag-input").fill("development/Shared",None).await?;
         expect(modal.locator("#confirm-flag-submit")).to_be_disabled().await?;
         confirm_flag(page,"shared").await?;
+        // Closing confirmation starts the write; it does not mean the write has completed.
+        expect(page.locator(".flag-row[data-key=shared]")).to_have_attribute("data-dirty", "true").await?;
+        pending(&mut held).await?.continue_(None).await?;
+        expect(page.locator(".flag-row[data-key=shared]")).to_have_attribute("data-dirty", "false").await?;
+        page.unroute("**/api/environments/development/flags/shared").await?;
         page.get_by_role(Tab,named("Audits")).click(None).await?;
         let latest = page.locator(".audit-row").first();
         expect(latest.locator(".type-pill")).to_have_text("Flag").await?;

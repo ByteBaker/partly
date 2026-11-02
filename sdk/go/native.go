@@ -25,6 +25,7 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 	"unsafe"
 )
@@ -55,20 +56,20 @@ func (s *snapshot) hasFlag(flag string) bool {
 	return exists != 0
 }
 
-func (s *snapshot) evaluate(flag string, context map[string]any) (Decision, error) {
+func (s *snapshot) resolve(flag string, context map[string]any, kind, expectedType string) (Resolution, error) {
 	if !s.hasFlag(flag) {
-		return "", &Error{Kind: ErrFlagNotFound, Message: "Flag is not defined in the loaded policy", FlagKey: flag}
+		return Resolution{}, &Error{Kind: ErrFlagNotFound, Message: "Flag is not defined in the loaded policy", FlagKey: flag}
 	}
 	values := make(map[string]any, len(context))
 	for k, v := range context {
 		if !utf8.ValidString(k) {
-			return "", &Error{Kind: ErrInvalidContext, Message: "Context keys must contain valid UTF-8", FlagKey: flag}
+			return Resolution{}, &Error{Kind: ErrInvalidContext, Message: "Context keys must contain valid UTF-8", FlagKey: flag}
 		}
 		switch value := v.(type) {
 		case nil, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		case string:
 			if !utf8.ValidString(value) {
-				return "", &Error{Kind: ErrInvalidContext, Message: "Context text must contain valid UTF-8", FlagKey: flag, K: k}
+				return Resolution{}, &Error{Kind: ErrInvalidContext, Message: "Context text must contain valid UTF-8", FlagKey: flag, K: k}
 			}
 		case float32:
 			v = json.Number(strconv.FormatFloat(float64(value), 'e', -1, 64))
@@ -77,7 +78,7 @@ func (s *snapshot) evaluate(flag string, context map[string]any) (Decision, erro
 			v = json.Number(strconv.FormatFloat(value, 'e', -1, 64))
 		case json.Number:
 			if value == "" {
-				return "", &Error{Kind: ErrInvalidContext, Message: "Context contains an invalid number", FlagKey: flag, K: k}
+				return Resolution{}, &Error{Kind: ErrInvalidContext, Message: "Context contains an invalid number", FlagKey: flag, K: k}
 			}
 		default:
 			// Preserve only the type; Rust supplies rule details without calling custom marshalers.
@@ -90,38 +91,69 @@ func (s *snapshot) evaluate(flag string, context map[string]any) (Decision, erro
 		}
 		values[k] = v
 	}
-	data, err := json.Marshal(map[string]any{"flag": flag, "context": values})
+	data, err := json.Marshal(map[string]any{"flag": flag, "context": values, "kind": kind, "expected_type": expectedType})
 	if err != nil {
-		return "", &Error{Kind: ErrInvalidContext, Message: "Context contains an invalid number"}
+		return Resolution{}, &Error{Kind: ErrInvalidContext, Message: "Context contains an invalid number"}
 	}
 	raw := C.partly_snapshot_evaluate(s.ptr, (*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data)))
 	runtime.KeepAlive(s)
 	defer C.partly_string_free(raw)
 	var result struct {
-		Decision     Decision `json:"decision"`
-		Code         string   `json:"error"`
-		Message      string   `json:"message"`
-		FlagKey      string   `json:"flag_key"`
-		K            string   `json:"k"`
-		Op           string   `json:"op"`
-		ExpectedType string   `json:"expected_type"`
-		ActualType   string   `json:"actual_type"`
+		Resolution
+		Code         string `json:"error"`
+		Message      string `json:"message"`
+		FlagKey      string `json:"flag_key"`
+		K            string `json:"k"`
+		Op           string `json:"op"`
+		ExpectedType string `json:"expected_type"`
+		ActualType   string `json:"actual_type"`
 	}
-	if err := json.Unmarshal([]byte(C.GoString(raw)), &result); err != nil {
-		return "", &Error{Kind: ErrInvalidContext, Message: "Invalid native response"}
+	decoder := json.NewDecoder(strings.NewReader(C.GoString(raw)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&result); err != nil {
+		return Resolution{}, &Error{Kind: ErrInvalidContext, Message: "Invalid native response"}
 	}
 	if result.Code != "" {
 		kind := ErrInvalidContext
 		switch result.Code {
+		case "result_type":
+			kind = ErrResultType
+		case "named_type":
+			kind = ErrNamedType
 		case "context_type":
 			kind = ErrContextType
 		case "flag_not_found":
 			kind = ErrFlagNotFound
 		}
-		return "", &Error{kind, result.Message, result.FlagKey, result.K, result.Op, result.ExpectedType, result.ActualType}
+		return Resolution{}, &Error{kind, result.Message, result.FlagKey, result.K, result.Op, result.ExpectedType, result.ActualType}
 	}
-	if result.Decision != Enabled && result.Decision != Disabled {
-		return "", &Error{Kind: ErrInvalidContext, Message: "Invalid native decision"}
+	result.Value = resultNumbers(result.Value)
+	valid := false
+	switch result.Kind {
+	case "boolean":
+		_, valid = result.Value.(bool)
+	case "string":
+		_, valid = result.Value.(string)
+	case "integer":
+		_, valid = result.Value.(int64)
+	case "float":
+		_, valid = result.Value.(float64)
+	case "object":
+		_, valid = result.Value.(map[string]any)
 	}
-	return result.Decision, nil
+	if !valid {
+		return Resolution{}, &Error{Kind: ErrInvalidPolicy, Message: "Invalid native result"}
+	}
+	return result.Resolution, nil
+}
+
+func (s *snapshot) evaluate(flag string, context map[string]any) (Decision, error) {
+	result, err := s.resolve(flag, context, "boolean", "")
+	if err != nil {
+		return "", err
+	}
+	if result.Value == true {
+		return Enabled, nil
+	}
+	return Disabled, nil
 }

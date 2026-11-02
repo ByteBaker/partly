@@ -17,6 +17,8 @@ import (
 )
 
 type command struct {
+	Kind          string         `json:"kind"`
+	ExpectedType  string         `json:"expected_type"`
 	Environment   string         `json:"environment"`
 	ApplicationID string         `json:"application_id"`
 	Op            string         `json:"op"`
@@ -31,6 +33,10 @@ type command struct {
 
 func errorCode(err error) string {
 	switch {
+	case errors.Is(err, partly.ErrNamedType):
+		return "named_type"
+	case errors.Is(err, partly.ErrResultType):
+		return "result_type"
 	case errors.Is(err, partly.ErrFlagNotFound):
 		return "flag_not_found"
 	case errors.Is(err, partly.ErrContextType):
@@ -81,6 +87,13 @@ func execute(client **partly.Client, input command) (map[string]any, error) {
 			default:
 				panic("SDK returned an unknown decision")
 			}
+		}
+	case "resolve":
+		var value partly.Resolution
+		value, err = (*client).Resolve(input.Flag, input.Context, input.Kind, input.ExpectedType)
+		result = map[string]any{"value": value.Value, "kind": value.Kind, "variant": value.Variant}
+		if value.NamedType != "" {
+			result["named_type"] = value.NamedType
 		}
 	case "refresh":
 		var updated bool

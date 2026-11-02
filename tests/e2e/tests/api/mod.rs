@@ -11,4 +11,5 @@ mod openapi;
 mod operations;
 mod rbac;
 mod recovery;
+mod types;
 mod usage;

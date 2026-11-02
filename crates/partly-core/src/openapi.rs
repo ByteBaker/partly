@@ -31,6 +31,22 @@ impl PartialSchema for Condition {
 
 impl ToSchema for Condition {}
 
+pub fn rollout() -> RefOr<Schema> {
+    // Reuse Flag's constraints, but a rollout cannot itself return a typed result.
+    serde_json::from_value(json!({"allOf": [
+        {"$ref": "#/components/schemas/Flag"},
+        {"type": "object", "properties": {"mode": {"type": "string", "enum": ["enabled", "disabled", "percentage", "custom"]}}}
+    ]})).expect("Rollout schema is valid")
+}
+
+pub fn record_fields() -> RefOr<Schema> {
+    serde_json::from_value(json!({
+        "type": "object", "minProperties": 1, "maxProperties": 32,
+        "additionalProperties": {"type": "string"}
+    }))
+    .expect("Record fields schema is valid")
+}
+
 pub fn groups() -> RefOr<Schema> {
     let schema: Value = json!({
         "type": "array", "minItems": 1,

@@ -6,6 +6,12 @@ use crate::{Flag, MAX_POLICY_BYTES, Policy, validate_json_number_limits};
 impl Flag {
     pub fn validate(&self) -> Result<(), String> {
         match self {
+            Self::Typed { rollout, .. } => {
+                if matches!(rollout.as_ref(), Self::Typed { .. }) {
+                    return Err("Typed rollouts cannot be nested".into());
+                }
+                rollout.validate()
+            }
             Self::Percentage { percentage } if *percentage > 100 => {
                 Err("Percentage must be 0–100".into())
             }
@@ -40,7 +46,7 @@ impl Policy {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if self.schema_version != 1 {
+        if !matches!(self.schema_version, 1 | 2) {
             return Err("Unsupported policy schema_version".into());
         }
         if !valid_key(&self.project)
@@ -49,11 +55,18 @@ impl Policy {
         {
             return Err("Invalid policy project, environment, or application".into());
         }
+        if self.schema_version == 1
+            && (!self.types.is_empty()
+                || self.flags.values().any(|f| matches!(f, Flag::Typed { .. })))
+        {
+            return Err("Typed flags require policy format 2".into());
+        }
+        crate::validate_types(&self.types)?;
         for (key, flag) in &self.flags {
             if !valid_key(key) {
                 return Err("Invalid flag key".into());
             }
-            flag.validate()?;
+            flag.validate_result(&self.types)?;
         }
         Ok(())
     }

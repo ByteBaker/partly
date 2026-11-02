@@ -127,3 +127,9 @@ The SDK and evaluator use [Apache-2.0](LICENSE), including use in proprietary ap
 Create an application in **Apps & Keys** and select the flags it can use. Supply its environment and permanent application ID on the builder with `.environment("development").application_id("YOUR_APPLICATION_ID")`, along with its API Key. All are required; the key must match both scope values. Even the first download is checked against this scope. Removing a selected flag makes it unknown after refresh.
 
 A confirmed revoked-key response clears policy and ETag, stops polling, and makes evaluation, initialization, and refresh return `KeyRevokedError` (an `AuthenticationError` subclass). Build a new client with a valid replacement key. Closing a revoked client does not restore evaluation. Ordinary authentication, network, and validation failures preserve the accepted policy. Offline clients learn about revocation only when a refresh or usage report reaches the server.
+
+## Typed results
+
+OpenFeature supports Boolean, string, numeric, and object results. Enums use the string getter; named records use the object getter. Check detailed errors before accepting a caller default. Named results include **Partly metadata through OpenFeature** at `partly.result_type`.
+
+Native typed getters are also available. **Partly SDK enhancement:** require an exact named type with a named-evaluation call. Reuse the same initialized client; no second cache or initialization is needed. See [methods, errors, limits, and compatibility](https://github.com/ByteBaker/partly/blob/main/docs/typed-results.md). Upgrade the SDK before assigning typed flags to an application.

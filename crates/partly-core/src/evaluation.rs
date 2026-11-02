@@ -10,7 +10,22 @@ impl Policy {
         let flag = self
             .flags
             .get(key)
-            .ok_or_else(|| EvaluationError::FlagNotFound(key.to_owned()))?;
+            .ok_or_else(|| EvaluationError::FlagNotFound(key.into()))?;
+        if let Flag::Typed { .. } = flag {
+            self.resolve(key, context, "boolean", None)?;
+            unreachable!("Typed flags cannot return Boolean decisions");
+        }
+        Ok(if flag.select(key, context)? {
+            Decision::Enabled
+        } else {
+            Decision::Disabled
+        })
+    }
+}
+
+impl Flag {
+    pub(crate) fn select(&self, key: &str, context: &Context) -> Result<bool, EvaluationError> {
+        let flag = self;
         // Validate every required field before matching: an early match must not hide an error.
         match flag {
             Flag::Percentage { .. } => {
@@ -55,6 +70,7 @@ impl Policy {
             Flag::Percentage { percentage } => {
                 bucket(key, context["id"].as_str().unwrap()) < u32::from(*percentage) * 100
             }
+            Flag::Typed { .. } => unreachable!("Typed rollouts are validated before evaluation"),
             Flag::Custom { action, groups } => {
                 let matched = groups.iter().any(|group| {
                     group
@@ -64,11 +80,7 @@ impl Policy {
                 matched == matches!(action, MatchAction::Enable)
             }
         };
-        Ok(if enabled {
-            Decision::Enabled
-        } else {
-            Decision::Disabled
-        })
+        Ok(enabled)
     }
 }
 

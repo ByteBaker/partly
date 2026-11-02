@@ -44,6 +44,16 @@ async fn docs_navigation_and_complete_examples() -> Result {
             expect(page.locator(".code-heading").get_by_role(Status,None)).to_have_text("Copied").await?;
             assert_eq!(js(page,"window.partlyCopied").await?,code);
         }
+        choose(page, page.get_by_label("Example", true), "typed").await?;
+        for (language, file) in [("python", "typed_results.py"), ("rust", "typed_results.rs"), ("go", "typed/main.go"), ("node", "typed_results.js")] {
+            choose(page, page.get_by_label("Language", true), language).await?;
+            expect(copy.clone()).to_be_enabled().await?;
+            let source = fs::read_to_string(root().join("examples").join(language).join(file))?;
+            assert_eq!(page.locator("#docs-code").text_content().await?.as_deref(), Some(source.as_str()));
+            copy.click(None).await?;
+            assert_eq!(js(page, "window.partlyCopied").await?, source);
+            expect(page.locator("#typed-example-help")).to_be_visible().await?;
+        }
         page.set_viewport_size(Viewport{width:390,height:844}).await?;
         assert_eq!(js(page,"document.documentElement.scrollWidth <= innerWidth").await?,true);
         docs.focus().await?;

@@ -91,6 +91,14 @@ async def main():
                             provider.initialize(EvaluationContext())
                         with raises(ProviderNotReadyError):
                             provider.resolve_boolean_details(command["flag"], False)
+                elif op == "resolve":
+                    attributes = command["context"].copy()
+                    targeting_key = attributes.pop("targetingKey", None)
+                    flags = api.get_client("contract")
+                    method = getattr(flags, f"get_{command['kind']}_details_async")
+                    details = await method(command["flag"], command["fallback"], EvaluationContext(targeting_key=targeting_key, attributes=attributes))
+                    result = {"value": details.value, "error": details.error_code.value if details.error_code else "", "variant": details.variant,
+                              "named_type": details.flag_metadata.get("partly.result_type")}
                 elif op == "types_and_context":
                     flags = api.get_client("contract")
                     for method, fallback in [(flags.get_string_details, "fallback"), (flags.get_integer_details, 7),

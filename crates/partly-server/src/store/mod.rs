@@ -9,6 +9,7 @@ mod keys;
 mod models;
 #[cfg(test)]
 mod tests;
+mod types;
 mod usage;
 mod users;
 

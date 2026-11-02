@@ -61,3 +61,7 @@ SDK errors return `{"error": "code"}`. Codes are `flag_not_found`, `invalid_cont
 `context_type` also returns `flag_key`, `k`, `op`, `expected_type`, and `actual_type`; `op` is `null` when no rule operator applies. Drivers preserve numeric precision when reading commands.
 
 Drivers use the implemented public client APIs. Preserve the shared assertions when changing those APIs. Drivers must not evaluate policies, make policy HTTP requests themselves, or invent successful results.
+
+## Typed results
+
+`typed.json` supplies shared values for all four native SDKs and official OpenFeature clients. Tests cover string/integer/float/enum/record results, configured type metadata, wrong getter and expected-name errors, missing or wrong context, refresh, offline evaluation, and terminal revocation. Typed quickstarts are fetched from the server and run against real SDKs. Invalid v2 refreshes must preserve the accepted snapshot and ETag.

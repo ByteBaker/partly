@@ -37,18 +37,27 @@ async fn quickstart_command(language: &str, directory: &Path, source: &str) -> R
             directory.join(file).display().to_string(),
         ],
         "rust" => {
+            // Each embedded server URL needs its own executable in the shared build cache.
+            let name = format!(
+                "partly-example-{}",
+                directory
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('.', "")
+            );
             let library = sdk("partly-rust-", ".crate", "sdk/rust")?;
             let core = sdk("partly-core-", ".crate", "crates/partly-core")?;
             fs::write(
                 directory.join("Cargo.toml"),
                 format!(
                     r#"[package]
-name = "partly-quickstart-check"
+name = "{name}"
 version = "0.0.0"
 edition = "2021"
 [workspace]
 [[bin]]
-name = "quickstart"
+name = "{name}"
 path = "quickstart.rs"
 [dependencies]
 partly = {{ package = "partly-rust", path = {}, features = ["openfeature"] }}
@@ -69,7 +78,7 @@ partly-core = {{ path = {} }}
                 .arg(&target);
             checked(build, 300).await?;
             let binary = directory.join("quickstart");
-            fs::copy(target.join("debug/quickstart"), &binary)?;
+            fs::copy(target.join("debug").join(name), &binary)?;
             vec![binary.display().to_string()]
         }
         "go" => {
@@ -280,4 +289,60 @@ async fn python_quickstart_evaluates_offline_and_closes() -> Result {
         json!({"lines":["Use the new checkout","Use the new checkout"]})
     );
     driver.finish().await
+}
+
+#[tokio::test]
+async fn typed_examples_are_served_and_run_with_real_openfeature() -> Result {
+    for language in LANGUAGES {
+        let (server, admin) = fixture().await?;
+        admin.post("/api/environments/development/types", json!({"name":"Checkout","definition":{"kind":"record","fields":{"layout":"string"}}}), 201).await?;
+        admin.flag("development", "checkout_settings", json!({"mode":"typed","result_type":"Checkout","selected":{"layout":"wide"},"other":{"layout":"compact"},"rollout":{"mode":"enabled"}})).await?;
+        let key = admin.key("development").await?;
+        let endpoint = match language {
+            "python" => "typed-python.py",
+            "rust" => "typed-rust.rs",
+            "go" => "typed-go.go",
+            _ => "typed-node.js",
+        };
+        let file = match language {
+            "python" => "typed_results.py",
+            "rust" => "typed_results.rs",
+            "go" => "typed/main.go",
+            _ => "typed_results.js",
+        };
+        let response = admin
+            .request(reqwest::Method::GET, &format!("/docs/{endpoint}"))
+            .send()
+            .await?;
+        assert_eq!(response.status(), 200);
+        let source = response.text().await?;
+        assert_eq!(
+            source,
+            fs::read_to_string(root().join("examples").join(language).join(file))?
+        );
+        let source = source
+            .replace("\"http://127.0.0.1:8080\"", &json!(server.url).to_string())
+            .replace("\"YOUR_API_KEY\"", &key["secret"].to_string())
+            .replace("YOUR_APPLICATION_ID", text(&key["application_id"]));
+        let directory = tempfile::tempdir()?;
+        let command = quickstart_command(language, directory.path(), &source).await?;
+        let result = execute(&command, directory.path()).await?;
+        assert!(
+            result.status.success(),
+            "{language}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let output = String::from_utf8(result.stdout)?;
+        assert_eq!(output.lines().count(), 2);
+        assert!(output.lines().all(|line| line.contains("wide")));
+        admin
+            .delete("/api/environments/development/flags/checkout_settings", 204)
+            .await?;
+        let result = execute(&command, directory.path()).await?;
+        assert!(
+            !result.status.success() && result.stdout.is_empty(),
+            "{language} used an unvalidated fallback"
+        );
+    }
+    Ok(())
 }

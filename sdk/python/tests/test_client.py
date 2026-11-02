@@ -23,6 +23,7 @@ from partly import (
     InvalidPolicyError,
     PolicyNotReadyError,
     RefreshError,
+    ResultTypeError,
 )
 
 POLICY = {"schema_version": 1, "application_id": "app_test", "project": "default", "environment": "development", "revision": 1,
@@ -33,6 +34,41 @@ def mocked(handler, interval=60, timeout=1):
     client = Client.builder().url("http://partly.test").environment("development").application_id("app_test").secret_key("test-key").poll_interval(interval).timeout(timeout).build()
     client._http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return client
+
+
+async def test_boolean_details_keep_native_decisions_without_json_conversion(monkeypatch):
+    from openfeature.evaluation_context import EvaluationContext
+
+    from partly.openfeature import PartlyProvider
+
+    policy = copy.deepcopy(POLICY)
+    policy["schema_version"] = 2
+    policy["flags"] = {"on": {"mode": "enabled"}, "off": {"mode": "disabled"},
+                       "text": {"mode": "typed", "result_type": "string", "selected": "yes", "other": "no", "rollout": {"mode": "enabled"}}}
+    client = mocked(lambda _: httpx.Response(200, headers={"etag": '"one"'}, json=policy))
+    try:
+        await client.init()
+        provider = PartlyProvider(client)
+        provider.initialize(EvaluationContext())
+
+        def no_json_conversion(*args, **kwargs):
+            raise AssertionError("Boolean evaluation must keep the direct native path")
+
+        with monkeypatch.context() as patch:
+            patch.setattr("partly.client.json.loads", no_json_conversion)
+            for flag, value, variant in [("on", True, "enabled"), ("off", False, "disabled")]:
+                result = client.resolve(flag, "boolean")
+                assert result == {"value": value, "kind": "boolean", "variant": variant}
+                detail = provider.resolve_boolean_details(flag, not value)
+                assert detail.value is value and detail.variant == variant
+                assert detail.flag_metadata == {}
+            with pytest.raises(ResultTypeError):
+                client.resolve("text", "boolean")
+            with pytest.raises(FlagNotFoundError):
+                client.resolve("missing", "boolean")
+        assert set(client._usage_pending) == {"on", "off", "text"}
+    finally:
+        await client.aclose()
 
 
 async def test_invalid_refresh_keeps_policy_and_etag():
@@ -98,7 +134,7 @@ async def test_invalid_policy_values_are_redacted_from_errors_and_polling_logs(c
 async def test_bad_initial_policy_is_an_error(case):
     policy = copy.deepcopy(POLICY)
     headers = {"etag": '"one"'}
-    if case == "unsupported_schema": policy["schema_version"] = 2
+    if case == "unsupported_schema": policy["schema_version"] = 3
     if case == "percentage": policy["flags"]["checkout"]["percentage"] = 101
     if case == "wrong_type": policy["flags"]["checkout"]["percentage"] = "100"
     if case == "extra_field": policy["flags"]["checkout"]["traits"] = {}

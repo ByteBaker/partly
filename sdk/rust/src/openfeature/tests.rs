@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::Decision;
 use open_feature::{EvaluationDetails, Hook, HookContext, HookHints, OpenFeature, Value};
 use std::{
     io::{Read, Write},

@@ -69,13 +69,19 @@ impl Store {
                 Ok((key, flag))
             })
             .collect::<Result<BTreeMap<_, _>, ApiError>>()?;
+        let types = super::types::referenced_types(&flags, &Self::read_types(db, env)?)?;
         Ok(Policy {
-            schema_version: 1,
+            schema_version: if flags.values().any(|f| matches!(f, Flag::Typed { .. })) {
+                2
+            } else {
+                1
+            },
             project,
             environment: env.into(),
             application_id: "environment".into(),
             revision,
             flags,
+            types,
         })
     }
 
@@ -91,7 +97,8 @@ impl Store {
         if !partly_core::valid_key(key) {
             return Err(ApiError::bad("Invalid flag key"));
         }
-        flag.validate().map_err(ApiError::bad)?;
+        flag.validate_result(&self.result_types(env)?)
+            .map_err(ApiError::bad)?;
         let config =
             serde_json::to_string(flag).map_err(|_| ApiError::internal("Cannot encode flag"))?;
         let transaction = self
@@ -118,6 +125,19 @@ impl Store {
         }
         if !create && !exists {
             return Err(ApiError::not_found("Flag not found"));
+        }
+        if let Some(raw) = &before {
+            let previous: Flag =
+                serde_json::from_str(raw).map_err(|_| ApiError::internal("Invalid stored flag"))?;
+            let result_type = |f: &Flag| match f {
+                Flag::Typed { result_type, .. } => result_type.clone(),
+                _ => "boolean".into(),
+            };
+            if result_type(&previous) != result_type(flag) {
+                return Err(ApiError::bad(
+                    "A flag's result type cannot change; create a new flag",
+                ));
+            }
         }
         let changed = transaction.execute(
             "INSERT INTO flags (environment, key, config) VALUES (?1, ?2, ?3) ON \

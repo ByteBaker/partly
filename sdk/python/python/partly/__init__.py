@@ -8,7 +8,9 @@ from ._native import (
     FlagNotFoundError,
     InvalidContextError,
     InvalidPolicyError,
+    NamedTypeError,
     PartlyError,
+    ResultTypeError,
 )
 from .client import (
     AuthenticationError,
@@ -22,7 +24,7 @@ from .client import (
 )
 
 __all__ = [
-    "Client", "ClientBuilder", "Decision", "PartlyError", "AuthenticationError",
+    "ResultTypeError", "NamedTypeError", "Client", "ClientBuilder", "Decision", "PartlyError", "AuthenticationError",
     "ClientClosedError", "ContextTypeError", "FlagNotFoundError", "InvalidContextError",
     "InvalidPolicyError", "PolicyNotReadyError", "RefreshError", "KeyRevokedError",
 ]

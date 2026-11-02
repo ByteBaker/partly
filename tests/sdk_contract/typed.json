@@ -1,0 +1,14 @@
+{
+  "types": {
+    "Layout": {"kind":"enum","values":["compact","wide"]},
+    "Settings": {"kind":"record","fields":{"layout":"Layout","limit":"integer","rate":"float","label":"string","active":"boolean"}}
+  },
+  "flags": {
+    "text": {"mode":"typed","result_type":"string","selected":"Welcome","other":"Later","rollout":{"mode":"enabled"}},
+    "count": {"mode":"typed","result_type":"integer","selected":9007199254740991,"other":-9007199254740991,"rollout":{"mode":"disabled"}},
+    "ratio": {"mode":"typed","result_type":"float","selected":2.5,"other":1.0,"rollout":{"mode":"enabled"}},
+    "layout": {"mode":"typed","result_type":"Layout","selected":"wide","other":"compact","rollout":{"mode":"enabled"}},
+    "settings": {"mode":"typed","result_type":"Settings","selected":{"layout":"wide","limit":12,"rate":3.0,"label":"Checkout","active":true},"other":{"layout":"compact","limit":4,"rate":1.5,"label":"Basic","active":false},"rollout":{"mode":"custom","action":"enable","groups":[[{"k":"age","op":"ge","v":18}]]}},
+    "legacy": {"mode":"percentage","percentage":50}
+  }
+}

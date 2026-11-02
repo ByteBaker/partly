@@ -1,11 +1,12 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Elastic-2.0
 
+/* exported createEditor */
 "use strict";
 const $ = id => document.getElementById(id);
 const notice = $('notice');
 let noticeReset;
-const route = location.pathname.match(/^\/environments\/(development|production)\/(flags|apps|audits|docs|users)\/?$/);
+const route = location.pathname.match(/^\/environments\/(development|production)\/(flags|apps|types|audits|docs|users)\/?$/);
 const environment = route?.[1] || 'development';
 const currentScreen = route?.[2] || 'flags';
 const trackers = new Map();
@@ -24,6 +25,7 @@ const docsExamples = {
   node: { name: 'Node.js', file: 'quickstart.js', url: '/docs/node.js' },
 };
 let availableFlags = [];
+let typedFlags = [];
 const flagUsage = new Map();
 let keyApplication;
 let appSelection;
@@ -87,7 +89,7 @@ async function action(trigger, operation, errorArea) {
   errorArea.hidden = true;
   clearTimeout(noticeReset); notice.textContent = '';
   const focused = document.activeElement;
-  const controls = scope ? [...scope.querySelectorAll('input, button')].map(element => [element, element.disabled]) : [];
+  const controls = scope ? [...scope.querySelectorAll('input, textarea, button')].map(element => [element, element.disabled]) : [];
   if (form === $('new-flag')) controls.push([$('close-flag'), $('close-flag').disabled]);
   if (form === $('new-app')) controls.push([$('close-app'), $('close-app').disabled]);
   if (form === $('new-key')) controls.push([$('close-key'), $('close-key').disabled]);
@@ -179,10 +181,10 @@ async function navigate(path, focusTab = false) {
   location.assign(path); return true;
 }
 
-function createEditor(flag, name) {
+function createEditor(flag, name, typed = false) {
   const area = node('div', '', 'rollout-editor');
   const mode = createDropdown([
-    ['enabled', 'Enabled for everyone'], ['percentage', 'Percentage of users'], ['custom', 'Custom rules'], ['disabled', 'Disabled for everyone'],
+    ['enabled', typed ? 'Select everyone' : 'Enabled for everyone'], ['percentage', 'Percentage of users'], ['custom', 'Custom rules'], ['disabled', typed ? 'Select nobody' : 'Disabled for everyone'],
   ], flag.mode, 'mode'); mode.setAttribute('aria-label', `Rollout mode for ${name}`);
   const modeLabel = label('Rollout mode', mode); modeLabel.className = 'mode-label'; area.append(modeLabel);
   const percentageArea = node('div', '', 'percentage-editor');
@@ -191,7 +193,7 @@ function createEditor(flag, name) {
   const custom = node('div', '', 'custom-editor');
   const customHeading = node('div', '', 'custom-heading');
   const explanation = node('div'); explanation.append(node('h2', 'Match your context'), node('p', 'Match any group. All conditions in a group must match.'));
-  const matchAction = createDropdown([['enable', 'Enable matches; others off'], ['disable', 'Disable matches; others on']], flag.action || 'enable', 'action');
+  const matchAction = createDropdown([['enable', typed ? 'Select matches' : 'Enable matches; others off'], ['disable', typed ? 'Select non-matches' : 'Disable matches; others on']], flag.action || 'enable', 'action');
   matchAction.setAttribute('aria-label', `Match action for ${name}`);
   const actionLabel = label('When a group matches', matchAction); actionLabel.className = 'match-action'; customHeading.append(explanation, actionLabel); custom.append(customHeading);
   const groupsArea = node('div', '', 'rule-groups'); custom.append(groupsArea);
@@ -352,7 +354,7 @@ function flagRow(key, flag) {
   const heading = node('div', '', 'flag-heading'); const identity = node('div', '', 'flag-identity');
   const indicator = node('span', 'Unsaved', 'draft-indicator');
   const title = node('h2', '', 'flag-title'); title.id = `flag-title-${++nextId}`; title.append(node('code', key, 'flag-name'));
-  form.setAttribute('aria-labelledby', title.id); identity.append(title, indicator);
+  form.setAttribute('aria-labelledby', title.id); identity.append(title, node('span', flag.result_type || 'Boolean', 'type-pill result-type'), indicator);
   const actions = node('div', '', 'row-actions');
   const save = node('button', 'Save'); save.type = 'submit'; save.setAttribute('aria-label', `Save ${key}`);
   const remove = button('Delete', 'quiet danger', () => {
@@ -363,11 +365,11 @@ function flagRow(key, flag) {
     });
   }); remove.setAttribute('aria-label', `Delete ${key}`);
   actions.append(save, remove); heading.append(identity, actions); form.append(heading);
-  const editor = createEditor(flag, key); form.append(editor.area, usageDetails(key));
+  const editor = createFlagEditor(flag, key); form.append(editor.area, usageDetails(key));
   const error = node('p', '', 'notice error item-error'); error.hidden = true; error.setAttribute('role', 'alert'); form.append(error);
   if (!canEdit) {
     actions.hidden = true; indicator.hidden = true;
-    editor.area.querySelectorAll('input, button').forEach(control => { control.disabled = true; });
+    editor.area.querySelectorAll('input, textarea, button').forEach(control => { control.disabled = true; });
   } else track(form, editor.read, save, indicator);
   form.addEventListener('submit', event => {
     event.preventDefault();
@@ -420,7 +422,7 @@ function flagSelection(selected, name) {
   const list = node('div', '', 'flag-choices');
   const choices = availableFlags.map(key => {
     const checkbox = input('flags', key, 'checkbox'); checkbox.required = false; checkbox.checked = selected.includes(key);
-    const row = label(key, checkbox); list.append(row); return { key, checkbox, row };
+    const row = label(key, checkbox); if (typedFlags.includes(key)) row.append(node('span', 'Typed', 'type-pill')); list.append(row); return { key, checkbox, row };
   });
   const empty = node('p', availableFlags.length ? 'No matching flags.' : 'No flags in this environment.', 'small muted');
   empty.hidden = availableFlags.length > 0;
@@ -429,6 +431,7 @@ function flagSelection(selected, name) {
     empty.hidden = choices.some(choice => !choice.row.hidden);
   });
   area.append(search, list, empty);
+  if (typedFlags.length) area.append(node('p', 'Upgrade this application’s Partly SDK to one that supports typed results before assigning a typed flag. Older SDKs reject the new policy format.', 'small muted'));
   return { area, read: () => choices.filter(choice => choice.checkbox.checked).map(choice => choice.key) };
 }
 
@@ -613,10 +616,15 @@ function auditState(type, value, title) {
   state.dataset.phase = title.toLowerCase();
   state.append(node('h3', title, 'audit-label'));
   if (type === 'flag') {
+    const typed = value.mode === 'typed';
+    if (typed) {
+      state.append(node('span', value.result_type, 'type-pill result-type'), node('h4', 'Selected'), resultSummary(value.selected), node('h4', 'Otherwise'), resultSummary(value.other));
+      value = value.rollout;
+    }
     const modes = { enabled: 'Enabled for everyone', disabled: 'Disabled for everyone', percentage: `${value.percentage}% of users`, custom: 'Custom rules' };
-    state.append(node('p', modes[value.mode], 'audit-value'));
+    state.append(node('p', typed && value.mode === 'enabled' ? 'Select everyone' : typed && value.mode === 'disabled' ? 'Select nobody' : modes[value.mode], 'audit-value'));
     if (value.mode === 'custom') {
-      state.append(node('p', value.action === 'enable' ? 'Enable when a group matches' : 'Disable when a group matches'));
+      state.append(node('p', value.action === 'enable' ? (typed ? 'Select when a group matches' : 'Enable when a group matches') : (typed ? 'Select when no group matches' : 'Disable when a group matches')));
       value.groups.forEach((group, index) => {
         if (index) state.append(node('p', 'OR', 'audit-join'));
         const conditions = node('div', '', 'audit-rule-group');
@@ -629,8 +637,10 @@ function auditState(type, value, title) {
         });
         state.append(conditions);
       });
-      state.append(node('p', value.action === 'enable' ? 'Otherwise disabled.' : 'Otherwise enabled.', 'muted small'));
+      state.append(node('p', typed ? 'Return the other value for everyone else.' : value.action === 'enable' ? 'Otherwise disabled.' : 'Otherwise enabled.', 'muted small'));
     }
+  } else if (type === 'type') {
+    state.append(node('span', value.kind === 'enum' ? 'Enum' : 'Record', 'type-pill'), typeSummary(value));
   } else {
     state.append(node('p', value.name || value.status, 'audit-value'));
     if (type === 'user') {
@@ -692,7 +702,7 @@ async function setupAudits() {
       for (const entry of audits) {
         const row = node('details', '', 'audit-row'); const summary = node('summary', '', 'audit-summary');
         const time = node('time', new Date(entry.created_at).toLocaleString()); time.dateTime = entry.created_at;
-        const item = node('span', '', 'audit-item'); item.append(node('span', { flag: 'Flag', app: 'App', api_key: 'API Key', user: 'User' }[entry.item_type], 'type-pill'), node('span', entry.item_name));
+        const item = node('span', '', 'audit-item'); item.append(node('span', { type: 'Type', flag: 'Flag', app: 'App', api_key: 'API Key', user: 'User' }[entry.item_type], 'type-pill'), node('span', entry.item_name));
         const actor = node('span', '', 'audit-actor'); actor.append(node('span', 'by ', 'audit-by'), node('span', entry.actor));
         const action = node('span', entry.action[0].toUpperCase() + entry.action.slice(1), 'audit-action'); action.dataset.action = entry.action;
         summary.append(item, action, actor, time);
@@ -720,7 +730,7 @@ async function closeFlag() {
 }
 $('create-flag').addEventListener('click', () => {
   $('new-flag').reset(); $('flag-dialog-error').hidden = true;
-  modalEditor = createEditor({ mode: 'disabled' }, 'new flag'); $('new-flag-editor').replaceChildren(modalEditor.area);
+  modalEditor = createFlagEditor({ mode: 'disabled' }, 'new flag', true); $('new-flag-editor').replaceChildren(modalEditor.area);
   $('flag-dialog-context').textContent = `Create flag in ${environment}.`;
   track($('new-flag'), () => ({ key: $('flag-key').value, ...modalEditor.read() })); $('flag-dialog').showModal(); $('flag-key').focus();
 });
@@ -805,10 +815,19 @@ function highlightCode(source, language) {
   $('docs-code').replaceChildren(fragment);
 }
 async function loadExample() {
-  const focused = document.activeElement === $('docs-language');
+  const focused = [$('docs-language'), $('docs-example')].includes(document.activeElement) ? document.activeElement : null;
   const language = $('docs-language').value;
-  const example = docsExamples[language];
-  $('docs-language').disabled = true; $('copy-example').disabled = true; docsSource = '';
+  const typed = $('docs-example').value === 'typed';
+  const base = docsExamples[language];
+  const example = { ...base, file: typed ? ({ python: 'typed_results.py', rust: 'typed_results.rs', go: 'typed/main.go', node: 'typed_results.js' }[language]) : base.file, url: typed ? base.url.replace('/docs/', '/docs/typed-') : base.url };
+  $('typed-example-help').hidden = !typed;
+  $('named-api-example').textContent = {
+    python: 'client.evaluate_named("checkout_settings", "Checkout", context=context)',
+    rust: 'client.evaluate_named("checkout_settings", &context, "Checkout")?',
+    go: 'client.EvaluateNamed("checkout_settings", context, "Checkout")',
+    node: 'client.evaluateNamed("checkout_settings", "Checkout", context)',
+  }[language];
+  $('docs-example').disabled = true; $('docs-language').disabled = true; $('copy-example').disabled = true; docsSource = '';
   $('docs-filename').textContent = example.file;
   $('docs-code').parentElement.setAttribute('aria-label', `Complete ${example.name} example`);
   $('docs-code').textContent = 'Loading example…';
@@ -822,11 +841,14 @@ async function loadExample() {
     $('docs-code').textContent = 'Example unavailable.';
     throw new Error(`Could not load the ${example.name} example. Select another language or reload to try again.`);
   } finally {
-    $('docs-language').disabled = false;
-    if (focused && document.activeElement === document.body) $('docs-language').focus({ preventScroll: true });
+    $('docs-example').disabled = false; $('docs-language').disabled = false;
+    if (focused && document.activeElement === document.body) focused.focus({ preventScroll: true });
   }
 }
 $('docs-language').addEventListener('change', () => action(null, loadExample));
+const exampleChoice = createDropdown([['quickstart', 'Quickstart'], ['typed', 'Typed results']], 'quickstart', 'docs-example');
+exampleChoice.id = 'docs-example'; exampleChoice.setAttribute('aria-label', 'Example'); $('docs-example').replaceWith(exampleChoice);
+exampleChoice.addEventListener('change', () => action(null, loadExample));
 $('logout').addEventListener('click', async () => {
   if (isDirty() && !await confirmDiscard()) return;
   action($('logout'), async () => { await api('/logout', 'POST'); unloading = true; window.removeEventListener('beforeunload', beforeUnload); location.reload(); });
@@ -868,6 +890,7 @@ async function boot() {
   canEdit = currentUser.is_admin || ['editor', 'manager'].includes(role);
   canManage = currentUser.is_admin || role === 'manager';
   $('create-flag').hidden = currentScreen !== 'flags' || !canEdit;
+  $('create-type').hidden = currentScreen !== 'types' || !canManage;
   $('create-app').hidden = currentScreen !== 'apps' || !canManage;
   $('create-user').hidden = currentScreen !== 'users' || !currentUser.is_admin;
   if (currentScreen === 'users' && !currentUser.is_admin) {
@@ -875,15 +898,22 @@ async function boot() {
     throw new Error('Only instance administrators can manage users.');
   }
   $('screen-title').textContent = $(`${currentScreen}-tab`).textContent; document.title = `Partly · ${$('screen-title').textContent} · ${environment}`;
+  if (['flags', 'types'].includes(currentScreen)) resultTypes = await api(`/environments/${environment}/types`);
   if (currentScreen === 'flags') {
     const [flags, result] = await Promise.all([api(`/environments/${environment}/flags`), api(`/environments/${environment}/usage`)]);
     for (const entry of result.usage) {
       if (!flagUsage.has(entry.flag_key)) flagUsage.set(entry.flag_key, []);
       flagUsage.get(entry.flag_key).push(entry);
     }
-    for (const [key, flag] of Object.entries(flags)) $('flags').append(flagRow(key, flag)); updateFlagCount();
+    for (const [key, flag] of Object.entries(flags)) {
+      if (flag.mode === 'typed' && !['string', 'integer', 'float'].includes(flag.result_type) && !Object.hasOwn(resultTypes, flag.result_type)) throw new Error('The flag list changed while loading. Reload to fetch its types.');
+      $('flags').append(flagRow(key, flag));
+    } updateFlagCount();
+  } else if (currentScreen === 'types') {
+    await setupTypes();
   } else if (currentScreen === 'apps') {
     const [flags, result] = await Promise.all([api(`/environments/${environment}/flags`), api(`/environments/${environment}/apps`)]);
+    typedFlags = Object.keys(flags).filter(key => flags[key].mode === 'typed');
     availableFlags = Object.keys(flags); result.applications.forEach(app => $('apps').append(appRow(app)));
     if (!result.applications.length) $('apps').append(node('p', 'No applications in this environment.', 'empty'));
   } else if (currentScreen === 'users') {

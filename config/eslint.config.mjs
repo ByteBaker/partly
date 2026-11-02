@@ -33,7 +33,7 @@ export default [
   },
   {
     files: ["crates/partly-server/dashboard/app.js"],
-    languageOptions: { globals: { createDropdown: "readonly", closeDropdown: "readonly" } },
+    languageOptions: { globals: { createDropdown: "readonly", closeDropdown: "readonly", resultTypes: "writable", createFlagEditor: "readonly", setupTypes: "readonly", typeSummary: "readonly", resultSummary: "readonly" } },
   },
   {
     files: ["**/*.ts"],

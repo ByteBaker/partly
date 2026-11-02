@@ -21,13 +21,13 @@ Python support and CI target regular CPython 3.14 only, using version-specific `
 
 The prebuilt Linux Node.js addon requires glibc 2.34+. Go consumers need cgo and a C compiler. Neither prebuilt package requires a Rust toolchain.
 
-The Rust E2E suite covers the API, SDKs, recovery, and dashboard. All 29 dashboard tests passed locally in Chromium, Firefox, and WebKit, including usage reporting, audits, modal confirmations, and served examples. Safari releases and physical mobile devices remain untested.
+The Rust E2E suite covers the API, SDKs, recovery, and dashboard. All 34 dashboard tests passed locally in Chromium, Firefox, and WebKit, including typed results, long names, usage reporting, audits, modal confirmations, and served examples. Safari releases and physical mobile devices remain untested.
 
 Earlier candidates passed Rust, Python, Go race, Node.js, packaging, and HTTPS smoke tests on macOS. Minimum-version checks covered Rust 1.89, Go 1.22.12, and Node.js 22.0.0. Linux checks ran under QEMU with compiler workarounds; Chromium and Go vet could not complete there. Native Linux CI must verify the current source and artifacts.
 
-OpenFeature source checks passed in all four languages for lifecycle, context precedence, hooks, typed errors and isolation. The macOS ARM64 package check also passed 37 native/OpenFeature contract and quickstart tests using an installed CPython 3.14 wheel built from its source archive, extracted Rust/Go packages, and an npm-installed tarball. These cover refresh, outages, revocation, and the runnable dashboard examples. Packages remain unpublished; native Linux CI must repeat the checks. See the [compatibility record](openfeature.md#coverage-and-limits); Rust's upstream limits remain explicit.
+OpenFeature source checks passed in all four languages for lifecycle, context precedence, hooks, typed results/errors, and isolation. The macOS ARM64 package check also passed 38 SDK contract, usage, and example tests using an installed CPython 3.14 wheel built from its source archive, extracted Rust/Go packages, and an npm-installed tarball. These cover typed getters and named-type metadata, rejected v2 refreshes, usage after wrong-type checks, outages, revocation, and both dashboard examples. Wheel and source metadata passed strict checks. Native Linux release CI must repeat these checks. Packages remain unpublished. See the [compatibility record](openfeature.md#coverage-and-limits); Rust's upstream limits remain explicit.
 
-This candidate also adds individual accounts and environment permissions. The development schema remains v1, with no migration from older POC layouts. Use a fresh database path for an incompatible older database; the server rejects it without modifying it. See [storage and recovery](../crates/partly-server/README.md#setup-and-storage).
+This candidate includes individual accounts, environment permissions, and named result types. The development schema remains v1, with no migration from older POC layouts. Use a fresh database path for an incompatible older database; the server rejects it without modifying it. Upgrade SDKs before assigning typed flags to applications. See [storage and recovery](../crates/partly-server/README.md#setup-and-storage) and [policy compatibility](typed-results.md#policy-compatibility).
 
 ## Build and verify
 

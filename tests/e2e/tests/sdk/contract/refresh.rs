@@ -91,7 +91,7 @@ pub(super) async fn bad_refresh(language: &str) -> Result {
         vec![b' '; 1024 * 1024 + 1],
     ];
     for (field, value) in [
-        ("schema_version", json!(2)),
+        ("schema_version", json!(3)),
         ("environment", json!("production")),
         ("application_id", json!("app_other")),
         ("unexpected", json!(true)),
@@ -106,6 +106,12 @@ pub(super) async fn bad_refresh(language: &str) -> Result {
     ] {
         let mut body = policy.clone();
         body[field] = value;
+        invalid.push(body.to_string().into_bytes());
+    }
+    for bad in [json!(true), json!(1.5), json!(9007199254740992_u64)] {
+        let mut body = policy.clone();
+        body["schema_version"] = json!(2);
+        body["flags"]["flag"] = json!({"mode":"typed","result_type":"integer","selected":1,"other":bad,"rollout":{"mode":"enabled"}});
         invalid.push(body.to_string().into_bytes());
     }
     let mut responses: Vec<_> = invalid
@@ -164,6 +170,61 @@ pub(super) async fn bad_refresh(language: &str) -> Result {
         server.requests.lock().unwrap().last(),
         Some(&("/api/policy".into(), Some("\"two\"".into())))
     );
+    let mut typed = changed;
+    typed["schema_version"] = json!(2);
+    typed["types"] = json!({"Settings":{"kind":"record","fields":{"label":"string"}}});
+    typed["flags"]["flag"] = json!({"mode":"typed","result_type":"Settings","selected":{"label":"kept"},"other":{"label":"other"},"rollout":{"mode":"enabled"}});
+    server.respond(Reply::policy(200, typed.to_string(), Some("\"three\"")));
+    driver.simple("refresh", json!({"updated":true})).await?;
+    for (field, bad) in [
+        ("types", json!({})),
+        (
+            "types",
+            json!({"Settings":{"kind":"record","fields":{"label":"MissingEnum"}}}),
+        ),
+        (
+            "flags",
+            json!({"flag":{"mode":"typed","result_type":"Settings","selected":{"label":"changed"},"other":{"label":false},"rollout":{"mode":"enabled"}}}),
+        ),
+        (
+            "flags",
+            json!({"flag":{"mode":"typed","result_type":"Settings","selected":{"label":"changed"},"other":{"label":"other"},"rollout":typed["flags"]["flag"]}}),
+        ),
+    ] {
+        let mut malformed = typed.clone();
+        malformed[field] = bad;
+        server.respond(Reply::policy(200, malformed.to_string(), Some("\"four\"")));
+        driver
+            .simple("refresh", json!({"error":"invalid_policy"}))
+            .await?;
+        assert_eq!(
+            server.requests.lock().unwrap().last(),
+            Some(&("/api/policy".into(), Some("\"three\"".into())))
+        );
+        assert_eq!(
+            driver
+                .call(
+                    "resolve",
+                    json!({"flag":"flag","kind":"object","context":{}})
+                )
+                .await?["value"],
+            json!({"label":"kept"})
+        );
+    }
+    server.respond(Reply::policy(304, vec![], Some("\"three\"")));
+    driver.simple("refresh", json!({"updated":false})).await?;
+    // A missing flag and wrong getter stay distinct even when context is also invalid.
+    for (flag, expected) in [("missing", "flag_not_found"), ("flag", "result_type")] {
+        assert_eq!(
+            driver
+                .call(
+                    "resolve",
+                    json!({"flag":flag,"kind":"integer","context":{"extra":[]}})
+                )
+                .await?["error"],
+            expected
+        );
+    }
     assert!(
         server
             .requests

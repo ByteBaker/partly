@@ -3,7 +3,7 @@
 
 from typing import Self, final
 
-__all__ = ["Snapshot", "MAX_POLICY_BYTES", "PartlyError", "FlagNotFoundError", "InvalidContextError", "ContextTypeError", "InvalidPolicyError"]
+__all__ = ["Snapshot", "MAX_POLICY_BYTES", "PartlyError", "FlagNotFoundError", "InvalidContextError", "ContextTypeError", "InvalidPolicyError", "ResultTypeError", "NamedTypeError"]
 
 MAX_POLICY_BYTES: int
 
@@ -17,6 +17,11 @@ class ContextTypeError(InvalidContextError):
     expected_type: str
     actual_type: str
 class InvalidPolicyError(PartlyError): ...
+class ResultTypeError(PartlyError):
+    flag_key: str
+    expected_type: str
+    actual_type: str
+class NamedTypeError(ResultTypeError): ...
 
 @final
 class Snapshot:
@@ -29,3 +34,4 @@ class Snapshot:
     @property
     def application_id(self) -> str: ...
     def evaluate(self, key: str, context: object) -> bool: ...
+    def resolve(self, key: str, context: object, kind: str, expected_type: str | None) -> str: ...

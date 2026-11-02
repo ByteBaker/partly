@@ -138,6 +138,14 @@ async fn stopped_backup_restores_flags_keys_and_admin() -> Result {
             json!({"mode":"percentage","percentage":25}),
         )
         .await?;
+    admin
+        .post(
+            "/api/environments/development/types",
+            json!({"name":"Layout","definition":{"kind":"enum","values":["wide","compact"]}}),
+            201,
+        )
+        .await?;
+    admin.flag("development", "layout", json!({"mode":"typed","result_type":"Layout","selected":"wide","other":"compact","rollout":{"mode":"enabled"}})).await?;
     server.stop().await?;
     let backup = server.directory.path().join("backup.db");
     fs::copy(&server.db, &backup)?;
@@ -176,6 +184,12 @@ async fn stopped_backup_restores_flags_keys_and_admin() -> Result {
         200,
     )
     .await?;
+    assert_eq!(policy["schema_version"], 2);
+    assert_eq!(
+        policy["types"]["Layout"]["values"],
+        json!(["wide", "compact"])
+    );
+    assert_eq!(policy["flags"]["layout"]["selected"], "wide");
     assert_eq!(policy["flags"]["new_checkout"]["percentage"], 25);
     assert_eq!(
         server

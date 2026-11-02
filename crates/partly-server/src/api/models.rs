@@ -103,3 +103,10 @@ pub struct Audits {
     #[schema(max_items = 100)]
     pub audits: Vec<AuditEntry>,
 }
+
+#[derive(Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NamedTypeInput {
+    pub name: String,
+    pub definition: partly_core::TypeDefinition,
+}

@@ -11,7 +11,8 @@ mod models;
 pub mod openfeature;
 mod policy;
 mod usage;
+mod values;
 
 pub use error::{Error, UrlParseError};
 pub use models::{Client, ClientBuilder};
-pub use partly_core::{Context, Decision, EvaluationError};
+pub use partly_core::{Context, Decision, EvaluationError, Resolution};

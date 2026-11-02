@@ -45,6 +45,8 @@ func resolutionError(err error) of.ProviderResolutionDetail {
 		value = of.NewProviderNotReadyResolutionError("Await Partly Init before registering the provider")
 	case errors.Is(err, partly.ErrFlagNotFound):
 		value = of.NewFlagNotFoundResolutionError("Flag is not defined")
+	case errors.Is(err, partly.ErrResultType):
+		value = of.NewTypeMismatchResolutionError("Requested result type does not match the flag")
 	case errors.Is(err, partly.ErrInvalidContext):
 		value = of.NewInvalidContextResolutionError("Context does not satisfy the flag requirements")
 	default:
@@ -67,9 +69,9 @@ func (p *Provider) check(flag string) error {
 	return nil
 }
 
-func (p *Provider) BooleanEvaluation(_ context.Context, flag string, fallback bool, values of.FlattenedContext) of.BoolResolutionDetail {
+func (p *Provider) resolve(flag, kind string, values of.FlattenedContext) (any, of.ProviderResolutionDetail) {
 	if err := p.check(flag); err != nil {
-		return of.BoolResolutionDetail{Value: fallback, ProviderResolutionDetail: resolutionError(err)}
+		return nil, resolutionError(err)
 	}
 	attributes := make(map[string]any, len(values))
 	for key, value := range values {
@@ -81,29 +83,49 @@ func (p *Provider) BooleanEvaluation(_ context.Context, flag string, fallback bo
 	if key, exists := values[of.TargetingKey]; exists {
 		attributes["id"] = key
 	}
-	decision, err := p.client.Evaluate(flag, attributes)
+	result, err := p.client.Resolve(flag, attributes, kind, "")
 	if err != nil {
-		return of.BoolResolutionDetail{Value: fallback, ProviderResolutionDetail: resolutionError(err)}
+		return nil, resolutionError(err)
 	}
-	return of.BoolResolutionDetail{Value: decision == partly.Enabled, ProviderResolutionDetail: of.ProviderResolutionDetail{Reason: of.CachedReason, Variant: string(decision)}}
+	details := of.ProviderResolutionDetail{Reason: of.CachedReason, Variant: result.Variant}
+	if result.NamedType != "" {
+		details.FlagMetadata = of.FlagMetadata{"partly.result_type": result.NamedType}
+	}
+	return result.Value, details
 }
 
-func (p *Provider) unsupported(flag string) of.ProviderResolutionDetail {
-	if err := p.check(flag); err != nil {
-		return resolutionError(err)
+func (p *Provider) BooleanEvaluation(_ context.Context, flag string, fallback bool, values of.FlattenedContext) of.BoolResolutionDetail {
+	value, details := p.resolve(flag, "boolean", values)
+	if details.Reason == of.ErrorReason {
+		return of.BoolResolutionDetail{Value: fallback, ProviderResolutionDetail: details}
 	}
-	return of.ProviderResolutionDetail{ResolutionError: of.NewTypeMismatchResolutionError("Partly flags are Boolean"), Reason: of.ErrorReason}
+	return of.BoolResolutionDetail{Value: value.(bool), ProviderResolutionDetail: details}
 }
-
-func (p *Provider) StringEvaluation(_ context.Context, flag string, fallback string, _ of.FlattenedContext) of.StringResolutionDetail {
-	return of.StringResolutionDetail{Value: fallback, ProviderResolutionDetail: p.unsupported(flag)}
+func (p *Provider) StringEvaluation(_ context.Context, flag string, fallback string, values of.FlattenedContext) of.StringResolutionDetail {
+	value, details := p.resolve(flag, "string", values)
+	if details.Reason == of.ErrorReason {
+		return of.StringResolutionDetail{Value: fallback, ProviderResolutionDetail: details}
+	}
+	return of.StringResolutionDetail{Value: value.(string), ProviderResolutionDetail: details}
 }
-func (p *Provider) FloatEvaluation(_ context.Context, flag string, fallback float64, _ of.FlattenedContext) of.FloatResolutionDetail {
-	return of.FloatResolutionDetail{Value: fallback, ProviderResolutionDetail: p.unsupported(flag)}
+func (p *Provider) FloatEvaluation(_ context.Context, flag string, fallback float64, values of.FlattenedContext) of.FloatResolutionDetail {
+	value, details := p.resolve(flag, "float", values)
+	if details.Reason == of.ErrorReason {
+		return of.FloatResolutionDetail{Value: fallback, ProviderResolutionDetail: details}
+	}
+	return of.FloatResolutionDetail{Value: value.(float64), ProviderResolutionDetail: details}
 }
-func (p *Provider) IntEvaluation(_ context.Context, flag string, fallback int64, _ of.FlattenedContext) of.IntResolutionDetail {
-	return of.IntResolutionDetail{Value: fallback, ProviderResolutionDetail: p.unsupported(flag)}
+func (p *Provider) IntEvaluation(_ context.Context, flag string, fallback int64, values of.FlattenedContext) of.IntResolutionDetail {
+	value, details := p.resolve(flag, "integer", values)
+	if details.Reason == of.ErrorReason {
+		return of.IntResolutionDetail{Value: fallback, ProviderResolutionDetail: details}
+	}
+	return of.IntResolutionDetail{Value: value.(int64), ProviderResolutionDetail: details}
 }
-func (p *Provider) ObjectEvaluation(_ context.Context, flag string, fallback any, _ of.FlattenedContext) of.InterfaceResolutionDetail {
-	return of.InterfaceResolutionDetail{Value: fallback, ProviderResolutionDetail: p.unsupported(flag)}
+func (p *Provider) ObjectEvaluation(_ context.Context, flag string, fallback any, values of.FlattenedContext) of.InterfaceResolutionDetail {
+	value, details := p.resolve(flag, "object", values)
+	if details.Reason == of.ErrorReason {
+		return of.InterfaceResolutionDetail{Value: fallback, ProviderResolutionDetail: details}
+	}
+	return of.InterfaceResolutionDetail{Value: value, ProviderResolutionDetail: details}
 }

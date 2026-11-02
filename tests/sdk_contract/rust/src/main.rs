@@ -8,6 +8,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 fn error_response(error: Error) -> Value {
     let code = match error {
+        Error::Evaluation(EvaluationError::ResultType { .. }) => "result_type",
+        Error::Evaluation(EvaluationError::NamedType { .. }) => "named_type",
         Error::Evaluation(EvaluationError::FlagNotFound(_)) => "flag_not_found",
         Error::Evaluation(EvaluationError::InvalidContext { .. }) => "invalid_context",
         Error::Evaluation(EvaluationError::ContextType {
@@ -65,6 +67,16 @@ async fn execute(client: &mut Option<Client>, command: Value) -> Result<Value, E
                 Decision::Enabled => "enabled",
                 Decision::Disabled => "disabled",
             }}));
+        }
+        "resolve" => {
+            let context = serde_json::from_value(command["context"].clone()).unwrap();
+            return Ok(serde_json::to_value(client.resolve(
+                command["flag"].as_str().unwrap(),
+                &context,
+                command["kind"].as_str().unwrap(),
+                command["expected_type"].as_str(),
+            )?)
+            .unwrap());
         }
         "refresh" => return Ok(json!({"updated": client.refresh().await?})),
         "close" => client.close().await?,

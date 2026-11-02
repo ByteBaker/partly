@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 api.set_provider(PartlyProvider::new(client.clone())).await;
                 json!({"ok": true})
             }
-            "evaluate" => {
+            "evaluate" | "resolve" => {
                 let mut context = EvaluationContext::default();
                 for (key, value) in command["context"].as_object().unwrap() {
                     if key == "targetingKey" {
@@ -50,6 +50,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         _ => Field::new_struct(()),
                     };
                     context = context.with_custom_field(key, field);
+                }
+                if command["op"] == "resolve" {
+                    let client = api.create_client();
+                    let key = command["flag"].as_str().unwrap();
+                    let result = match command["kind"].as_str().unwrap() {
+                        "boolean" => client
+                            .get_bool_details(key, Some(&context), None)
+                            .await
+                            .map(|v| v.into_value()),
+                        "string" => client
+                            .get_string_details(key, Some(&context), None)
+                            .await
+                            .map(|v| v.into_value()),
+                        "integer" => client
+                            .get_int_details(key, Some(&context), None)
+                            .await
+                            .map(|v| v.into_value()),
+                        "float" => client
+                            .get_float_details(key, Some(&context), None)
+                            .await
+                            .map(|v| v.into_value()),
+                        "object" => client
+                            .get_struct_details::<open_feature::StructValue>(
+                                key,
+                                Some(&context),
+                                None,
+                            )
+                            .await
+                            .map(|v| v.into_value()),
+                        _ => panic!("Unknown kind"),
+                    };
+                    let result = match result {
+                        Ok(details) => {
+                            json!({"value": of_value(details.value), "error":"", "variant":details.variant, "named_type": details.flag_metadata.values.get("partly.result_type").map(|v| match v { open_feature::FlagMetadataValue::String(s) => s.as_str(), _ => panic!("Expected type name") })})
+                        }
+                        Err(error) => json!({"error":error.code.to_string()}),
+                    };
+                    println!("{result}");
+                    io::stdout().flush()?;
+                    continue;
                 }
                 match api
                     .create_client()
@@ -81,4 +121,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client.close().await?;
     }
     Ok(())
+}
+
+fn of_value(value: open_feature::Value) -> Value {
+    match value {
+        open_feature::Value::Bool(v) => json!(v),
+        open_feature::Value::Int(v) => json!(v),
+        open_feature::Value::Float(v) => json!(v),
+        open_feature::Value::String(v) => json!(v),
+        open_feature::Value::Struct(v) => Value::Object(
+            v.fields
+                .into_iter()
+                .map(|(k, v)| (k, of_value(v)))
+                .collect(),
+        ),
+        open_feature::Value::Array(v) => Value::Array(v.into_iter().map(of_value).collect()),
+    }
 }

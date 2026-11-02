@@ -15,6 +15,8 @@ create_exception!(_native, FlagNotFoundError, PartlyError);
 create_exception!(_native, InvalidContextError, PartlyError);
 create_exception!(_native, ContextTypeError, InvalidContextError);
 create_exception!(_native, InvalidPolicyError, PartlyError);
+create_exception!(_native, ResultTypeError, PartlyError);
+create_exception!(_native, NamedTypeError, ResultTypeError);
 
 #[pyclass(frozen)]
 struct Snapshot {
@@ -23,6 +25,32 @@ struct Snapshot {
 
 fn evaluation_error(py: Python<'_>, error: EvaluationError) -> PyErr {
     match &error {
+        EvaluationError::ResultType {
+            flag_key,
+            expected_type,
+            actual_type,
+        }
+        | EvaluationError::NamedType {
+            flag_key,
+            expected_type,
+            actual_type,
+        } => {
+            let exception = if matches!(error, EvaluationError::NamedType { .. }) {
+                NamedTypeError::new_err(error.to_string())
+            } else {
+                ResultTypeError::new_err(error.to_string())
+            };
+            for (name, detail) in [
+                ("flag_key", flag_key),
+                ("expected_type", expected_type),
+                ("actual_type", actual_type),
+            ] {
+                if let Err(error) = exception.value(py).setattr(name, detail) {
+                    return error;
+                }
+            }
+            exception
+        }
         EvaluationError::FlagNotFound(_) => FlagNotFoundError::new_err(error.to_string()),
         EvaluationError::InvalidContext { .. } => InvalidContextError::new_err(error.to_string()),
         EvaluationError::ContextType {
@@ -139,6 +167,29 @@ impl Snapshot {
         &self.policy.environment
     }
 
+    fn resolve(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        context: &Bound<'_, PyAny>,
+        kind: &str,
+        expected_type: Option<&str>,
+    ) -> PyResult<String> {
+        if !self.policy.flags.contains_key(key) {
+            return Err(evaluation_error(
+                py,
+                EvaluationError::FlagNotFound(key.into()),
+            ));
+        }
+        let context = context_values(key, context)?;
+        let value = self
+            .policy
+            .resolve(key, &context, kind, expected_type)
+            .map_err(|error| evaluation_error(py, error))?;
+        serde_json::to_string(&value)
+            .map_err(|_| PartlyError::new_err("Cannot encode evaluated value"))
+    }
+
     fn evaluate(&self, py: Python<'_>, key: &str, context: &Bound<'_, PyAny>) -> PyResult<bool> {
         if !self.policy.flags.contains_key(key) {
             return Err(evaluation_error(
@@ -157,6 +208,8 @@ impl Snapshot {
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Snapshot>()?;
+    m.add("ResultTypeError", m.py().get_type::<ResultTypeError>())?;
+    m.add("NamedTypeError", m.py().get_type::<NamedTypeError>())?;
     m.add("MAX_POLICY_BYTES", MAX_POLICY_BYTES)?;
     m.add("PartlyError", m.py().get_type::<PartlyError>())?;
     m.add("FlagNotFoundError", m.py().get_type::<FlagNotFoundError>())?;

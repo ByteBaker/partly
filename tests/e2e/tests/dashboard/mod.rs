@@ -13,5 +13,7 @@ mod dropdowns;
 mod forms;
 mod layout;
 mod navigation;
+mod type_deletion;
+mod types;
 mod usage;
 mod users;

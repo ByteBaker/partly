@@ -79,9 +79,9 @@ The initial administrator creates individual accounts in **Users**. Passwords ar
 
 | Access | Viewer | Editor | Manager | Instance administrator |
 | --- | --- | --- | --- | --- |
-| Read flags, app selections, masked key identifiers, and audits | ✅ | ✅ | ✅ | ✅ |
+| Read flags, types, app selections, masked key identifiers, and audits | ✅ | ✅ | ✅ | ✅ |
 | Create, change, and delete flags | ❌ | ✅ | ✅ | ✅ |
-| Manage apps, assignments, and keys; read key secrets | ❌ | ❌ | ✅ | ✅ |
+| Manage types, apps, assignments, and keys; read key secrets | ❌ | ❌ | ✅ | ✅ |
 | Manage users and permissions; access every environment | ❌ | ❌ | ❌ | ✅ |
 
 Roles apply only to assigned environments. Accounts without assignments can sign in but cannot read environment data. Changes to permissions, passwords, or account status invalidate all of that account's sessions. Existing API Keys are application credentials: disabling their creator does not revoke those keys. Revoke them separately when needed.
@@ -138,10 +138,11 @@ flowchart LR
 
 Use a current browser; dropdowns require the Popover API. Sign in at `/`. The environment selector reloads the page with the environment in the URL, such as `/environments/production/flags`.
 
-- **Feature flags:** create and edit flags in the current environment. Choose everyone, percentage, custom rules, or nobody. Unsaved changes trigger navigation warnings; saving one flag preserves other drafts. Existing edits and deletions always list affected apps (including an empty list) and require the exact `environment/flag_name`. Concurrent changes invalidate the confirmation.
+- **Feature flags:** create and edit flags in the current environment. Choose a result type and an everyone, percentage, custom-rule, or nobody rollout. Unsaved changes trigger navigation warnings; saving one flag preserves other drafts. Existing edits and deletions always list affected apps (including an empty list) and require the exact `environment/flag_name`. Concurrent changes invalidate the confirmation.
 - **Apps & Keys:** create an app, select its flags, and copy its permanent application ID. A Default API Key is generated automatically. Create extra keys for rotation; rename, copy, reveal, or revoke active keys. Revoked keys remain in history with a partial identifier and dates, but no copy/reveal. Apps are separate in each environment; newly created flags are not automatically assigned.
+- **Types:** define named enums and flat JSON records for flag results. Names and definitions stay fixed. Managers can create types and delete unused ones; other environment members can inspect them.
 - **Audits:** browse readable state changes, affected applications, and action/application filters. Updates show before → after; creation shows the initial state. Entries and their changes are saved in one transaction. Each change identifies the signed-in account. User and permission changes are recorded too.
-- **Docs:** choose Python, Rust, Go, or Node.js. Copy the tested quickstart and replace its URL, environment, application ID, and API Key constants. Each example initializes once, reuses the client for local evaluation, handles errors, and closes at shutdown.
+- **Docs:** choose Python, Rust, Go, or Node.js, then Quickstart or Typed results. Copy the tested example and replace its URL, environment, application ID, and API Key constants. Each initializes once, reuses the client for local evaluation, handles errors, and closes at shutdown.
 - **Users** (administrators only): create accounts, set environment roles, reset passwords, or disable access. Changes sign the affected user out. The initial administrator stays enabled for offline recovery.
 
 API Keys read policies and report usage; they cannot edit flags or accounts. Masking hides keys visually; administrators and environment managers receive their values; other users receive only masked identifiers. When a policy or usage response confirms revocation, the SDK clears its policy and stops evaluation and background work. Disconnected SDKs cannot discover revocation until they communicate again. Ordinary network and server failures preserve the accepted policy.
@@ -150,7 +151,7 @@ API Keys read policies and report usage; they cannot edit flags or accounts. Mas
 
 ## Usage reporting
 
-The SDK remembers distinct known flag checks, including disabled decisions and checks with invalid context. During evaluation it schedules a background report when 128 names are pending or 60 seconds have elapsed. It sends up to 128 names per request; repeated checks of the same flag use one entry. Evaluation never waits for that request. Failures retain pending names and wait at least 60 seconds before another evaluation can retry. Idle clients do not send; shutdown cancels reports and discards pending names.
+The SDK remembers distinct known flag checks, including disabled decisions and checks with invalid context or the wrong result type. During evaluation it schedules a background report when 128 names are pending or 60 seconds have elapsed. It sends up to 128 names per request; repeated checks of the same flag use one entry. Evaluation never waits for that request. Failures retain pending names and wait at least 60 seconds before another evaluation can retry. Idle clients do not send; shutdown cancels reports and discards pending names.
 
 The server stores one row per API Key and flag, using server receipt time. Each batch updates only the distinct flags still assigned to that key's app. Names removed since the SDK's last refresh are ignored. Policy contents, ETags, revisions, and audits are unaffected. Usage survives application edits and key revocation. Deleting a flag removes its usage; the key's displayed time is the maximum of its remaining flag rows.
 
@@ -178,6 +179,12 @@ Omit `--output` to print JSON to standard output. Import the document into your 
 
 Dashboard writes use a session cookie and `X-Partly-Request: dashboard`. API Keys use bearer authentication with `X-Partly-Environment` and `X-Partly-Application`; they can only download policy and report usage. Confirmed revocation is a terminal `401` with `code: "key_revoked"` and `X-Partly-Error: key_revoked`. Ordinary failures preserve the SDK's accepted policy.
 
-Contract tests compare the generated document with the checked-in file and validate real responses for every documented operation. They cover nullable/masked keys, typed rules, policy caching, revocation, and empty `204`/`304` bodies. Run `cargo test --locked -p partly-server`, then build the server and run `cargo test --locked -p partly-e2e --test e2e api::openapi::`. These run in CI's **Build and test** tier.
+Contract tests compare the generated document with the checked-in file and validate real responses for every documented operation. They cover nullable/masked keys, typed results and rules, named types, policy caching, revocation, and empty `204`/`304` bodies. Run `cargo test --locked -p partly-server`, then build the server and run `cargo test --locked -p partly-e2e --test e2e api::openapi::`. These run in CI's **Build and test** tier.
 
 Schemas describe wire structure. Validation that depends on stored state or runtime behavior—permissions, unique names, valid Rust regex, impact tokens, and policy size—still runs on the server. Axum extraction failures may be plain text; application errors are JSON. Both are documented.
+
+## Typed flag results
+
+Use **Types** to define immutable enums and flat JSON records, then choose a result type when creating a flag. Both selected and other values must match it. Types are environment-scoped; Managers create/delete them, and Editors may use existing types. Referenced types cannot be deleted, and deleted names remain reserved. Type and flag writes share the existing transactional audits.
+
+[Typed results](../../docs/typed-results.md) describes bounds, OpenFeature getters, native enhancements, and v1/v2 policy compatibility. Upgrade SDKs before assigning typed flags. The type table is part of development schema v1; older incompatible development databases are preserved and rejected, not migrated or reset.

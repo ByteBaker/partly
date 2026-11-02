@@ -76,6 +76,7 @@ impl Store {
                     "SELECT id, environment, actor, action, item_type, item_id, item_name, \
             application_id, details, created_at FROM audits",
                     "SELECT environment, key, config FROM flags",
+                    "SELECT environment, name, definition, deleted FROM result_types",
                     "SELECT api_key_id, application_id, environment, flag_key, last_used_at FROM flag_usage",
                 ] {
                     connection.prepare(query).map_err(|_| {

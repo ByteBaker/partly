@@ -31,3 +31,7 @@ Paste the key when `read` waits, then press Enter. Only this diagnostic uses env
 ## License
 
 [Apache-2.0](LICENSE). Preserve license and attribution notices when redistributing.
+
+## Typed result example
+
+[typed_results.py](typed_results.py) uses OpenFeature's object getter with the same initialize-once lifecycle. Create a `Checkout` record type with one `layout: string` field, then create and assign `checkout_settings`, with `{"layout":"wide"}` selected and `{"layout":"compact"}` otherwise. Set the example's connection constants before running it. [Value types and optional Partly SDK enhancements](../../docs/typed-results.md).

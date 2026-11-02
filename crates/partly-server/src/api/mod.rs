@@ -40,6 +40,11 @@ pub fn router() -> (Router<App>, OpenApi) {
         ))
         .routes(routes!(handlers::flags::flag_impact))
         .routes(routes!(
+            handlers::types::types,
+            handlers::types::create_type
+        ))
+        .routes(routes!(handlers::types::delete_type))
+        .routes(routes!(
             handlers::applications::applications,
             handlers::applications::create_application
         ))
