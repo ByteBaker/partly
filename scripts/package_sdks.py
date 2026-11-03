@@ -1,7 +1,7 @@
 # Copyright 2026 ByteBaker
 # SPDX-License-Identifier: Elastic-2.0
 
-"""Build standalone Rust crates and host-platform Go/Node archives (Python 3.14)."""
+"""Build the Rust SDK crate and host-platform Go/Node archives (Python 3.14)."""
 
 import argparse
 import json
@@ -25,14 +25,17 @@ def build(output: Path, *, allow_dirty: bool = False) -> None:
     if (go_os, go_arch) not in {("darwin", "arm64"), ("linux", "amd64")}:
         raise ValueError("Release packages support macOS ARM64 and Linux x86_64")
     platform = f"{go_os}-{go_arch}"
-    # Cargo caches its temporary registry by path/version; unpublished alpha contents can change.
+    # Verify a fresh archive so a previous unpublished alpha cannot mask missing files.
     with tempfile.TemporaryDirectory(prefix="partly-crates-") as temporary:
         subprocess.run(["cargo", "package", "--locked", "--all-features", "--target-dir", temporary,
-                        "-p", "partly-core", "-p", "partly-rust",
+                        "-p", "partly-rust",
                         *(["--allow-dirty"] if allow_dirty else [])],
                        cwd=ROOT, check=True)
-        for name in ("partly-core", "partly-rust"):
-            shutil.copy2(Path(temporary) / "package" / f"{name}-{version}.crate", output)
+        package_root = Path(temporary) / "package" / f"partly-rust-{version}"
+        subprocess.run(["cargo", "test", "--locked", "--offline", "--no-default-features", "--lib",
+                        "--manifest-path", str(package_root / "Cargo.toml"),
+                        "--target-dir", temporary], cwd=package_root, check=True)
+        shutil.copy2(package_root.parent / f"partly-rust-{version}.crate", output)
 
     subprocess.run(["sh", str(ROOT / "sdk/go/build.sh")], cwd=ROOT, check=True)
     go_root = ROOT / "sdk/go"

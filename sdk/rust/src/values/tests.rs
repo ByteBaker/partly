@@ -1,8 +1,8 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::evaluator::Policy;
 use crate::{Client, Context, Error, EvaluationError, models::Accepted};
-use partly_core::Policy;
 use serde_json::json;
 use std::sync::Arc;
 

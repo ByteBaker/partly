@@ -13,7 +13,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
-use partly_core::TypeDefinition;
+use partly::evaluator::TypeDefinition;
 use std::collections::BTreeMap;
 
 /// List named result types in this environment.

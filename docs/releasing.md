@@ -99,7 +99,9 @@ PARTLY_SDK_PACKAGES="$PWD/target/sdk-packages" cargo test --locked -p partly-e2e
 PARTLY_SDK_PACKAGES="$PWD/target/sdk-packages" cargo test --locked -p partly-e2e --test e2e sdk::usage:: -- --test-threads=4
 ```
 
-The output contains two Rust `.crate` files, a Go archive with its static library and optional provider module, and a Node npm tarball with its native extension and provider. Rust packaging verifies all features in a fresh temporary registry to avoid reusing an older unpublished alpha at the same version. Go and Node archives target the build machine; build both macOS ARM64 and Linux x86_64. Consumers do not need Rust for those prebuilt archives. During development only, `--allow-dirty` tests uncommitted packaging changes. Publishing to registries remains a separate step.
+The output contains one `partly-rust` `.crate` file with the evaluator included, a Go archive with its static library and optional provider module, and a Node npm tarball with its native extension and provider. Rust packaging verifies the extracted crate with all features enabled, then runs its evaluator tests with default features disabled. Both checks use a fresh temporary build directory.
+
+Go and Node archives target the build machine; build both macOS ARM64 and Linux x86_64. Consumers do not need Rust for those prebuilt archives. During development only, `--allow-dirty` tests uncommitted packaging changes. Publishing to registries remains a separate step.
 
 ### Benchmarks
 

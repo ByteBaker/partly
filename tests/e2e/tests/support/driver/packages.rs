@@ -123,10 +123,7 @@ pub(super) async fn packaged(
             command
         }
         "rust" => {
-            let core = unpack(packages, directory, "partly-core-", ".crate")?;
             let sdk = unpack(packages, directory, "partly-rust-", ".crate")?;
-            assert!(fs::read_to_string(core.join("LICENSE"))?.contains("Apache License"));
-            assert!(fs::metadata(core.join("NOTICE"))?.len() > 0);
             notices(&sdk, false)?;
             let app = directory.join("rust");
             copy_directory(&drivers.join("rust"), &app)?;
@@ -144,10 +141,7 @@ pub(super) async fn packaged(
                 "path = \"../../../sdk/rust\"",
                 &format!("path = {}", json!(sdk)),
             );
-            content.push_str(&format!(
-                "\n[workspace]\n\n[patch.crates-io]\npartly-core = {{ path = {} }}\n",
-                json!(core)
-            ));
+            content.push_str("\n[workspace]\n");
             fs::write(manifest, content)?;
             fs::copy(sdk.join("Cargo.lock"), app.join("Cargo.lock"))?;
             let target = root().join("target/e2e-packaged-rust");

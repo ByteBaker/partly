@@ -3,7 +3,7 @@
 
 use super::{Store, audits::audit};
 use crate::ApiError;
-use partly_core::{Flag, TypeDefinition, validate_types};
+use partly::evaluator::{Flag, TypeDefinition, validate_types};
 use rusqlite::{Connection, params};
 use serde_json::json;
 use std::collections::BTreeMap;

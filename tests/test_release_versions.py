@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_release_versions_match():
     workspace = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]
     version = workspace["package"]["version"]
-    assert workspace["dependencies"]["partly-core"]["version"] == f"={version}"
+    assert workspace["dependencies"]["partly"]["version"] == f"={version}"
     lock = tomllib.loads((ROOT / "Cargo.lock").read_text())["package"]
     locked = {(entry["name"], entry["version"]) for entry in lock}
     for directory in ("crates", "sdk"):

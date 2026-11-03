@@ -3,7 +3,7 @@
 
 use super::{Store, audits::audit, models::SdkKey, secret};
 use crate::ApiError;
-use partly_core::Policy;
+use partly::evaluator::Policy;
 use rand::{
     distributions::{Alphanumeric, DistString},
     rngs::OsRng,

@@ -1,8 +1,8 @@
-# Partly core
+# Evaluation rules
 
-Shared policy validation and flag evaluation for the server and all language SDKs. No HTTP, storage, or Python dependencies.
+Shared policy validation and flag evaluation live in `sdk/rust/src/evaluator`, exposed as `partly::evaluator`. The server and all language bindings depend on the Rust SDK with default features disabled. This compiles the same evaluator without HTTP, storage, or language-binding dependencies.
 
-`src/models.rs` defines the policy and error types. `policy.rs` validates snapshots, `rules.rs` handles conditions and regexes, `numbers.rs` preserves numeric precision, and `evaluation.rs` makes decisions and computes percentage buckets. `values/` separates result models, schema validation, and typed resolution. Public types and functions remain exported from `lib.rs`; unit tests live in `tests.rs`.
+Within that module, `models.rs` defines policy and error types. `policy.rs` validates snapshots, `rules.rs` handles conditions and regexes, `numbers.rs` preserves numeric precision, and `evaluation.rs` makes decisions and computes percentage buckets. `values/` separates result models, schema validation, and typed resolution. Public types and functions are exported from `mod.rs`; unit tests live in `tests.rs`.
 
 ## Policy format
 
@@ -88,13 +88,13 @@ Fixed vectors:
 Percentages describe hash buckets, not exact user counts. Small samples may differ. No user list is stored.
 
 ```sh
-cargo test -p partly-core
+cargo test --locked -p partly-rust --no-default-features --lib
 ```
 
 The optional `openapi` feature generates schemas for the control plane. It is disabled by default; SDK-only builds do not need Utoipa.
 
 ## License
 
-[Apache-2.0](LICENSE), independent of the server's ELv2 license. Preserve the license and attribution notices when redistributing.
+[Apache-2.0](../sdk/rust/LICENSE), independent of the server's ELv2 license. Preserve the license and attribution notices when redistributing.
 
 Policy `application_id` identifies the selected application. SDKs verify it and the environment against their required builder settings on every full download, including initialization.

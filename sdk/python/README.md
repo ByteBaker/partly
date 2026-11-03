@@ -100,7 +100,7 @@ decision = client.evaluate("new_checkout", context=context)
 - Strings are case-sensitive. Types are never converted: `"18"` is not a number, and `True` is not `1`. Numeric `18` equals `18.0`.
 - Integers must fit between −2^63 and 2^64−1; floats must be finite. Nulls, lists, nested dictionaries, and other objects are rejected. Use integers when exact values matter.
 
-Dashboard rules match all conditions within a group and any group within a flag. A match applies the configured enable/disable action; a non-match gets the opposite decision. See [operators and matching rules](https://github.com/ByteBaker/partly/blob/main/crates/partly-core/README.md#custom-rules).
+Dashboard rules match all conditions within a group and any group within a flag. A match applies the configured enable/disable action; a non-match gets the opposite decision. See [operators and matching rules](https://github.com/ByteBaker/partly/blob/main/docs/evaluation.md#custom-rules).
 
 `ContextTypeError` provides `flag_key`, `k`, `op`, `expected_type`, and `actual_type`, without context values. Type names include `number`, `string`, and `boolean`. `op` is `None` for percentage IDs or unsupported extra fields. Catching `InvalidContextError` also catches this subclass.
 

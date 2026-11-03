@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{Resolution, TypeDefinition, validation::kind};
-use crate::{Context, EvaluationError, Flag, Policy};
+use crate::evaluator::{Context, EvaluationError, Flag, Policy};
 use serde_json::{Number, Value};
 
 impl Policy {

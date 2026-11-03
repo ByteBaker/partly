@@ -22,7 +22,12 @@ impl Store {
             .ok_or_else(|| ApiError::conflict("Complete setup first"))?
             .transaction()?;
         let (id, _) = Self::authorize_key(&tx, key, env, app)?;
-        if input.flags.len() > 128 || input.flags.iter().any(|key| !partly_core::valid_key(key)) {
+        if input.flags.len() > 128
+            || input
+                .flags
+                .iter()
+                .any(|key| !partly::evaluator::valid_key(key))
+        {
             return Err(ApiError::bad("Supply at most 128 valid flag names"));
         }
         input.flags.sort_unstable();

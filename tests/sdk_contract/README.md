@@ -23,7 +23,7 @@ The default server is `target/debug/partly`; `PARTLY_BINARY` can select an absol
 
 Python uses the installed wheel. Rust builds against `sdk/rust`; Go uses a local module replacement for `sdk/go`; Node.js loads the package entry from `sdk/node`. The fixture builds the Go static library and Node native extension first. Go builds use `-a` because its build cache does not track changes to the Rust archive.
 
-To verify release packages, set `PARTLY_SDK_PACKAGES` to the output of `scripts/package_sdks.py`. The same contracts then run against extracted crates, a standalone Go archive, and an npm-installed Node tarball in temporary application directories. Missing archives or native libraries fail normally.
+To verify release packages, set `PARTLY_SDK_PACKAGES` to the output of `scripts/package_sdks.py`. The same contracts then run against the extracted Rust crate, a standalone Go archive, and an npm-installed Node tarball in temporary application directories. Missing archives or native libraries fail normally.
 
 ## What it checks
 
@@ -42,7 +42,7 @@ The existing SDK unit tests continue to cover detailed validation and concurrenc
 
 `cargo test --locked -p partly-e2e --test e2e openfeature` exercises the official OpenFeature SDKs against the real server, including changed/unchanged refresh, local evaluation during an outage, and confirmed revocation. All four languages use JSON-line drivers. Rust returns errors through `Result`; the other official SDKs return caller defaults with error details.
 
-The Go OpenFeature driver has its own Go 1.26+ module so it does not raise the native SDK's Go 1.22 minimum. Provider unit tests also cover typed getters, context precedence, hooks, lifecycle, and isolation. With `PARTLY_SDK_PACKAGES` set, the same tests use extracted release crates and Go modules, an npm-installed tarball, and an installed Python wheel. An editable Python install fails this mode. Release CI also runs the dashboard quickstarts against these packages. See the [OpenFeature evidence and limits](../../docs/openfeature.md#coverage-and-limits).
+The Go OpenFeature driver has its own Go 1.26+ module so it does not raise the native SDK's Go 1.22 minimum. Provider unit tests also cover typed getters, context precedence, hooks, lifecycle, and isolation. With `PARTLY_SDK_PACKAGES` set, the same tests use the extracted Rust release crate and Go modules, an npm-installed tarball, and an installed Python wheel. An editable Python install fails this mode. Release CI also runs the dashboard quickstarts against these packages. See the [OpenFeature evidence and limits](../../docs/openfeature.md#coverage-and-limits).
 
 ## Driver contract
 

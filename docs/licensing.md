@@ -7,9 +7,9 @@ Partly's control plane and dashboard are **source-available under the Elastic Li
 | Scope | License |
 | --- | --- |
 | Control plane, dashboard, and other project files unless listed below | [Elastic License 2.0](../LICENSE), SPDX `Elastic-2.0` |
-| `crates/partly-core/` and `crates/partly-ffi/` | [Apache License 2.0](../crates/partly-core/LICENSE), SPDX `Apache-2.0` |
+| `crates/partly-ffi/` | [Apache License 2.0](../crates/partly-ffi/LICENSE), SPDX `Apache-2.0` |
 | `sdk/` (all language packages) | [Apache License 2.0](../sdk/python/LICENSE), SPDX `Apache-2.0` |
-| Shared workspace build metadata: `Cargo.toml` and `Cargo.lock` | [Apache License 2.0](../crates/partly-core/LICENSE), SPDX `Apache-2.0` |
+| Shared workspace build metadata: `Cargo.toml` and `Cargo.lock` | [Apache License 2.0](../sdk/rust/LICENSE), SPDX `Apache-2.0` |
 | `examples/` and application integration snippets in the READMEs and dashboard docs | [Apache License 2.0](../examples/python/LICENSE), SPDX `Apache-2.0` |
 
 The exceptions apply to those components even when they are bundled into the control-plane executable. Each third-party component keeps its original license; the Partly licenses do not replace those terms. License texts and notices themselves retain their applicable terms.

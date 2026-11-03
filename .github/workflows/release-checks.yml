@@ -192,7 +192,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/partly-package"
           cp "target/$BINARY_TARGET/release/partly" LICENSE NOTICE licenses/THIRD_PARTY_NOTICES.txt "$RUNNER_TEMP/partly-package/"
           cp docs/licensing.md "$RUNNER_TEMP/partly-package/LICENSING.md"
-          cp crates/partly-core/LICENSE "$RUNNER_TEMP/partly-package/LICENSE-APACHE"
+          cp sdk/rust/LICENSE "$RUNNER_TEMP/partly-package/LICENSE-APACHE"
           cp sdk/python/RUST_STDLIB_NOTICES.html "$RUNNER_TEMP/partly-package/"
           if [ "$RUNNER_OS" = Linux ]; then
             cp /usr/share/doc/musl-dev/copyright "$RUNNER_TEMP/partly-package/MUSL_NOTICES.txt"
@@ -220,7 +220,7 @@ jobs:
           done
           cmp docs/licensing.md "$RUNNER_TEMP/partly-unpacked/LICENSING.md"
           cmp licenses/THIRD_PARTY_NOTICES.txt "$RUNNER_TEMP/partly-unpacked/THIRD_PARTY_NOTICES.txt"
-          cmp crates/partly-core/LICENSE "$RUNNER_TEMP/partly-unpacked/LICENSE-APACHE"
+          cmp sdk/rust/LICENSE "$RUNNER_TEMP/partly-unpacked/LICENSE-APACHE"
           cmp sdk/python/RUST_STDLIB_NOTICES.html "$RUNNER_TEMP/partly-unpacked/RUST_STDLIB_NOTICES.html"
           if [ "$RUNNER_OS" = Linux ]; then
             cmp /usr/share/doc/musl-dev/copyright "$RUNNER_TEMP/partly-unpacked/MUSL_NOTICES.txt"

@@ -13,7 +13,7 @@ name = "partly"
 path = "src/main.rs"
 
 [dependencies]
-partly-core = { workspace = true, features = ["openapi"] }
+partly = { workspace = true, features = ["openapi"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

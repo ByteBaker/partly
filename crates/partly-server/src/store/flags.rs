@@ -4,7 +4,7 @@
 use super::models::AppReference;
 use super::{Store, audits::audit};
 use crate::ApiError;
-use partly_core::{Flag, MAX_POLICY_BYTES, Policy};
+use partly::evaluator::{Flag, MAX_POLICY_BYTES, Policy};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -64,7 +64,7 @@ impl Store {
             .map(|(key, config)| {
                 let flag = serde_json::from_str(&config)
                     .map_err(|_| ApiError::internal("Invalid stored flag configuration"))?;
-                partly_core::validate_json_number_limits(config.as_bytes())
+                partly::evaluator::validate_json_number_limits(config.as_bytes())
                     .map_err(|_| ApiError::internal("Invalid stored flag configuration"))?;
                 Ok((key, flag))
             })
@@ -94,7 +94,7 @@ impl Store {
         create: bool,
     ) -> Result<(), ApiError> {
         self.environment(env)?;
-        if !partly_core::valid_key(key) {
+        if !partly::evaluator::valid_key(key) {
             return Err(ApiError::bad("Invalid flag key"));
         }
         flag.validate_result(&self.result_types(env)?)

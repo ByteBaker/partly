@@ -3,7 +3,7 @@
 
 use super::models::{ErrorBody, SavedFlag};
 use crate::store;
-use partly_core::Flag;
+use partly::evaluator::Flag;
 use serde_json::json;
 use utoipa::{
     PartialSchema, ToSchema,
@@ -73,7 +73,7 @@ impl ToSchema for SavedFlag {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     info(title = "Partly HTTP API", description = "Dashboard administration and SDK policy/usage transport. Evaluation runs locally in SDKs. JSON request bodies are limited to 16 KiB; policies to 1 MiB. Sessions expire after 12 hours or server restart. Cross-site API requests are rejected; HTTPS adds Secure to session cookies. Host and Origin checks use the actual listener, never forwarded headers."),
-    components(schemas(ErrorBody, partly_core::Condition)),
+    components(schemas(ErrorBody, partly::evaluator::Condition)),
     tags(
         (name = "Session", description = "Setup and dashboard authentication"),
         (name = "Types", description = "Immutable named result schemas. Viewer reads; Manager or higher creates and deletes unused types."),

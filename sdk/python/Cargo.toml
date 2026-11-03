@@ -13,6 +13,6 @@ name = "_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-partly-core.workspace = true
+partly.workspace = true
 serde_json.workspace = true
 pyo3 = "0.29.1"

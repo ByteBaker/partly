@@ -1683,19 +1683,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "partly-core"
-version = "0.1.0-alpha.1"
-dependencies = [
- "regex",
- "regex-syntax",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "utoipa",
-]
-
-[[package]]
 name = "partly-e2e"
 version = "0.0.0"
 dependencies = [
@@ -1720,7 +1707,7 @@ dependencies = [
 name = "partly-ffi"
 version = "0.1.0-alpha.1"
 dependencies = [
- "partly-core",
+ "partly-rust",
  "serde",
  "serde_json",
 ]
@@ -1739,7 +1726,7 @@ dependencies = [
 name = "partly-python"
 version = "0.1.0-alpha.1"
 dependencies = [
- "partly-core",
+ "partly-rust",
  "pyo3",
  "serde_json",
 ]
@@ -1750,12 +1737,16 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "async-trait",
  "open-feature",
- "partly-core",
+ "regex",
+ "regex-syntax",
  "reqwest",
+ "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "url",
+ "utoipa",
 ]
 
 [[package]]
@@ -1775,7 +1766,7 @@ dependencies = [
  "axum",
  "axum-server",
  "clap",
- "partly-core",
+ "partly-rust",
  "rand 0.8.8",
  "rusqlite",
  "rustls",

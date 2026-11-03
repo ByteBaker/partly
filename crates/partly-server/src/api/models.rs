@@ -3,7 +3,7 @@
 
 use crate::store;
 pub(crate) use crate::store::{AppReference, AuditEntry};
-use partly_core::Flag;
+use partly::evaluator::Flag;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -108,5 +108,5 @@ pub struct Audits {
 #[serde(deny_unknown_fields)]
 pub(crate) struct NamedTypeInput {
     pub name: String,
-    pub definition: partly_core::TypeDefinition,
+    pub definition: partly::evaluator::TypeDefinition,
 }

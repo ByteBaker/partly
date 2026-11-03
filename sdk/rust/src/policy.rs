@@ -1,11 +1,11 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::evaluator::{MAX_POLICY_BYTES, Policy};
 use crate::{
     Error,
     models::{Accepted, Inner},
 };
-use partly_core::{MAX_POLICY_BYTES, Policy};
 use reqwest::header;
 use std::sync::{Arc, atomic::Ordering};
 

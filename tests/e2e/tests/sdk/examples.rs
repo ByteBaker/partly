@@ -47,7 +47,6 @@ async fn quickstart_command(language: &str, directory: &Path, source: &str) -> R
                     .replace('.', "")
             );
             let library = sdk("partly-rust-", ".crate", "sdk/rust")?;
-            let core = sdk("partly-core-", ".crate", "crates/partly-core")?;
             fs::write(
                 directory.join("Cargo.toml"),
                 format!(
@@ -63,11 +62,8 @@ path = "quickstart.rs"
 partly = {{ package = "partly-rust", path = {}, features = ["openfeature"] }}
 open-feature = "0.3.0"
 tokio = {{ version = "1", features = ["macros", "rt-multi-thread"] }}
-[patch.crates-io]
-partly-core = {{ path = {} }}
 "#,
-                    json!(library),
-                    json!(core)
+                    json!(library)
                 ),
             )?;
             let target = root().join("target/sdk-examples");

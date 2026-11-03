@@ -3,7 +3,7 @@
 
 //! JSON boundary shared by the Go and Node.js bindings. Policies remain parsed in Rust.
 
-use partly_core::{Context, Decision, EvaluationError, Policy, validate_json_number_limits};
+use partly::evaluator::{Context, Decision, EvaluationError, Policy, validate_json_number_limits};
 use serde::Deserialize;
 use serde_json::json;
 use std::{

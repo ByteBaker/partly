@@ -1,7 +1,7 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{Condition, Operator};
+use crate::evaluator::{Condition, Operator};
 use serde_json::{Value, json};
 use utoipa::{
     PartialSchema, ToSchema,

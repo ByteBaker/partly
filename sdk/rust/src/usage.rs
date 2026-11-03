@@ -1,8 +1,8 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::evaluator::Policy;
 use crate::{Error, models::Inner};
-use partly_core::Policy;
 use std::{
     collections::{HashSet, VecDeque},
     sync::{Arc, atomic::Ordering},

@@ -1,7 +1,7 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
-use partly_core::{Context, Decision, EvaluationError, MAX_POLICY_BYTES, Policy};
+use partly::evaluator::{Context, Decision, EvaluationError, MAX_POLICY_BYTES, Policy};
 use pyo3::{
     create_exception,
     exceptions::PyException,

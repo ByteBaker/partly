@@ -13,7 +13,7 @@ use axum::{
     body::Bytes,
     http::{StatusCode, header},
 };
-use partly_core::Flag;
+use partly::evaluator::Flag;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -63,7 +63,7 @@ fn parse_flag<T: DeserializeOwned>(headers: &HeaderMap, body: &[u8]) -> Result<T
     let input = Json::<T>::from_bytes(body)
         .map(|Json(input)| input)
         .map_err(|error| ApiError(error.status(), error.body_text()))?;
-    partly_core::validate_json_number_limits(body)
+    partly::evaluator::validate_json_number_limits(body)
         .map_err(|error| ApiError(StatusCode::UNPROCESSABLE_ENTITY, error))?;
     Ok(input)
 }
@@ -128,7 +128,7 @@ pub(crate) async fn save_flag(
         let user = s.authorize(&session(&headers))?;
         user.require(&env, Role::Editor)?;
         let flag: Flag = parse_flag(&headers, &body)?;
-        if !partly_core::valid_key(&key) {
+        if !partly::evaluator::valid_key(&key) {
             return Err(ApiError::bad("Invalid flag key"));
         }
         flag.validate().map_err(ApiError::bad)?;

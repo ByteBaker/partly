@@ -1,7 +1,7 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{Condition, Operator, models::RawCondition, numbers::compare_numbers};
+use crate::evaluator::{Condition, Operator, models::RawCondition, numbers::compare_numbers};
 use regex::Regex;
 use regex_syntax::ast::{Ast, Flag as RegexFlag};
 use serde_json::Value;

@@ -1,7 +1,7 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{Context, Decision, EvaluationError, Policy};
+use crate::evaluator::{Context, Decision, EvaluationError, Policy};
 use serde_json::{Value, json};
 
 fn document() -> Value {
@@ -45,7 +45,7 @@ fn typed_results_preserve_rollouts_and_distinguish_type_errors() {
     assert_eq!(result.named_type.as_deref(), Some("Settings"));
     assert_eq!(
         result.value["help"],
-        crate::bucket("config", "user-42") < 5000
+        crate::evaluator::bucket("config", "user-42") < 5000
     );
     assert!(matches!(
         p.resolve("config", &context, "named", Some("OtherSettings")),

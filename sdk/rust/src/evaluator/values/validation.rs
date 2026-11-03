@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::TypeDefinition;
-use crate::Flag;
+use crate::evaluator::Flag;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 

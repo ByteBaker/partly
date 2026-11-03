@@ -122,7 +122,7 @@ impl Client {
             .resolve(key, context, kind, expected_type)?)
     }
 
-    fn evaluation_policy(&self, key: &str) -> Result<Arc<partly_core::Policy>, Error> {
+    fn evaluation_policy(&self, key: &str) -> Result<Arc<crate::evaluator::Policy>, Error> {
         let accepted = self.inner.accepted.read().unwrap();
         if self.inner.revoked.load(Ordering::Acquire) {
             return Err(Error::KeyRevoked);

@@ -1,9 +1,9 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::TypeDefinition;
+use crate::evaluator::TypeDefinition;
 #[cfg(feature = "openapi")]
-use crate::openapi;
+use crate::evaluator::openapi;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

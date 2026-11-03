@@ -1,7 +1,7 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{Context, Decision, EvaluationError, Flag, MatchAction, Policy, value_type};
+use crate::evaluator::{Context, Decision, EvaluationError, Flag, MatchAction, Policy, value_type};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 

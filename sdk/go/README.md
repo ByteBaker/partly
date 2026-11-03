@@ -51,7 +51,7 @@ Defaults: polling every 30 seconds, 5-second whole-download timeout, 1 MiB polic
 
 Use `errors.Is(err, partly.ErrFlagNotFound)` or the other exported `Err*` values. `ErrContextType` also matches `ErrInvalidContext`. Use `errors.As` with `*partly.Error` for `FlagKey`, `K`, `Op`, `ExpectedType`, and `ActualType`. Errors never choose a fallback decision.
 
-Context accepts strings, booleans, standard integer and float types, and `json.Number`. Use integers or `json.Number` to preserve exact large values. Floats must be finite; pointers, structs, custom marshalers, and nested values are rejected. See [shared rules](https://github.com/ByteBaker/partly/blob/main/crates/partly-core/README.md).
+Context accepts strings, booleans, standard integer and float types, and `json.Number`. Use integers or `json.Number` to preserve exact large values. Floats must be finite; pointers, structs, custom marshalers, and nested values are rejected. See [shared rules](https://github.com/ByteBaker/partly/blob/main/docs/evaluation.md).
 
 Ordinary failed refreshes preserve the accepted policy and ETag. Closed clients can still evaluate that policy, but cannot reconnect. Native snapshots are released when no Go references remain.
 

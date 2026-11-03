@@ -6,7 +6,7 @@ Partly uses one release version for the server and every SDK. The current candid
 | --- | --- | --- |
 | Server | `0.1.0-alpha.1`, Git tag `v0.1.0-alpha.1` | [GitHub Releases](https://github.com/ByteBaker/partly/releases) |
 | Python `partly-sdk` | `0.1.0a1` | PyPI |
-| Rust `partly-core`, `partly-rust` | `0.1.0-alpha.1` | crates.io |
+| Rust `partly-rust` (includes the evaluator) | `0.1.0-alpha.1` | crates.io |
 | Go `partly.sh/sdk/go` | `v0.1.0-alpha.1` | Tagged module repository, discovered through Go proxies |
 | Node `partly-sdk` | `0.1.0-alpha.1`, npm tag `alpha` | npm |
 
@@ -16,7 +16,7 @@ These are the same release. Python normalizes `alpha.1` to `a1` under [PEP 440](
 
 Use `Cargo.toml` → `[workspace.package].version` as the source. For the next alpha, change it to `0.1.0-alpha.2`, then update:
 
-- The exact `partly-core` dependency version in the same file.
+- The exact `partly` workspace dependency version in the same file.
 - `sdk/node/package.json` → `version`.
 - The Partly module requirements in `examples/go/go.mod`, `tests/sdk_contract/go/go.mod`, `sdk/go/openfeature/go.mod`, and `tests/sdk_contract/go_openfeature/go.mod`.
 - Versioned commands in the READMEs and release guides.
@@ -60,17 +60,14 @@ python -m pip install 'partly-sdk==0.1.0a1'
 
 ## Rust: crates.io
 
-Confirm ownership of both crate names and sign in with `cargo login`. From the clean release checkout, publish the evaluator first because the SDK depends on it:
+Confirm ownership of `partly-rust` and sign in with `cargo login`. The evaluator is a module inside this package. From the clean release checkout:
 
 ```sh
-cargo publish --locked --dry-run -p partly-core
-cargo publish --locked -p partly-core
-# Wait until this version of partly-core is available in the registry.
 cargo publish --locked --dry-run -p partly-rust
 cargo publish --locked -p partly-rust
 ```
 
-Only these two crates need publishing. The Python, Go, and Node native binding crates are packaged inside their respective SDK distributions.
+Only this crate needs publishing. The Python, Go, and Node native binding crates compile its evaluator with default features disabled and are packaged inside their respective SDK distributions. Release packaging tests the extracted Rust crate without the client feature; the shared SDK contract also tests the complete client and OpenFeature provider outside the checkout.
 
 crates.io accepts `0.1.0-alpha.1` directly. Users opt into this exact alpha in their application's `Cargo.toml`:
 
@@ -119,4 +116,4 @@ Once configured, users run `go get partly.sh/sdk/go@v0.1.0-alpha.1`. Prefer the 
 
 Create a repository release for `v0.1.0-alpha.1`, attach the verified server and SDK archives with their checksum files, and mark it **pre-release**. GitHub provides that setting in its [release UI](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository). It is independent of the PyPI, crates.io, and npm releases.
 
-Our two platform jobs each emit `SHA256SUMS`. Give them platform-specific names, or regenerate and verify one combined checksum file after staging the final assets. Shared artifacts such as the source archive and Rust crates should be attached once. Do not move a prerelease into `latest` or call it stable until the chosen release is ready.
+Our two platform jobs each emit `SHA256SUMS`. Give them platform-specific names, or regenerate and verify one combined checksum file after staging the final assets. Shared artifacts such as the source archive and Rust crate should be attached once. Do not move a prerelease into `latest` or call it stable until the chosen release is ready.

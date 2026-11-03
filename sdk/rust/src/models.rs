@@ -1,8 +1,8 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::evaluator::Policy;
 use crate::{Error, usage};
-use partly_core::Policy;
 use reqwest::Url;
 use std::{
     path::PathBuf,

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::{numbers::compare_numbers, rules::compile_regex};
+use crate::evaluator::{numbers::compare_numbers, rules::compile_regex};
 use serde_json::Value;
 use serde_json::json;
 use std::cmp::Ordering;

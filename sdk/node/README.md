@@ -39,7 +39,7 @@ Defaults: 30-second polling, 5-second whole-download timeout, 1 MiB policies. Bu
 
 HTTPS verifies certificates and hostnames using Node's bundled public roots. `caBundle(path)` replaces those roots with a private PEM bundle. Redirects and environment proxies are disabled. Policy parsing runs on a native worker, outside the event loop.
 
-Context must be a flat object of strings, finite numbers, and booleans. Integer context values must be safe JavaScript integers (±9,007,199,254,740,991). BigInt, null, nested objects, and arrays are rejected. Policy numbers retain their original precision in Rust. See [shared rules](https://github.com/ByteBaker/partly/blob/main/crates/partly-core/README.md).
+Context must be a flat object of strings, finite numbers, and booleans. Integer context values must be safe JavaScript integers (±9,007,199,254,740,991). BigInt, null, nested objects, and arrays are rejected. Policy numbers retain their original precision in Rust. See [shared rules](https://github.com/ByteBaker/partly/blob/main/docs/evaluation.md).
 
 Ordinary failed refreshes keep the policy and ETag. Local evaluation still works after close, but network calls then fail. Initialization can be retried after a failure.
 

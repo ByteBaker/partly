@@ -76,7 +76,7 @@ pub(crate) async fn report_usage(
     params(("If-None-Match" = Option<String>, Header, description = "Previously accepted quoted ETag; weak tags, lists and wildcard are supported")),
     security(("api_key" = [])),
     responses(
-        (status = 200, description = "Success", body = partly_core::Policy, headers(("ETag" = String, description = "Quoted SHA-256 content hash"))),
+        (status = 200, description = "Success", body = partly::evaluator::Policy, headers(("ETag" = String, description = "Quoted SHA-256 content hash"))),
         (status = 304, description = "Unchanged policy; no body", headers(("ETag" = String))),
         (status = 401, description = "Invalid key/scope, or confirmed revocation with code key_revoked and X-Partly-Error header", body = api::ErrorBody, headers(("X-Partly-Error" = String, description = "key_revoked only for confirmed revocation")))
     )

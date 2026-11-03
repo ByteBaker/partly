@@ -1,26 +1,29 @@
 # Partly Rust SDK
 
-Async policy downloads through Reqwest and rustls; local decisions through `partly-core`. Initialize one client at application startup, before accepting requests. Store it in application state, pass it to request handlers, and close it at shutdown. Use `Arc<Client>` to share ownership between tasks.
+Async policy downloads through Reqwest and rustls; local decisions through the included `evaluator` module. Initialize one client at application startup, before accepting requests. Store it in application state, pass it to request handlers, and close it at shutdown. Use `Arc<Client>` to share ownership between tasks.
 
 Source modules separate shared types (`models.rs`), configuration (`builder.rs`), lifecycle (`client.rs`), downloads (`policy.rs`), reporting (`usage.rs`), errors, and the optional OpenFeature adapter. `lib.rs` preserves the public exports. Provider and reporting unit tests live beside their modules; public client tests are in `tests/client.rs`.
 
 ## Use a release archive
 
-Requires Rust 1.89+. Archives will be published on [GitHub Releases](https://github.com/ByteBaker/partly/releases). Once available, extract the `partly-core` and `partly-rust` `.crate` archives into `third_party`, then use:
+Requires Rust 1.89+. Archives will be published on [GitHub Releases](https://github.com/ByteBaker/partly/releases). Once available, extract the single `partly-rust` `.crate` archive into `third_party`, then use:
 
 ```toml
 [dependencies]
 partly = { package = "partly-rust", version = "=0.1.0-alpha.1", path = "third_party/partly-rust-0.1.0-alpha.1", features = ["openfeature"] }
 open-feature = "0.3.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-
-[patch.crates-io]
-partly-core = { path = "third_party/partly-core-0.1.0-alpha.1" }
 ```
 
 The archives build without this checkout. For development inside the repository, use `sdk/rust` as the dependency path and run `task build:rust` from the root.
 
 Use the [complete OpenFeature quickstart](https://github.com/ByteBaker/partly/blob/main/examples/rust/quickstart.rs) for connection settings, provider registration, two requests sharing one initialized client, error handling, and shutdown. Handlers only evaluate locally. See [context mapping and upstream Rust limitations](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#rust).
+
+## Shared evaluator and features
+
+`partly::evaluator` contains the policy models, validation, and local evaluation used by every SDK and the server. Its source is part of this crate; no separate core package or source-copy step is needed.
+
+The default `client` feature provides downloads, polling, and usage reporting. Internal bindings use `default-features = false` to compile only the evaluator, without Reqwest, Tokio, or URL parsing. `openfeature` enables the client and provider; `openapi` adds schema generation for the server. Application code normally keeps the default features.
 
 ## Native client reference
 
@@ -35,7 +38,7 @@ Builder `poll_interval(Duration)` defaults to 30 seconds and `timeout(Duration)`
 
 HTTPS verifies certificates and hostnames using bundled public roots. `ca_bundle(path)` replaces them with private PEM roots, loaded during initialization. Redirects and environment proxies are disabled. Errors omit request credentials and response bodies.
 
-Context is a flat map of strings, numbers, and booleans. See [shared evaluation rules](https://github.com/ByteBaker/partly/blob/main/crates/partly-core/README.md) for types, operators, and stable percentage selection.
+Context is a flat map of strings, numbers, and booleans. See [shared evaluation rules](https://github.com/ByteBaker/partly/blob/main/docs/evaluation.md) for types, operators, and stable percentage selection.
 
 ```sh
 cargo test -p partly-rust

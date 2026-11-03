@@ -16,7 +16,7 @@ pub enum TypeDefinition {
     },
     #[cfg_attr(feature = "openapi", schema(max_properties = 2))]
     Record {
-        #[cfg_attr(feature = "openapi", schema(schema_with = crate::openapi::record_fields))]
+        #[cfg_attr(feature = "openapi", schema(schema_with = crate::evaluator::openapi::record_fields))]
         fields: BTreeMap<String, String>,
     },
 }

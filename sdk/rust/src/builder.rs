@@ -78,8 +78,8 @@ impl ClientBuilder {
                 "supply a nonempty ASCII API Key without whitespace",
             ));
         }
-        if !partly_core::valid_key(&self.environment)
-            || !partly_core::valid_key(&self.application_id)
+        if !crate::evaluator::valid_key(&self.environment)
+            || !crate::evaluator::valid_key(&self.application_id)
         {
             return Err(Error::Configuration(
                 "supply an environment name and application ID",
