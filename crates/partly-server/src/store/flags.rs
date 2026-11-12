@@ -9,7 +9,19 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+pub(super) fn policy_format(flags: &BTreeMap<String, Flag>) -> u32 {
+    if flags
+        .values()
+        .any(|flag| matches!(flag, Flag::Typed { .. }))
+    {
+        2
+    } else {
+        1
+    }
+}
+
 pub(super) fn check_policy_size(policy: &Policy) -> Result<(), ApiError> {
+    policy.validate().map_err(ApiError::bad)?;
     let size = serde_json::to_vec(policy)
         .map_err(|_| ApiError::internal("Cannot encode policy"))?
         .len();
@@ -34,14 +46,30 @@ impl Store {
 
     pub fn policy(&self, env: &str) -> Result<Policy, ApiError> {
         self.environment(env)?;
-        Self::read_policy(self.db()?, env, None)
+        let revision: i64 = self.db()?.query_row(
+            "SELECT revision FROM environments WHERE name = ?1",
+            [env],
+            |row| row.get(0),
+        )?;
+        let revision =
+            u64::try_from(revision).map_err(|_| ApiError::internal("Invalid policy revision"))?;
+        if let Some(policy) = self
+            .policies
+            .borrow()
+            .get(env)
+            .filter(|p| p.revision == revision)
+        {
+            return Ok(policy.clone());
+        }
+        let policy = Self::read_policy(self.db()?, env)?;
+        check_policy_size(&policy)?;
+        self.policies
+            .borrow_mut()
+            .insert(env.into(), policy.clone());
+        Ok(policy)
     }
 
-    pub(super) fn read_policy(
-        db: &Connection,
-        env: &str,
-        app: Option<&str>,
-    ) -> Result<Policy, ApiError> {
+    fn read_policy(db: &Connection, env: &str) -> Result<Policy, ApiError> {
         let (project, revision): (String, i64) = db.query_row(
             "SELECT project, revision FROM environments WHERE name = ?1",
             [env],
@@ -49,40 +77,38 @@ impl Store {
         )?;
         let revision =
             u64::try_from(revision).map_err(|_| ApiError::internal("Invalid policy revision"))?;
-        // Filter before decoding so other applications' rules are never compiled for this read.
-        let mut statement = db.prepare(
-            "SELECT key, config FROM flags WHERE environment = ?1 AND (?2 IS NULL OR key IN \
-            (SELECT flag_key FROM application_flags WHERE application_id = ?2)) ORDER BY key",
-        )?;
+        let mut statement =
+            db.prepare("SELECT key, config FROM flags WHERE environment = ?1 ORDER BY key")?;
         let rows = statement
-            .query_map(params![env, app], |r| {
+            .query_map([env], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
             })?
             .collect::<Result<Vec<_>, _>>()?;
+        if rows.iter().map(|(_, config)| config.len()).sum::<usize>() > MAX_POLICY_BYTES {
+            return Err(ApiError::internal(
+                "Stored policy exceeds the 1 MiB POC limit",
+            ));
+        }
         let flags = rows
             .into_iter()
             .map(|(key, config)| {
-                let flag = serde_json::from_str(&config)
+                let flag: Value = serde_json::from_str(&config)
                     .map_err(|_| ApiError::internal("Invalid stored flag configuration"))?;
                 partly::evaluator::validate_json_number_limits(config.as_bytes())
                     .map_err(|_| ApiError::internal("Invalid stored flag configuration"))?;
                 Ok((key, flag))
             })
             .collect::<Result<BTreeMap<_, _>, ApiError>>()?;
-        let types = super::types::referenced_types(&flags, &Self::read_types(db, env)?)?;
-        Ok(Policy {
-            schema_version: if flags.values().any(|f| matches!(f, Flag::Typed { .. })) {
-                2
-            } else {
-                1
-            },
-            project,
-            environment: env.into(),
-            application_id: "environment".into(),
-            revision,
-            flags,
-            types,
-        })
+        // Use the same pre-compilation budget as SDK downloads, including on restart.
+        let mut policy: Policy = serde_json::from_value(json!({
+            "schema_version": 2, "project": project, "environment": env,
+            "application_id": "environment", "revision": revision,
+            "flags": flags, "types": Self::read_types(db, env)?,
+        }))
+        .map_err(|_| ApiError::internal("Invalid stored policy or rule limits exceeded"))?;
+        policy.schema_version = policy_format(&policy.flags);
+        policy.types = super::types::referenced_types(&policy.flags, &policy.types)?;
+        Ok(policy)
     }
 
     pub fn save_flag(
@@ -101,6 +127,11 @@ impl Store {
             .map_err(ApiError::bad)?;
         let config =
             serde_json::to_string(flag).map_err(|_| ApiError::internal("Cannot encode flag"))?;
+        let mut policy = self.policy(env)?;
+        let previous = policy.flags.get(key).cloned();
+        policy.flags.insert(key.into(), flag.clone());
+        policy.schema_version = policy_format(&policy.flags);
+        policy.types = super::types::referenced_types(&policy.flags, &self.result_types(env)?)?;
         let transaction = self
             .connection
             .as_mut()
@@ -126,14 +157,12 @@ impl Store {
         if !create && !exists {
             return Err(ApiError::not_found("Flag not found"));
         }
-        if let Some(raw) = &before {
-            let previous: Flag =
-                serde_json::from_str(raw).map_err(|_| ApiError::internal("Invalid stored flag"))?;
+        if let Some(previous) = &previous {
             let result_type = |f: &Flag| match f {
                 Flag::Typed { result_type, .. } => result_type.clone(),
                 _ => "boolean".into(),
             };
-            if result_type(&previous) != result_type(flag) {
+            if result_type(previous) != result_type(flag) {
                 return Err(ApiError::bad(
                     "A flag's result type cannot change; create a new flag",
                 ));
@@ -152,7 +181,8 @@ impl Store {
             )?;
             transaction.execute("UPDATE applications SET revision = revision + 1 WHERE id IN (SELECT application_id \
             FROM application_flags WHERE environment = ?1 AND flag_key = ?2)", [env, key])?;
-            check_policy_size(&Self::read_policy(&transaction, env, None)?)?;
+            policy.revision += 1;
+            check_policy_size(&policy)?;
             let before: Option<Value> = before
                 .map(|v| serde_json::from_str(&v))
                 .transpose()
@@ -168,11 +198,20 @@ impl Store {
             )?;
         }
         transaction.commit()?;
+        // Publish only committed state; reads reuse the compiled rules across applications.
+        if changed > 0 {
+            self.policies.borrow_mut().insert(env.into(), policy);
+        }
         Ok(())
     }
 
     pub fn delete_flag(&mut self, actor: &str, env: &str, key: &str) -> Result<(), ApiError> {
         self.environment(env)?;
+        let mut policy = self.policy(env)?;
+        policy.flags.remove(key);
+        policy.schema_version = policy_format(&policy.flags);
+        policy.types = super::types::referenced_types(&policy.flags, &policy.types)?;
+        policy.revision += 1;
         let transaction = self
             .connection
             .as_mut()
@@ -216,6 +255,7 @@ impl Store {
             json!({"before": before, "after": null, "applications": applications}),
         )?;
         transaction.commit()?;
+        self.policies.borrow_mut().insert(env.into(), policy);
         Ok(())
     }
 

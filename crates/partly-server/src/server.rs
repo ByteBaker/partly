@@ -11,7 +11,11 @@ use axum::{extract::DefaultBodyLimit, middleware};
 use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
+    sync::Arc,
 };
+use tokio::sync::Semaphore;
+
+mod limits;
 
 async fn shutdown_signal() {
     #[cfg(unix)]
@@ -54,7 +58,11 @@ pub(crate) async fn serve(
         return Err("Complete setup locally first: run with --host 127.0.0.1, create the administrator, then restart with the remote bind address".into());
     }
     let app = dashboard::router()
-        .layer(DefaultBodyLimit::max(16 * 1024))
+        .layer(middleware::from_fn_with_state(
+            Arc::new(Semaphore::new(limits::MAX_REQUESTS)),
+            limits::request,
+        ))
+        .layer(DefaultBodyLimit::max(limits::MAX_BODY_BYTES))
         .layer(middleware::from_fn_with_state(transport, security))
         .layer(middleware::from_fn(logging::request))
         .with_state(App::new(store));
@@ -72,11 +80,13 @@ pub(crate) async fn serve(
     let service = app.into_make_service_with_connect_info::<SocketAddr>();
     if let Some(tls) = tls_config {
         axum_server::from_tcp_rustls(listener, tls)?
+            .map(limits::LimitedAcceptor::new)
             .handle(handle)
             .serve(service)
             .await?;
     } else {
         axum_server::from_tcp(listener)?
+            .map(limits::LimitedAcceptor::new)
             .handle(handle)
             .serve(service)
             .await?;

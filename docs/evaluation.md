@@ -63,6 +63,8 @@ Strings are case-sensitive, with no trimming, normalization, or type conversion.
 
 Rust regex patterns compile when accepting the policy. Invalid or oversized patterns, look-around, backreferences, and inline case-insensitive flags are rejected.
 
+Policies allow up to 64 regex rules to bound compilation cost in the server and SDKs; other conditions remain bounded by the 1 MiB policy limit. Each regex may contain at most 1024 UTF-8 bytes, with a 256 KiB compiled-size limit and a 256 KiB DFA cache limit. Unicode classes and repetition can exceed the compiled-size limit even in a short pattern. These limits also apply to typed rollouts. Rejected refreshes keep the previously accepted policy.
+
 All required fields in the selected flag are checked before matching, even if another group matches. Errors identify the flag and key, plus operator and types for type errors, without context values. Other flags' fields are not required.
 
 ## Stable percentage selection

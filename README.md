@@ -80,6 +80,7 @@ Partly's [measurement](docs/releasing.md#benchmarks) used one flag without appli
 
 - Named records are flat, with required fields. No nested records, arrays, or weighted experiments. [Typed results and SDK enhancements](docs/typed-results.md).
 - Single server; no HA or SSO. API Keys are plaintext in SQLite and backups; keep them private.
+- Policies are limited to 1 MiB, with [rule limits](docs/evaluation.md#custom-rules) and [server request limits](crates/partly-server/README.md#request-and-policy-limits).
 - Policies live in SDK memory. Existing clients tolerate outages; new processes need the server. Revocation takes effect when received.
 - Release targets: macOS ARM64 and Linux x86_64. [Release checks and remaining work](docs/releasing.md).
 

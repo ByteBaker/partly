@@ -1,8 +1,9 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
+use super::limits::{MAX_COMPILED_REGEX_BYTES, MAX_REGEX_BYTES};
 use crate::evaluator::{Condition, Operator, models::RawCondition, numbers::compare_numbers};
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use regex_syntax::ast::{Ast, Flag as RegexFlag};
 use serde_json::Value;
 use std::cmp::Ordering;
@@ -61,6 +62,9 @@ impl TryFrom<RawCondition> for Condition {
 }
 
 pub(crate) fn compile_regex(pattern: &str) -> Result<Regex, String> {
+    if pattern.len() > MAX_REGEX_BYTES {
+        return Err("Regex exceeds 1024 UTF-8 bytes".into());
+    }
     let ast = regex_syntax::ast::parse::Parser::new()
         .parse(pattern)
         .map_err(|_| "Invalid Rust regex pattern".to_string())?;
@@ -93,7 +97,11 @@ pub(crate) fn compile_regex(pattern: &str) -> Result<Regex, String> {
             );
         }
     }
-    Regex::new(pattern).map_err(|_| "Invalid or oversized Rust regex pattern".into())
+    RegexBuilder::new(pattern)
+        .size_limit(MAX_COMPILED_REGEX_BYTES)
+        .dfa_size_limit(MAX_COMPILED_REGEX_BYTES)
+        .build()
+        .map_err(|_| "Invalid regex or compiled regex exceeds 256 KiB".into())
 }
 
 impl Condition {

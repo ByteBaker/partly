@@ -432,6 +432,41 @@ async def test_streaming_body_timeout_closes_response_and_keeps_policy():
         await client.aclose()
 
 
+@pytest.mark.parametrize("encoding", ["gzip", "deflate", "br", "identity, gzip"])
+async def test_compressed_policy_is_rejected_before_reading_and_preserves_cache(encoding):
+    class UnreadStream(httpx.AsyncByteStream):
+        closed = False
+
+        async def __aiter__(self):
+            raise AssertionError("Compressed bytes must never reach the decoder")
+            yield b""  # Make this an async iterator without supplying response data.
+
+        async def aclose(self):
+            self.closed = True
+
+    stream = UnreadStream()
+    bad = False
+
+    def handler(request):
+        assert request.headers["accept-encoding"] == "identity"
+        if bad:
+            return httpx.Response(200, headers={"etag": '"bad"', "content-encoding": encoding}, stream=stream)
+        return httpx.Response(200, headers={"etag": '"good"'}, json=POLICY)
+
+    client = mocked(handler)
+    try:
+        await client.init()
+        snapshot = client._snapshot
+        bad = True
+        with pytest.raises(InvalidPolicyError, match="Compressed policy"):
+            await client.refresh()
+        assert stream.closed
+        assert client._snapshot is snapshot and client._etag == '"good"'
+        assert client.evaluate("checkout", context={"id": "u"}) is Decision.ENABLED
+    finally:
+        await client.aclose()
+
+
 async def test_optional_context_is_empty_without_accepting_other_non_dictionaries():
     policy = {**POLICY, "flags": {**POLICY["flags"], "on": {"mode": "enabled"}, "off": {"mode": "disabled"}}}
     client = mocked(lambda r: httpx.Response(200, headers={"etag": '"one"'}, json=policy))

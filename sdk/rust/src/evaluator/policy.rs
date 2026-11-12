@@ -1,10 +1,12 @@
 // Copyright 2026 ByteBaker
 // SPDX-License-Identifier: Apache-2.0
 
+use super::limits::check_regex_budget;
 use crate::evaluator::{Flag, MAX_POLICY_BYTES, Policy, validate_json_number_limits};
 
 impl Flag {
     pub fn validate(&self) -> Result<(), String> {
+        check_regex_budget(self.regex_count())?;
         match self {
             Self::Typed { rollout, .. } => {
                 if matches!(rollout.as_ref(), Self::Typed { .. }) {
@@ -62,6 +64,7 @@ impl Policy {
             return Err("Typed flags require policy format 2".into());
         }
         crate::evaluator::validate_types(&self.types)?;
+        check_regex_budget(self.flags.values().map(Flag::regex_count).sum())?;
         for (key, flag) in &self.flags {
             if !valid_key(key) {
                 return Err("Invalid flag key".into());

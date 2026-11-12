@@ -39,6 +39,8 @@ Defaults: poll 30 seconds after each refresh; timeout 5 seconds for the entire d
 
 Background refresh failures produce a warning through Python's `partly` logger on each failed poll and are exposed in `client.last_refresh_error`; a successful refresh clears it. Configure log handlers and levels in your application; the SDK does not configure global logging. Running clients retain their policy during outages, but a new process needs a successful initial download. A closed client can still evaluate its last policy, but cannot reconnect or accept updates.
 
+Policy downloads request uncompressed JSON. Compressed responses are rejected before reading their bodies, so decompression cannot bypass the 1 MiB limit. Keep compression disabled for `/api/policy` if you place a proxy in front of Partly. Rule and regex limits are shared with the [Rust evaluator](https://github.com/ByteBaker/partly/blob/main/docs/evaluation.md#custom-rules).
+
 ## Flag usage reporting
 
 Native evaluation records distinct known flag names, including disabled decisions and context errors. An evaluation starts a background report when 128 names are pending or 60 seconds have passed since initialization or the previous report. Reports contain only flag names; context values and decisions stay local. `has_flag()`, unknown flags, and OpenFeature checks that fail before native evaluation do not count.

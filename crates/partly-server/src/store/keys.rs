@@ -158,7 +158,16 @@ impl Store {
     pub fn app_policy(&self, key: &str, env: &str, app: &str) -> Result<Policy, ApiError> {
         let (_, revision) = Self::authorize_key(self.db()?, key, env, app)?;
         self.environment(env)?;
-        let mut policy = Self::read_policy(self.db()?, env, Some(app))?;
+        let mut policy = self.policy(env)?;
+        let mut query = self
+            .db()?
+            .prepare("SELECT flag_key FROM application_flags WHERE application_id = ?1")?;
+        let selected = query
+            .query_map([app], |row| row.get::<_, String>(0))?
+            .collect::<Result<std::collections::BTreeSet<_>, _>>()?;
+        policy.flags.retain(|key, _| selected.contains(key));
+        policy.schema_version = super::flags::policy_format(&policy.flags);
+        policy.types = super::types::referenced_types(&policy.flags, &policy.types)?;
         policy.application_id = app.into();
         policy.revision = u64::try_from(revision)
             .map_err(|_| ApiError::internal("Invalid application revision"))?;

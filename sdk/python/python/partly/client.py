@@ -347,6 +347,7 @@ class Client:
     async def _request(self) -> tuple[bytes, str] | None:
         assert self._http is not None, "init must configure HTTP before downloading"
         headers = self._headers()
+        headers["Accept-Encoding"] = "identity"
         if self._etag is not None:
             headers["If-None-Match"] = self._etag
         async with self._http.stream("GET", f"{self._url}/api/policy", headers=headers) as response:
@@ -360,6 +361,8 @@ class Client:
                 return None
             if response.status_code != 200:
                 raise RefreshError(f"Policy request returned HTTP {response.status_code}")
+            if response.headers.get("content-encoding", "identity").strip().lower() != "identity":
+                raise InvalidPolicyError("Compressed policy responses are not supported")
             etag = response.headers.get("etag", "")
             if not (len(etag) >= 3 and etag.startswith('"') and etag.endswith('"')
                     and all(33 <= ord(c) <= 126 and c != '"' for c in etag[1:-1])):

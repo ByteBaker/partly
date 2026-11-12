@@ -118,6 +118,7 @@ impl Store {
             connection,
             sessions: HashMap::new(),
             lock,
+            policies: Default::default(),
         };
         if let Some(connection) = &store.connection {
             connection.execute_batch("PRAGMA foreign_keys = ON;")?;

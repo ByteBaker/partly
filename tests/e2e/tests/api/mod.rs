@@ -6,6 +6,7 @@ mod control_plane;
 mod flags;
 mod https;
 mod keys;
+mod limits;
 mod logging;
 mod openapi;
 mod operations;

@@ -4,6 +4,7 @@
 //! Policy validation and local evaluation shared by all Partly SDKs.
 
 mod evaluation;
+mod limits;
 mod models;
 mod numbers;
 #[cfg(feature = "openapi")]

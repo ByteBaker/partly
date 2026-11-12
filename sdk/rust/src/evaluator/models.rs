@@ -39,6 +39,7 @@ pub enum Flag {
     Custom {
         action: MatchAction,
         #[cfg_attr(feature = "openapi", schema(schema_with = openapi::groups))]
+        #[serde(deserialize_with = "super::limits::deserialize_groups")]
         groups: Vec<Vec<Condition>>,
     },
 }
@@ -96,6 +97,7 @@ pub struct Policy {
     pub environment: String,
     pub application_id: String,
     pub revision: u64,
+    #[serde(deserialize_with = "super::limits::deserialize_flags")]
     pub flags: BTreeMap<String, Flag>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub types: BTreeMap<String, TypeDefinition>,

@@ -236,6 +236,7 @@ async fn existing_database_with_invalid_data_is_preserved() -> Result {
         ("reference", "invalid references"),
         ("number", "Invalid stored flag configuration"),
         ("oversized", "1 MiB POC limit"),
+        ("rules", "rule limits exceeded"),
     ] {
         let (mut server, admin) = fixture().await?;
         admin.key("development").await?;
@@ -250,12 +251,22 @@ async fn existing_database_with_invalid_data_is_preserved() -> Result {
         } else {
             let config = if kind == "number" {
                 r#"{"mode":"custom","action":"enable","groups":[[{"k":"number","op":"eq","v":-9223372036854775809}]]}"#.to_string()
+            } else if kind == "rules" {
+                json!({"mode":"custom","action":"enable","groups":[[{"k":"id","op":"regex","v":"^user"}]]}).to_string()
             } else {
                 json!({"mode":"custom","action":"enable","groups":[[{"k":"text","op":"matches","v":"x".repeat(1024*1024)}]]}).to_string()
             };
             server
                 .database()?
-                .execute("UPDATE flags SET config=?1", [config])?;
+                .execute("UPDATE flags SET config=?1", [&config])?;
+            if kind == "rules" {
+                for i in 0..64 {
+                    server.database()?.execute(
+                        "INSERT INTO flags VALUES ('development', ?1, ?2)",
+                        [&format!("extra_{i}"), &config],
+                    )?;
+                }
+            }
         }
         let before = fs::read(&server.db)?;
         assert!(server.start().await.is_err());

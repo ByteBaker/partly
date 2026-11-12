@@ -26,6 +26,12 @@ task build:server
 
 These flags show the defaults. The database's parent directory must exist. Reuse the same path on restart. Ctrl+C or SIGTERM stops the server, allowing up to three seconds for requests to finish. Account sessions expire after 12 hours or a restart.
 
+## Request and policy limits
+
+The server accepts up to 64 connections, including TLS handshakes, and 64 active requests. Excess connections close immediately; excess requests receive `503` with `Retry-After: 1`. Request bodies must finish within 10 seconds, even when bytes keep arriving, and stay within 16 KiB. Slow bodies receive `408`; oversized bodies receive `413`.
+
+Saved policies reuse compiled rules across reads and applications. A cache update follows a successful database commit; rejected writes leave the previous policy intact. The shared evaluator enforces [rule and regex limits](../../docs/evaluation.md#custom-rules) in the server and every SDK. Existing databases that exceed these limits are rejected without modification; review their rules before upgrading.
+
 ## Logging
 
 Operational logs go to standard error (`stderr`), with a timestamp, level, and named fields. The default `info` level records startup, shutdown, setup state, and successful setup, login, logout, and dashboard write requests. It also includes warnings and errors. Successful reads, assets, policy downloads (`200`/`304`), and usage reports (`204`) stay quiet at this level.

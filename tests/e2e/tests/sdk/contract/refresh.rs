@@ -103,6 +103,14 @@ pub(super) async fn bad_refresh(language: &str) -> Result {
             "flags",
             json!({"flag":{"mode":"custom","action":"enable","groups":[[{"k":"name","op":"regex","v":"(?i)pro"}]]}}),
         ),
+        (
+            "flags",
+            json!({"flag":{"mode":"custom","action":"enable","groups":[[{"k":"name","op":"regex","v":r"\w{50}"}]]}}),
+        ),
+        (
+            "flags",
+            json!({"flag":{"mode":"custom","action":"enable","groups":[vec![json!({"k":"name","op":"regex","v":"^pro"});65]]}}),
+        ),
     ] {
         let mut body = policy.clone();
         body[field] = value;

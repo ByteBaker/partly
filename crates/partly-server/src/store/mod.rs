@@ -18,13 +18,20 @@ pub(crate) use models::{
 };
 use rand::{RngCore, rngs::OsRng};
 use rusqlite::Connection;
-use std::{collections::HashMap, fs::File, path::PathBuf, time::Instant};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, HashMap},
+    fs::File,
+    path::PathBuf,
+    time::Instant,
+};
 
 pub struct Store {
     path: PathBuf,
     connection: Option<Connection>,
     sessions: HashMap<String, (i64, Instant)>,
     lock: Option<File>,
+    policies: RefCell<BTreeMap<String, partly::evaluator::Policy>>,
 }
 
 pub fn secret() -> String {

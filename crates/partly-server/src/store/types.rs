@@ -86,6 +86,11 @@ impl Store {
 
     pub fn delete_type(&mut self, actor: &str, env: &str, name: &str) -> Result<(), ApiError> {
         self.environment(env)?;
+        let used_by_flag = self
+            .policy(env)?
+            .flags
+            .values()
+            .any(|f| f.referenced_type() == Some(name));
         let tx = self
             .connection
             .as_mut()
@@ -96,7 +101,7 @@ impl Store {
             .get(name)
             .ok_or_else(|| ApiError::not_found("Type not found"))?;
         if types.values().any(|d| matches!(d, TypeDefinition::Record { fields } if fields.values().any(|v| v == name)))
-            || Self::read_policy(&tx, env, None)?.flags.values().any(|f| f.referenced_type() == Some(name)) {
+            || used_by_flag {
             return Err(ApiError::conflict("Type is used by a flag or another type"));
         }
         tx.execute(

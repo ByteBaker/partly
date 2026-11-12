@@ -50,7 +50,7 @@ pub fn record_fields() -> RefOr<Schema> {
 pub fn groups() -> RefOr<Schema> {
     let schema: Value = json!({
         "type": "array", "minItems": 1,
-        "description": "OR between groups; AND within each group. Both levels must be nonempty.",
+        "description": "OR between groups; AND within each group. Both levels must be nonempty. At most 64 regex rules per policy. Regex patterns are limited to 1024 UTF-8 bytes and 256 KiB compiled size.",
         "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/components/schemas/Condition"}}
     });
     serde_json::from_value(schema).expect("Rule groups schema is valid")

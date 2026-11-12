@@ -107,6 +107,28 @@ pub(super) fn finish(document: &mut OpenApi) {
         ] {
             let Some(operation) = operation else { continue };
             let sdk = path == "/api/policy" || path == "/api/usage";
+            for (status, description) in [
+                ("408", "Request body did not finish within 10 seconds"),
+                ("413", "Request body exceeds 16 KiB"),
+                ("503", "Too many active requests; Retry-After: 1"),
+            ] {
+                let mut response = ResponseBuilder::new()
+                    .description(description)
+                    .content(
+                        "application/json",
+                        Content::new(Some(Ref::from_schema_name("ErrorBody"))),
+                    )
+                    .build();
+                if status == "503" {
+                    response
+                        .headers
+                        .insert("Retry-After".into(), Header::new(String::schema()).into());
+                }
+                operation
+                    .responses
+                    .responses
+                    .insert(status.into(), response.into());
+            }
             let parameters = operation.parameters.get_or_insert_default();
             if write && !sdk {
                 parameters.push(ParameterBuilder::new().name("X-Partly-Request").parameter_in(ParameterIn::Header)
