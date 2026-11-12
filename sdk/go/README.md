@@ -17,7 +17,7 @@ replace partly.sh/sdk/go/openfeature => ./third_party/partly-go/openfeature
 
 The archive includes its Rust library under `native/`; consumers do not need Rust or the Partly checkout. Supported targets are macOS ARM64 and Linux x86_64. Public module hosting is still pending.
 
-Go 1.22 is the compatibility minimum. Use a supported Go release with current security patches for production; CI builds and scans with Go 1.27.3.
+Go 1.22 is the compatibility minimum. Use a supported Go release with current security patches for production; CI builds and scans with Go 1.27.4.
 
 ## Build from source
 
@@ -31,7 +31,7 @@ go run -a .
 
 First replace the URL, environment, application ID, and API Key in [the example](https://github.com/ByteBaker/partly/blob/main/examples/go/main.go). Its `go.mod` replaces both the native SDK and provider modules locally. `partly.sh/sdk/go` is a local module identifier; public module hosting is not configured.
 
-The build copies the Rust library into `sdk/go/native/<os>_<arch>/`. Build it for the same machine as the Go application. After replacing the native library, use `go build -a`, `go run -a`, or `go test -a`: Go's cache does not track changes to this archive.
+The build puts the Rust library in `sdk/go/native/<os>_<arch>/`, removing embedded LLVM bitcode that Go rejects. It uses Rust's `llvm-tools-preview` component, installed by `task setup` (or `rustup component add llvm-tools-preview`). Build it for the same machine as the Go application. After replacing the native library, use `go build -a`, `go run -a`, or `go test -a`: Go's cache does not track changes to this archive.
 
 ## Native client reference
 

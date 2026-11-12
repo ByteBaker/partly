@@ -22,7 +22,7 @@ axum-server = { version = "0.8", default-features = false, features = ["tls-rust
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
 clap = { version = "4", features = ["derive"] }
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 argon2 = "0.6"
 rand = "0.8"
 tracing = { version = "0.1", default-features = false, features = ["std"] }

@@ -188,4 +188,4 @@ def test_go_audit_checks_each_module_and_propagates_failure(checkout, exit_code)
     assert result.returncode == exit_code
     visited = Path(env["TASK_TRACE"]).read_text().splitlines()
     assert visited[::2] == [str(root / module) for module in (modules[:1] if exit_code else modules)]
-    assert set(visited[1::2]) == {"go1.27.3"}
+    assert set(visited[1::2]) == {"go1.27.4"}

@@ -6,7 +6,7 @@ description: Install the shared development toolchains and Python dependencies.
 inputs:
   go-version:
     description: Go compiler; older versions are only used for compatibility checks.
-    default: "1.27.3"
+    default: "1.27.4"
   node-version:
     description: Node.js runtime; use the latest patch unless checking compatibility.
     default: "22"
@@ -34,7 +34,7 @@ runs:
         package-manager-cache: false
     - shell: bash
       run: |
-        rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
+        rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy --component llvm-tools-preview
         rustup default "$RUST_TOOLCHAIN"
         python -m pip install -r config/requirements-dev.txt
         python - <<'PY'

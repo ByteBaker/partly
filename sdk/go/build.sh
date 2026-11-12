@@ -8,7 +8,15 @@ if [ "$(go env GOOS)_$(go env GOARCH)" != "$(go env GOHOSTOS)_$(go env GOHOSTARC
     echo "Build the native library on the target platform; cross-compilation is not configured." >&2
     exit 1
 fi
+objcopy="$(rustc --print target-libdir)/../bin/llvm-objcopy"
+if [ ! -x "$objcopy" ]; then
+    echo "Install the Rust archive tools: rustup component add llvm-tools-preview" >&2
+    exit 1
+fi
 cargo build --locked --release -p partly-ffi --target-dir target
 native_dir="sdk/go/native/$(go env GOOS)_$(go env GOARCH)"
 mkdir -p "$native_dir"
-cp target/release/libpartly_ffi.a "$native_dir/"
+# Go rejects embedded linker bitcode; retain the compiled machine code and symbols.
+"$objcopy" --remove-section=__LLVM,__bitcode --remove-section=__LLVM,__cmdline \
+    --remove-section=.llvmbc --remove-section=.llvmcmd \
+    target/release/libpartly_ffi.a "$native_dir/libpartly_ffi.a"

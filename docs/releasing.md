@@ -41,7 +41,7 @@ Prepare the development checkout once:
 task setup
 ```
 
-This creates `.venv`, installs Python/frontend dependencies and audit tools, and installs the prek pre-push hook. Rust and Go scanners live in `.cache/audit-tools`; Go downloads the pinned audit toolchain when needed. Other system toolchains must already be installed. An existing environment with the wrong Python version is rejected without replacing it. Shell activation is not needed.
+This creates `.venv`, installs Python/frontend dependencies, audit tools, Rust's LLVM archive tools, and the prek pre-push hook. Rust and Go scanners live in `.cache/audit-tools`; Go downloads the pinned audit toolchain when needed. Other system toolchains must already be installed. An existing environment with the wrong Python version is rejected without replacing it. Shell activation is not needed.
 
 | Command | What it does |
 | --- | --- |
@@ -149,7 +149,7 @@ Clippy performs Rust compiler checks as well as linting, so verification does no
 | HTML/CSS | HTML-validate and Biome's recommended CSS checks |
 | Shell/workflows | ShellCheck and actionlint |
 
-The [vulnerability workflow](../.github/workflows/vulnerabilities.yml) uses RustSec, pip-audit, govulncheck, and npm audit. It runs on every PR/release workflow and daily, and fails on findings or scanner errors. Python and npm scans include development dependencies; Go scans include the standard library. Native Node usage has no JavaScript runtime dependencies; its optional OpenFeature adapter requires the official server SDK. Package audits do not audit Node/Python interpreters themselves; keep their supported patch versions current. Release Go builds use 1.27.3; Go 1.22 is checked only for native-client compatibility. The separate OpenFeature Go module requires Go 1.26+.
+The [vulnerability workflow](../.github/workflows/vulnerabilities.yml) uses RustSec, pip-audit, govulncheck, and npm audit. It runs on every PR/release workflow and daily, and fails on findings or scanner errors. Python and npm scans include development dependencies; Go scans include the standard library. Native Node usage has no JavaScript runtime dependencies; its optional OpenFeature adapter requires the official server SDK. Package audits do not audit Node/Python interpreters themselves; keep their supported patch versions current. Release Go builds use 1.27.4; Go 1.22 is checked only for native-client compatibility. The separate OpenFeature Go module requires Go 1.26+.
 
 Release jobs build the Python wheel from its source archive and test installed packages outside the checkout, including HTTPS, shutdown, OpenFeature contracts, and all four quickstarts. They produce archives and checksums, without publishing. Require a green run on the exact release commit.
 

@@ -8,7 +8,9 @@ The C ABI is internal. Callers must keep snapshots alive during evaluation and f
 
 ```sh
 cargo test -p partly-ffi
-cargo build --release --locked -p partly-ffi
+task build:go
 ```
+
+The Go build task removes LLVM bitcode from the archive using Rust's `llvm-tools-preview` component, installed by `task setup`.
 
 [Apache-2.0](LICENSE).

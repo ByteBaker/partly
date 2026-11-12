@@ -22,6 +22,7 @@ tasks:
       - task: python:validate
       - '{{.PYTHON | shellQuote}} -m pip install -r config/requirements-dev.txt'
       - npm ci --ignore-scripts --no-audit --no-fund
+      - rustup component add llvm-tools-preview
       - task: tools:rust-audit
       - task: tools:go-audit
       - PATH={{.VENV | shellQuote}}/bin:"$PATH" prek install -c config/prek.toml
@@ -43,7 +44,7 @@ tasks:
   tools:go-audit:
     cmds:
       - mkdir -p {{.AUDIT_TOOLS | shellQuote}}/bin
-      - GOTOOLCHAIN=go1.27.3 GOBIN={{.AUDIT_TOOLS | shellQuote}}/bin go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - GOTOOLCHAIN=go1.27.4 GOBIN={{.AUDIT_TOOLS | shellQuote}}/bin go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
   audit:
     desc: Scan Rust, Python, Go and npm dependencies for vulnerabilities
@@ -62,7 +63,7 @@ tasks:
     cmds:
       - |
         set -eu
-        export GOTOOLCHAIN=go1.27.3
+        export GOTOOLCHAIN=go1.27.4
         for module in sdk/go sdk/go/openfeature examples/go tests/sdk_contract/go tests/sdk_contract/go_openfeature; do
           (cd "$module" && {{.AUDIT_TOOLS | shellQuote}}/bin/govulncheck ./...)
         done
