@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"os"
 
+	partly "github.com/ByteBaker/partly/sdk/go"
+	provider "github.com/ByteBaker/partly/sdk/go/openfeature"
 	of "github.com/open-feature/go-sdk/openfeature"
-	partly "partly.sh/sdk/go"
-	provider "partly.sh/sdk/go/openfeature"
 )
 
 const controlPlaneURL = "http://127.0.0.1:8080"

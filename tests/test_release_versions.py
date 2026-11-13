@@ -29,14 +29,14 @@ def test_release_versions_match():
     python = tomllib.loads((ROOT / "sdk/python/pyproject.toml").read_text())["project"]
     assert "version" in python["dynamic"] and "version" not in python
     provider = (ROOT / "sdk/go/openfeature/go.mod").read_text()
-    assert re.findall(r"^\s*partly\.sh/sdk/go (\S+)$", provider, re.MULTILINE) == [f"v{version}"]
+    assert re.findall(r"^\s*github\.com/ByteBaker/partly/sdk/go (\S+)$", provider, re.MULTILINE) == [f"v{version}"]
     for name in ("tests/sdk_contract/go_openfeature/go.mod", "examples/go/go.mod"):
         contract = (ROOT / name).read_text()
-        for module in ("partly.sh/sdk/go", "partly.sh/sdk/go/openfeature"):
+        for module in ("github.com/ByteBaker/partly/sdk/go", "github.com/ByteBaker/partly/sdk/go/openfeature"):
             assert re.findall(rf"^\s*{re.escape(module)} (\S+)$", contract, re.MULTILINE) == [f"v{version}"]
     assert json.loads((ROOT / "sdk/node/package.json").read_text())["version"] == version
     native_contract = (ROOT / "tests/sdk_contract/go/go.mod").read_text()
-    assert re.findall(r"^require partly\.sh/sdk/go (\S+)$", native_contract, re.MULTILINE) == [f"v{version}"]
+    assert re.findall(r"^require github\.com/ByteBaker/partly/sdk/go (\S+)$", native_contract, re.MULTILINE) == [f"v{version}"]
 
 
 def test_packaging_rejects_version_drift_before_building(tmp_path, monkeypatch):

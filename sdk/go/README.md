@@ -8,14 +8,14 @@ The OpenFeature integration requires Go 1.26+ and a C compiler with cgo enabled.
 
 ```go
 require (
-    partly.sh/sdk/go v0.1.0-alpha.1
-    partly.sh/sdk/go/openfeature v0.1.0-alpha.1
+    github.com/ByteBaker/partly/sdk/go v0.1.0-alpha.1
+    github.com/ByteBaker/partly/sdk/go/openfeature v0.1.0-alpha.1
 )
-replace partly.sh/sdk/go => ./third_party/partly-go
-replace partly.sh/sdk/go/openfeature => ./third_party/partly-go/openfeature
+replace github.com/ByteBaker/partly/sdk/go => ./third_party/partly-go
+replace github.com/ByteBaker/partly/sdk/go/openfeature => ./third_party/partly-go/openfeature
 ```
 
-The archive includes its Rust library under `native/`; consumers do not need Rust or the Partly checkout. Supported targets are macOS ARM64 and Linux x86_64. Public module hosting is still pending.
+The archive includes its Rust library under `native/`; consumers do not need Rust or the Partly checkout. Supported targets are macOS ARM64 and Linux x86_64. The module paths point to GitHub, but plain `go get` cannot supply the native library yet; use the archive and replacements above.
 
 Go 1.22 is the compatibility minimum. Use a supported Go release with current security patches for production; CI builds and scans with Go 1.27.4.
 
@@ -29,7 +29,7 @@ cd examples/go
 go run -a .
 ```
 
-First replace the URL, environment, application ID, and API Key in [the example](https://github.com/ByteBaker/partly/blob/main/examples/go/main.go). Its `go.mod` replaces both the native SDK and provider modules locally. `partly.sh/sdk/go` is a local module identifier; public module hosting is not configured.
+First replace the URL, environment, application ID, and API Key in [the example](https://github.com/ByteBaker/partly/blob/main/examples/go/main.go). Its `go.mod` replaces both GitHub module paths with the local SDK directories. No custom domain is required.
 
 The build puts the Rust library in `sdk/go/native/<os>_<arch>/`, removing embedded LLVM bitcode that Go rejects. It uses Rust's `llvm-tools-preview` component, installed by `task setup` (or `rustup component add llvm-tools-preview`). Build it for the same machine as the Go application. After replacing the native library, use `go build -a`, `go run -a`, or `go test -a`: Go's cache does not track changes to this archive.
 
@@ -70,7 +70,7 @@ A confirmed revoked-key response clears policy and ETag, stops polling, and make
 
 ## OpenFeature
 
-The optional `partly.sh/sdk/go/openfeature` module requires Go 1.26+; the native SDK still supports Go 1.22+. Initialize the native client once, then register `openfeature.New(client)` with the official OpenFeature SDK. Registration makes no network requests; evaluations use the same local policy.
+The optional `github.com/ByteBaker/partly/sdk/go/openfeature` module requires Go 1.26+; the native SDK still supports Go 1.22+. Initialize the native client once, then register `openfeature.New(client)` with the official OpenFeature SDK. Registration makes no network requests; evaluations use the same local policy.
 
 OpenFeature returns your fallback together with an error when evaluation fails. Keep the native client for refresh and close it at shutdown. See the [integration guide](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#go) and [tested compatibility](https://github.com/ByteBaker/partly/blob/main/docs/openfeature.md#coverage-and-limits).
 

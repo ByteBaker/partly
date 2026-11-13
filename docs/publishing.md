@@ -7,7 +7,7 @@ Partly uses one release version for the server and every SDK. The current candid
 | Server | `0.1.0-alpha.1`, Git tag `v0.1.0-alpha.1` | [GitHub Releases](https://github.com/ByteBaker/partly/releases) |
 | Python `partly-sdk` | `0.1.0a1` | PyPI |
 | Rust `partly-rust` (includes the evaluator) | `0.1.0-alpha.1` | crates.io |
-| Go `partly.sh/sdk/go` | `v0.1.0-alpha.1` | Tagged module repository, discovered through Go proxies |
+| Go `github.com/ByteBaker/partly/sdk/go` | `v0.1.0-alpha.1` | GitHub release archives; direct module installation pending |
 | Node `partly-sdk` | `0.1.0-alpha.1`, npm tag `alpha` | npm |
 
 These are the same release. Python normalizes `alpha.1` to `a1` under [PEP 440](https://packaging.python.org/en/latest/specifications/version-specifiers/#pre-release-spelling); Go requires the leading `v`. The source repository is [ByteBaker/partly](https://github.com/ByteBaker/partly). Package names still need ownership confirmation; PyPI and npm names are independent.
@@ -35,7 +35,7 @@ Before adding credentials or a publish job, configure [CI approvals and the prot
 
 Use a versioned GitHub release for the alpha; [prereleases cannot be marked latest](https://docs.github.com/en/rest/releases/releases#create-a-release), so do not rely on `/releases/latest`. After publication, an asset URL has the form `https://github.com/ByteBaker/partly/releases/download/v0.1.0-alpha.1/<asset-name>`. The release workflow currently uploads Actions artifacts only; those still need to be attached to a release after verification.
 
-The `partly.sh/sdk/go` paths below identify Go modules, not download URLs. The current archive-plus-`replace` installation does not need that domain. Public Go module discovery remains separate work.
+All Partly source, documentation, and download links use GitHub. Go module paths use `github.com/ByteBaker/partly/sdk/go` and its `/openfeature` submodule. No custom domain or DNS setup is required.
 
 The commands below are instructions, not actions performed by CI. No release packages have been published. Account credentials belong outside the repository.
 
@@ -96,23 +96,16 @@ Users then install either `npm install partly-sdk@alpha` or `npm install partly-
 
 ## Go: a tagged module
 
-**Distribution work remains.** Go does not use a PyPI-style upload. It discovers versions through repository tags. For `partly.sh/sdk/go`, the domain must serve `go-import` metadata pointing to the public repository.
+Go needs no registry account. Its module paths point directly to this GitHub repository:
 
-The downloaded module must also contain both supported `libpartly_ffi.a` files. They are currently ignored in the development repository and only included in release archives. Merely tagging this checkout would leave normal `go get` consumers unable to link. Keep the [archive plus local replacement](../sdk/go/README.md#use-a-release-archive) installation until this is solved.
+| Module | Path | Tag for a future module release |
+| --- | --- | --- |
+| Native SDK | `github.com/ByteBaker/partly/sdk/go` | `sdk/go/v0.1.0-alpha.1` |
+| OpenFeature provider | `github.com/ByteBaker/partly/sdk/go/openfeature` | `sdk/go/openfeature/v0.1.0-alpha.1` |
 
-To preserve the development repository's no-build-artifacts rule, a dedicated distribution repository can contain the Go SDK and its prebuilt libraries at its root, with `partly.sh/sdk/go` resolving there. In that repository, after testing both platforms:
+The root `v0.1.0-alpha.1` tag identifies the overall GitHub release; it does not version these nested modules. See [Go's module tag rules](https://go.dev/ref/mod#vcs-version).
 
-```sh
-git tag v0.1.0-alpha.1
-git push origin v0.1.0-alpha.1
-GOPROXY=https://proxy.golang.org go list -m partly.sh/sdk/go@v0.1.0-alpha.1
-```
-
-The distribution snapshot must come from the same verified Partly source commit. If we instead publish the module from this monorepo's `sdk/go` directory, its tag must be `sdk/go/v0.1.0-alpha.1`; a root `v0.1.0-alpha.1` tag alone does not version that nested module. That route must also include the libraries in the downloadable module.
-
-The optional provider is a separate module, `partly.sh/sdk/go/openfeature`, with the same release version. Include its directory in Go archives. In a distribution repository rooted at the native SDK, its tag is `openfeature/v0.1.0-alpha.1`; in this monorepo it is `sdk/go/openfeature/v0.1.0-alpha.1`. Configure its vanity import path too. Consumers need replacements for both modules until hosting is ready.
-
-Once configured, users run `go get partly.sh/sdk/go@v0.1.0-alpha.1`. Prefer the explicit alpha version; Go normally prefers stable releases when choosing a version. See [publishing Go modules](https://go.dev/doc/modules/publishing), [nested-module tags](https://go.dev/ref/mod#vcs-version), and [prerelease versions](https://go.dev/doc/modules/release-workflow).
+**Distribution work remains.** The Go SDK links a Rust native library that is included in release archives but excluded from Git. A tag alone would therefore leave `go get` consumers unable to link. For this alpha, download the platform archive from GitHub Releases and use the [documented local replacements](../sdk/go/README.md#use-a-release-archive) for both modules. Keep generated native libraries out of the source repository; direct module installation needs a separate distribution solution before publishing those module tags.
 
 ## Server and direct SDK downloads
 

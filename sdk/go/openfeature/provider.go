@@ -11,8 +11,8 @@ import (
 	"errors"
 	"sync/atomic"
 
+	partly "github.com/ByteBaker/partly/sdk/go"
 	of "github.com/open-feature/go-sdk/openfeature"
-	partly "partly.sh/sdk/go"
 )
 
 type Provider struct {

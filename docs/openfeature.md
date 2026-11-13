@@ -26,7 +26,7 @@ These complete examples are also served in the dashboard. Each initializes once,
 | --- | --- | --- |
 | Python | `partly-sdk[openfeature]`; CPython 3.14 | [quickstart.py](../examples/python/quickstart.py) |
 | Rust | `partly-rust` with `features = ["openfeature"]`, plus `open-feature = "0.3"` | [quickstart.rs](../examples/rust/quickstart.rs) |
-| Go | `partly.sh/sdk/go/openfeature`; Go 1.26+ | [main.go](../examples/go/main.go) |
+| Go | `github.com/ByteBaker/partly/sdk/go/openfeature`; Go 1.26+ | [main.go](../examples/go/main.go) |
 | Node.js / TypeScript | `partly-sdk` and `@openfeature/server-sdk` | [quickstart.js](../examples/node/quickstart.js) |
 
 Public package hosting is still pending. Use the [SDK guides](../README.md#connect-an-application) for local builds and release archives.
@@ -41,12 +41,12 @@ Register `partly::openfeature::PartlyProvider` with an initialized `Arc<partly::
 
 ## Go
 
-The provider is a separate module requiring Go 1.26+; the native SDK still supports Go 1.22+. Until public module hosting is ready, point both modules at the extracted Go archive:
+The provider is a separate module requiring Go 1.26+; the native SDK still supports Go 1.22+. Point both GitHub module paths at the extracted Go release archive, which includes the required native library:
 
 ```go
-require partly.sh/sdk/go/openfeature v0.1.0-alpha.1
-replace partly.sh/sdk/go => ./third_party/partly-go
-replace partly.sh/sdk/go/openfeature => ./third_party/partly-go/openfeature
+require github.com/ByteBaker/partly/sdk/go/openfeature v0.1.0-alpha.1
+replace github.com/ByteBaker/partly/sdk/go => ./third_party/partly-go
+replace github.com/ByteBaker/partly/sdk/go/openfeature => ./third_party/partly-go/openfeature
 ```
 
 Register `provider.New(client)` using `of.SetNamedProviderAndWait("partly", provider.New(client))`. Keep the returned client from `of.NewClient("partly")` for requests. Getters return both the value and an error; check the error first.

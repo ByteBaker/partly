@@ -5,6 +5,6 @@ module partly-contract
 
 go 1.22
 
-require partly.sh/sdk/go v0.1.0-alpha.1
+require github.com/ByteBaker/partly/sdk/go v0.1.0-alpha.1
 
-replace partly.sh/sdk/go => ../../../sdk/go
+replace github.com/ByteBaker/partly/sdk/go => ../../../sdk/go

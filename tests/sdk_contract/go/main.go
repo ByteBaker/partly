@@ -13,7 +13,7 @@ import (
 	"os"
 	"time"
 
-	partly "partly.sh/sdk/go"
+	partly "github.com/ByteBaker/partly/sdk/go"
 )
 
 type command struct {
