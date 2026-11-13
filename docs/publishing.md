@@ -31,6 +31,8 @@ Release every component from the same verified commit, including an SDK-only fix
 
 Complete the [release checks](releasing.md#before-public-upload), confirm package ownership, and download the artifacts from the green workflow for the chosen commit. Verify their checksums. Use a clean release staging directory so older builds cannot be uploaded by a wildcard.
 
+Before adding credentials or a publish job, configure [CI approvals and the protected release environment](releasing.md#ci-security-and-approvals). PR checks must stay separate from publishing permissions and secrets.
+
 Use a versioned GitHub release for the alpha; [prereleases cannot be marked latest](https://docs.github.com/en/rest/releases/releases#create-a-release), so do not rely on `/releases/latest`. After publication, an asset URL has the form `https://github.com/ByteBaker/partly/releases/download/v0.1.0-alpha.1/<asset-name>`. The release workflow currently uploads Actions artifacts only; those still need to be attached to a release after verification.
 
 The `partly.sh/sdk/go` paths below identify Go modules, not download URLs. The current archive-plus-`replace` installation does not need that domain. Public Go module discovery remains separate work.

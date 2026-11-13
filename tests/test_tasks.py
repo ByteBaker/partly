@@ -171,6 +171,47 @@ def test_python_audit_covers_declared_dependencies_and_propagates_failure(tmp_pa
     assert not Path(failure.value.cmd[-1]).exists()
 
 
+@pytest.mark.parametrize(("contents", "finding"), [
+    ("permissions: {contents: read}\n", None),
+    ("permissions: write-all\n", "excessive-permissions"),
+    ("permissions: write-all # zizmor: ignore[excessive-permissions]\n", "excessive-permissions"),
+    ("permissions: [\n", "error"),
+])
+def test_workflow_security_blocks_unsafe_or_invalid_workflows(checkout, contents, finding):
+    root, _ = checkout
+    (root / ".github/workflows").mkdir(parents=True)
+    (root / ".github/workflows/check.yml").write_text(
+        "name: Checks\non: pull_request\n" + contents
+        + "jobs:\n  check:\n    runs-on: ubuntu-latest\n"
+        + "    steps:\n      - run: echo checked\n"
+    )
+    result = subprocess.run([
+        "task", "--exit-code", "--dir", str(root), "lint:workflows", f"PYTHON={sys.executable}",
+    ], text=True, capture_output=True)
+    assert (result.returncode == 0) is (finding is None), result.stdout + result.stderr
+    if finding:
+        assert finding in (result.stdout + result.stderr).lower()
+
+
+@pytest.mark.parametrize("exit_code", [0, 19])
+def test_workflow_edits_run_security_hook_and_propagate_failure(checkout, exit_code):
+    root, env = checkout
+    subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+    (root / ".github/actions/setup").mkdir(parents=True)
+    (root / "config").mkdir()
+    shutil.copy2(ROOT / "config/prek.toml", root / "config/prek.toml")
+    (root / ".github/actions/setup/action.yml").write_text("name: setup\n")
+    task = Path(env["PATH"].split(os.pathsep)[0]) / "task"
+    task.write_text(f'#!/bin/sh\nprintf "%s\\n" "$1" >> "$TASK_TRACE"\nexit {exit_code}\n')
+    task.chmod(0o755)
+    result = subprocess.run([
+        str(Path(sys.executable).parent / "prek"), "run", "-c", "config/prek.toml",
+        "workflow-security", "--stage", "manual", "--files", ".github/actions/setup/action.yml",
+    ], cwd=root, env={**env, "PREK_HOME": str(root / ".prek-cache")})
+    assert (result.returncode == 0) is (exit_code == 0)
+    assert Path(env["TASK_TRACE"]).read_text().splitlines() == ["lint:workflows"]
+
+
 @pytest.mark.parametrize("exit_code", [0, 19])
 def test_go_audit_checks_each_module_and_propagates_failure(checkout, exit_code):
     root, env = checkout

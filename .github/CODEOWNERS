@@ -1,0 +1,18 @@
+# Copyright 2026 ByteBaker
+# SPDX-License-Identifier: Elastic-2.0
+
+# Build inputs can execute code during CI; review them with the workflows.
+/.github/ @ByteBaker
+/scripts/ @ByteBaker
+/config/ @ByteBaker
+/Taskfile.yml @ByteBaker
+/docs/releasing.md @ByteBaker
+/docs/publishing.md @ByteBaker
+Cargo.toml @ByteBaker
+Cargo.lock @ByteBaker
+build.rs @ByteBaker
+pyproject.toml @ByteBaker
+package.json @ByteBaker
+package-lock.json @ByteBaker
+go.mod @ByteBaker
+go.sum @ByteBaker

@@ -56,6 +56,14 @@ entry = "task hook:shell --"
 types = ["shell"]
 
 [[repos.hooks]]
+id = "workflow-security"
+name = "GitHub Actions security"
+language = "system"
+entry = "task lint:workflows"
+files = '^\.github/|^config/(prek\.toml|requirements-dev\.txt)$|^Taskfile\.yml$'
+pass_filenames = false
+
+[[repos.hooks]]
 id = "release-versions"
 name = "Release version consistency"
 language = "system"

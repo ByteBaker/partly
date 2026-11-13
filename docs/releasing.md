@@ -48,6 +48,7 @@ This creates `.venv`, installs Python/frontend dependencies, audit tools, Rust's
 | `task` | List available commands |
 | `task check` | Pre-push lint and vulnerability checks; no product builds |
 | `task lint` | Source checks only; CI runs security as a separate required tier |
+| `task lint:workflows` | Offline GitHub Actions security checks, also run through prek and CI lint |
 | `task api:export` | Generate `docs/openapi.json` from the server; compiles the server if needed |
 | `task audit` | All four vulnerability scans; use `audit:rust`, `audit:python`, `audit:go`, or `audit:node` for one |
 | `task build` | Check sources, then build the server and all four SDKs |
@@ -77,6 +78,8 @@ Run `cargo fmt --all` before checking changes. The root `.rustfmt.toml` uses sta
 ### Pre-push checks
 
 [prek](https://prek.j178.dev/0.5.5/reference/configuration/) runs `config/prek.toml` before a push. Source checks cover conflict markers, JSON/TOML/YAML syntax, Rust/Go formatting, Python/frontend/shell lint, and version consistency. They select changed files. RustSec, pip-audit, govulncheck, and npm audit run on **every push**, even when only documentation changes: new advisories can affect unchanged dependencies. The four scans run concurrently after source checks and share their Task commands with CI.
+
+Workflow and composite-action edits also run pinned [zizmor](https://docs.zizmor.sh/), through `task lint:workflows`. Auditor-mode findings at medium or high severity, plus scanner errors, fail the check; ignore comments cannot waive them. Low/informational suggestions do not block. It runs offline without credentials, so remote action provenance and new advisories about actions still need separate review. Remote actions remain pinned to full commit SHAs.
 
 Findings, missing scanners, failed resolution, and network errors block the push. Scans need network access and do not fix files automatically. Run `task setup` after pulling changes to tool requirements. `task check` also checks every tracked source file. No product builds or browser tests run during a push. Strict types, Clippy, and Go analysis remain in **Verify**, alongside the required security jobs. Daily scans remain enabled.
 
@@ -165,13 +168,53 @@ python -I release_smoke.py /absolute/path/to/partly
 
 Run `python -m twine check --strict` on the wheel and source archive. Verify downloads against `SHA256SUMS`; these checksums are not publisher signatures.
 
+## CI security and approvals
+
+**Enable the approval gate in GitHub settings; a workflow file cannot enforce it against a PR that edits that file.** These settings require repository admin access and are not applied by cloning or pushing this repository.
+
+In [Settings → Actions → General](https://github.com/ByteBaker/partly/settings/actions):
+
+- Set fork workflow approval to **Require approval for all external contributors**, including returning contributors.
+- Set workflow permissions to **Read repository contents and packages permissions**.
+- Leave **Allow GitHub Actions to create and approve pull requests** disabled.
+
+Alternatively, sign `gh` in as the repository owner and apply the [GitHub API settings](https://docs.github.com/en/rest/actions/permissions):
+
+```sh
+gh api --method PUT repos/ByteBaker/partly/actions/permissions/fork-pr-contributor-approval \
+  -f approval_policy=all_external_contributors
+gh api --method PUT repos/ByteBaker/partly/actions/permissions/workflow \
+  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false
+
+gh api repos/ByteBaker/partly/actions/permissions/fork-pr-contributor-approval
+gh api repos/ByteBaker/partly/actions/permissions/workflow
+```
+
+Verify `approval_policy` is `all_external_contributors`, `default_workflow_permissions` is `read`, and `can_approve_pull_request_reviews` is `false`. The first setting gates external fork runs; it does not gate the owner's runs or trusted collaborators' same-repository branches. The token default is a fallback, not a ceiling: review changes to workflow `permissions` too.
+
+After saving, test with a fork PR from an external account: its run must wait for approval before jobs start. Check again after an external update. A local lint run cannot verify GitHub's account-level approval behavior.
+
+For each waiting run, review its exact commit, including build scripts, dependency changes, tests, and workflows, before choosing **Approve workflows to run**. Check new commits before approving another run. Workflow approval permits code execution; it is separate from approving a PR for merge. Do not use comment commands, labels, or a `pull_request_target` workflow to bypass this step. See [GitHub's approval guide](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks).
+
+Our PR checks use `pull_request`, disposable GitHub-hosted runners, `contents: read`, pinned actions, and `persist-credentials: false`. They do not request repository secrets, OIDC credentials, or write permissions. The shared Rust cache is saved only by analysis on a push to `main`; GitHub also scopes fork PR caches separately. Approval does not make a contributor's code safe to run with publishing credentials.
+
+[CODEOWNERS](../.github/CODEOWNERS) requests owner review for CI, build, and dependency files. To enforce it at merge, configure a `main` ruleset requiring **PR checks**, code-owner review, and dismissal of stale reviews after changes. CODEOWNERS alone does not block merging. A sole maintainer cannot approve their own PR; keep any necessary owner bypass narrow instead of granting bypass to contributors. Enable secret scanning and push protection in repository security settings as well.
+
+Before adding automated publishing:
+
+1. Create a protected `release` environment with `ByteBaker` as a required reviewer and admin bypass disabled. Allow only the release branches/tags that the publish workflow actually accepts. Keep self-review allowed while there is only one maintainer; require a different reviewer once a second maintainer exists.
+2. Keep registry credentials in that environment, or configure Trusted Publishing with the exact repository, workflow, and environment. Do not put publishing tokens in repository-wide secrets. GitHub withholds environment secrets until approval; see [environment protections](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
+3. Give only the publishing job `contents: write` or `id-token: write` as needed. Require successful release checks for the exact commit and verify the release tag belongs to reviewed `main` history. That job should download the checked artifacts from the same run, without executing PR code or restoring build caches.
+
+Current release jobs only prepare Actions artifacts. They have no publishing credentials and do not publish packages. A CI security scan helps catch unsafe patterns; it cannot prove arbitrary build or dependency code is harmless.
+
 ## Before public upload
 
 1. Verify packaged licenses, dependency terms, and contributor rights against [licensing boundaries](licensing.md).
 2. Use [ByteBaker/partly](https://github.com/ByteBaker/partly) as the source repository and confirm ownership of `partly-sdk` on PyPI.
 3. Use [GitHub Releases](https://github.com/ByteBaker/partly/releases) for public downloads. Attach verified artifacts to the matching versioned release; the domain is not a release prerequisite.
 4. Pass **Release artifacts** on the final commit, resolve advisories, and test the downloaded artifacts.
-5. Configure PyPI Trusted Publishing or a scoped credential outside source control.
+5. Configure the [publishing approval boundary](#ci-security-and-approvals), then PyPI Trusted Publishing or a scoped credential outside source control.
 6. Publish approved archives, wheels, source, checksums, and release notes. Link the [backup and upgrade procedure](../crates/partly-server/README.md#backup-restore-and-upgrades).
 
 Signing, notarization, and an automatic installer are not included in this alpha.

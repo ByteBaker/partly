@@ -37,6 +37,11 @@ tasks:
     cmds:
       - PARTLY_PYTHON={{.PYTHON | shellQuote}} PATH={{.VENV | shellQuote}}/bin:"$PATH" prek run -c config/prek.toml --all-files --stage manual
 
+  lint:workflows:
+    desc: Check GitHub Actions for unsafe workflow patterns
+    cmds:
+      - PATH={{dir .PYTHON | shellQuote}}:"$PATH" zizmor --offline --no-progress --persona auditor --min-severity medium --no-ignores .github
+
   tools:rust-audit:
     cmds:
       - cargo install cargo-audit --version 0.22.2 --locked --root {{.AUDIT_TOOLS | shellQuote}}

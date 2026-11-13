@@ -46,8 +46,8 @@ runs:
         project = tomllib.loads(Path("sdk/python/pyproject.toml").read_text())["project"]
         subprocess.run([sys.executable, "-m", "pip", "install", *project["dependencies"]], check=True)
         PY
-        echo "PYO3_PYTHON=$(command -v python)" >> "$GITHUB_ENV"
+        echo 'PYO3_PYTHON=python' >> "$GITHUB_ENV"
     - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         shared-key: checks
-        save-if: ${{ github.job == 'analysis' || github.job == 'build' || github.job == 'tests' }}
+        save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.job == 'analysis' }}
